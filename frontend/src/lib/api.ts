@@ -60,7 +60,18 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    const requestUrl = String(error.config?.url || '');
+    const hasAuthHeader = Boolean(
+      error.config?.headers?.Authorization ||
+      error.config?.headers?.authorization
+    );
+    const isPublicAuthRoute =
+      requestUrl.includes('/auth/login') ||
+      requestUrl.includes('/auth/register') ||
+      requestUrl.includes('/auth/forgot-password');
+
+    if (status === 401 && hasAuthHeader && !isPublicAuthRoute) {
       // Token expired or invalid
       localStorage.removeItem('lush_token');
       localStorage.removeItem('lush_user');

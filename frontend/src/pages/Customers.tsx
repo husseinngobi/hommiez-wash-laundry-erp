@@ -241,8 +241,6 @@ export default function Customers() {
       console.log("Token from AuthContext:", token ? "Token exists" : "No token found");
       
       if (!token) {
-        toast.error("Please log in again");
-        window.location.href = "/login";
         return;
       }
       
@@ -268,9 +266,6 @@ export default function Customers() {
       
       if (axiosError.response?.status === 401) {
         toast.error("Session expired. Please log in again");
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        window.location.href = "/login";
       } else {
         toast.error("Failed to load customers");
       }

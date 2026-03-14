@@ -131,13 +131,6 @@ export default function PriceList() {
         title: 'Error',
         description: axiosError.response?.data?.error || 'Failed to load price items',
       });
-      
-      if (axiosError.response?.status === 401) {
-        // Only remove auth tokens, preserve other settings like session timeout
-        localStorage.removeItem('lush_token');
-        localStorage.removeItem('lush_user');
-        window.location.href = '/login';
-      }
     } finally {
       setLoading(false);
     }

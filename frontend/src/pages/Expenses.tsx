@@ -112,7 +112,6 @@ const Expenses = () => {
       if (error && typeof error === 'object' && 'response' in error && 
           (error as { response?: { status?: number } }).response?.status === 401) {
         toast.error('Session expired. Please login again.');
-        window.location.href = '/login';
         return;
       }
       toast.error('Failed to load expenses');
