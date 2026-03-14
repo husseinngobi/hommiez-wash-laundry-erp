@@ -4,17 +4,20 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Mail, Lock, User, ArrowLeft, CheckCircle2, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Mail, Lock, User, ArrowLeft, CheckCircle2, Sparkles, Eye, EyeOff, Phone } from 'lucide-react';
 import { validatePassword, getPasswordStrengthColor, getPasswordStrengthLabel } from '@/lib/passwordValidation';
 
 export default function CreateAccount() {
   const [formData, setFormData] = useState({
     fullName: '',
+    phone: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    role: 'DESKTOP_AGENT'
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -55,6 +58,13 @@ export default function CreateAccount() {
       return;
     }
 
+    // Validate Uganda phone format
+    const phoneRegex = /^\+256[0-9]{9}$/;
+    if (!phoneRegex.test(formData.phone)) {
+      setError('Phone number must be in format +256XXXXXXXXX');
+      return;
+    }
+
     // Validation
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
@@ -71,9 +81,10 @@ export default function CreateAccount() {
         },
         body: JSON.stringify({
           full_name: formData.fullName,
+          phone: formData.phone,
           email: formData.email,
           password: formData.password,
-          // Role will be assigned by administrator during approval
+          role: formData.role,
         }),
       });
 
@@ -231,6 +242,47 @@ export default function CreateAccount() {
                 )}
                 <p className="text-xs text-muted-foreground">
                   Use a valid email (Gmail, Outlook, or company email). You'll receive approval notifications here.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="phone"
+                    type="tel"
+                    placeholder="+2567XXXXXXXX"
+                    value={formData.phone}
+                    onChange={(e) => handleChange('phone', e.target.value)}
+                    className="pl-10 h-11"
+                    required
+                    disabled={loading}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use Uganda format: +256XXXXXXXXX
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="role">Requested Role</Label>
+                <Select
+                  value={formData.role}
+                  onValueChange={(value) => handleChange('role', value)}
+                  disabled={loading}
+                >
+                  <SelectTrigger id="role" className="h-11">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ADMIN">Administrator</SelectItem>
+                    <SelectItem value="MANAGER">Manager</SelectItem>
+                    <SelectItem value="DESKTOP_AGENT">Desktop Agent</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Your requested role will be reviewed and approved by the Systems Administrator.
                 </p>
               </div>
 

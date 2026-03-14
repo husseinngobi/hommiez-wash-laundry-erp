@@ -6,14 +6,16 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   requireAdmin?: boolean;
   requireManager?: boolean; // Admin or Manager
+  requireSystemAdmin?: boolean;
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
   children, 
   requireAdmin = false,
-  requireManager = false
+  requireManager = false,
+  requireSystemAdmin = false
 }) => {
-  const { isAuthenticated, isAdmin, isManager, loading } = useAuth();
+  const { isAuthenticated, isAdmin, isManager, isSystemAdmin, loading } = useAuth();
 
   if (loading) {
     return (
@@ -33,6 +35,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // Strict admin-only check
   if (requireAdmin && !isAdmin) {
     return <Navigate to="/orders" replace />;
+  }
+
+  // Strict systems-admin-only check
+  if (requireSystemAdmin && !isSystemAdmin) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   // Manager or Admin check

@@ -203,8 +203,7 @@ const Profile = () => {
       return;
     }
 
-    // For LOCAL (email/password) users, current password is also required
-    if (user?.auth_provider === 'LOCAL' && !passwordData.currentPassword) {
+    if (!passwordData.currentPassword) {
       toast({
         title: 'Validation Error',
         description: 'Current password is required',
@@ -234,9 +233,10 @@ const Profile = () => {
     try {
       setChangingPassword(true);
 
-      const payload = user?.auth_provider === 'GOOGLE'
-        ? { newPassword: passwordData.newPassword } // Google users don't need currentPassword
-        : { currentPassword: passwordData.currentPassword, newPassword: passwordData.newPassword };
+      const payload = {
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword,
+      };
 
       const response = await axios.post(
         `${API_BASE_URL}/auth/change-password`,
@@ -246,9 +246,7 @@ const Profile = () => {
 
       toast({
         title: 'Success',
-        description: response.data.message || (user?.auth_provider === 'GOOGLE' 
-          ? 'Password added successfully! You can now login with email/password.' 
-          : 'Password changed successfully'),
+        description: response.data.message || 'Password changed successfully',
       });
 
       // Clear form
@@ -506,41 +504,26 @@ const Profile = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Lock className="h-5 w-5" />
-              {user?.auth_provider === 'GOOGLE' ? 'Add Password (Optional)' : 'Change Password'}
+              Change Password
             </CardTitle>
             <CardDescription>
-              {user?.auth_provider === 'GOOGLE' 
-                ? 'Add a password to enable email/password login in addition to Google Sign-In' 
-                : 'Update your password to keep your account secure'}
+              Update your password to keep your account secure
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {user?.auth_provider === 'GOOGLE' && (
-              <Alert>
-                <Shield className="h-4 w-4" />
-                <AlertDescription>
-                  Your account uses Google Sign-In. Adding a password is optional and will allow you to login either via Google OR email/password.
-                </AlertDescription>
-              </Alert>
-            )}
             <div className="space-y-4">
-              {/* Only show current password field for LOCAL (email/password) users, not Google users */}
-              {user?.auth_provider === 'LOCAL' && (
-                <div className="space-y-2">
-                  <Label htmlFor="current-password">Current Password</Label>
-                  <Input
-                    id="current-password"
-                    type="password"
-                    value={passwordData.currentPassword}
-                    onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                    placeholder="Enter current password"
-                  />
-                </div>
-              )}
               <div className="space-y-2">
-                <Label htmlFor="new-password">
-                  {user?.auth_provider === 'GOOGLE' ? 'New Password' : 'New Password'}
-                </Label>
+                <Label htmlFor="current-password">Current Password</Label>
+                <Input
+                  id="current-password"
+                  type="password"
+                  value={passwordData.currentPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                  placeholder="Enter current password"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New Password</Label>
                 <Input
                   id="new-password"
                   type="password"
@@ -563,9 +546,7 @@ const Profile = () => {
             <Separator />
             <div className="flex justify-end">
               <Button onClick={handlePasswordChange} disabled={changingPassword}>
-                {changingPassword 
-                  ? (user?.auth_provider === 'GOOGLE' ? 'Adding Password...' : 'Changing Password...') 
-                  : (user?.auth_provider === 'GOOGLE' ? 'Add Password' : 'Change Password')}
+                {changingPassword ? 'Changing Password...' : 'Change Password'}
               </Button>
             </div>
           </CardContent>

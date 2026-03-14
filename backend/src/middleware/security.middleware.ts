@@ -5,16 +5,15 @@ import { Request, Response, NextFunction } from 'express';
 
 // Rate limiter for login attempts - prevents brute force attacks
 export const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login requests per windowMs
+  windowMs: 30 * 60 * 1000, // 30 minutes
+  max: 4, // Lock after 4 failed login attempts
   message: {
-    error: 'Too many login attempts from this IP, please try again after 15 minutes'
+    error: 'Too many failed login attempts. Please wait 30 minutes before trying again.'
   },
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  // Skip successful requests
-  skipSuccessfulRequests: false,
-  // Skip failed requests (we want to count all attempts)
+  // Only count failed login attempts toward lockout.
+  skipSuccessfulRequests: true,
   skipFailedRequests: false,
 });
 

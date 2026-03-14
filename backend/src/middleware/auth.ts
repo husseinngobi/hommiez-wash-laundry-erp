@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { UserRole } from '../models/User';
+import { isSystemAdminEmail } from '../utils/systemAdmin';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -9,6 +10,7 @@ export interface AuthRequest extends Request {
     email: string;
     full_name: string;
     role: UserRole;
+    is_system_admin?: boolean;
   };
   file?: Express.Multer.File;
 }
@@ -52,7 +54,8 @@ export const authenticate = async (
         id: userId,
         email: decoded.email,
         full_name: decoded.full_name,
-        role: decoded.role
+        role: decoded.role,
+        is_system_admin: decoded.is_system_admin ?? isSystemAdminEmail(decoded.email)
       };
       
       next();
@@ -96,6 +99,21 @@ export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction
     });
   }
   
+  next();
+};
+
+export const requireSystemAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  if (req.user.role !== UserRole.ADMIN || !req.user.is_system_admin) {
+    return res.status(403).json({
+      error: 'Access denied. Systems Administrator privileges required.',
+      current: req.user.role,
+    });
+  }
+
   next();
 };
 

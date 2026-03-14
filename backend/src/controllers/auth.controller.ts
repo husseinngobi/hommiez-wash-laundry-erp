@@ -7,6 +7,7 @@ import { config } from '../config';
 import { AuthRequest } from '../middleware/auth';
 import { UserRole, UserStatus } from '../models/User';
 import { userNotificationService } from '../services/user-notification.service';
+import { isSystemAdminEmail } from '../utils/systemAdmin';
 import { 
   logFailedLogin, 
   logSuccessfulLogin, 
@@ -22,13 +23,18 @@ export const register = async (req: AuthRequest, res: Response) => {
     }
     
     const { email, password, full_name, phone, role } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
     
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
     
-    // Determine user status (ADMIN can create active users, others need approval)
-    const status = req.user?.role === UserRole.ADMIN ? UserStatus.ACTIVE : UserStatus.PENDING;
-    const userRole = role && req.user?.role === UserRole.ADMIN ? role : UserRole.DESKTOP_AGENT;
+    // Self-service registrations always require systems-admin approval.
+    const status = UserStatus.PENDING;
+    const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.DESKTOP_AGENT];
+    const userRole = allowedRoles.includes(role) ? role : UserRole.DESKTOP_AGENT;
     
     const result = await query(
       `INSERT INTO users (email, password, full_name, phone, role, status, created_by)
@@ -78,7 +84,7 @@ export const login = async (req: AuthRequest, res: Response) => {
     const userAgent = req.headers['user-agent'] || 'unknown';
     
     const result = await query(
-      'SELECT id, email, password, full_name, phone, role, status FROM users WHERE email = $1',
+      'SELECT id, email, password, full_name, phone, role, status, profile_picture FROM users WHERE email = $1',
       [email]
     );
     
@@ -113,12 +119,11 @@ export const login = async (req: AuthRequest, res: Response) => {
       });
     }
     
-    // Check if user doesn't have a password set (pure Google OAuth user)
+    // If password is missing, this account cannot use password login.
     if (!user.password) {
-      await logFailedLogin(email, clientIP, userAgent, 'Account has no password - Google OAuth only');
+      await logFailedLogin(email, clientIP, userAgent, 'Account has no password set');
       return res.status(401).json({ 
-        error: 'This account uses Google login. Please sign in with Google or add a password from your profile.',
-        auth_provider: user.auth_provider
+        error: 'This account has no password set. Please contact the systems administrator.'
       });
     }
     
@@ -137,7 +142,8 @@ export const login = async (req: AuthRequest, res: Response) => {
         email: user.email, 
         full_name: user.full_name, 
         role: user.role,
-        profile_picture: user.profile_picture
+        profile_picture: user.profile_picture,
+        is_system_admin: isSystemAdminEmail(user.email)
       },
       config.jwt.secret,
       { expiresIn: '7d' }  // Fixed expiration time
@@ -152,6 +158,7 @@ export const login = async (req: AuthRequest, res: Response) => {
     );
     
     const updatedUser = updatedUserResult.rows[0];
+    updatedUser.is_system_admin = isSystemAdminEmail(updatedUser.email);
     
     // Auto-cancel any pending password reset requests (user successfully logged in, so they remember their password)
     try {
@@ -195,7 +202,9 @@ export const getMe = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    res.json({ user: result.rows[0] });
+    const user = result.rows[0];
+    user.is_system_admin = isSystemAdminEmail(user.email);
+    res.json({ user });
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ error: 'Failed to fetch user' });
@@ -270,9 +279,9 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'New password must be at least 6 characters long' });
     }
     
-    // Get user's current password and auth provider
+    // Get user's current password
     const result = await query(
-      'SELECT password, auth_provider FROM users WHERE id = $1',
+      'SELECT password FROM users WHERE id = $1',
       [userId]
     );
     
@@ -282,32 +291,6 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
     
     const user = result.rows[0];
     
-    // For Google OAuth users setting password for first time
-    if (user.auth_provider === 'GOOGLE' && !user.password) {
-      // No current password needed - they're adding password to Google account
-      const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-      
-      // Update to dual authentication (can login via Google OR email/password)
-      await query(
-        'UPDATE users SET password = $1, auth_provider = $2, must_change_password = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
-        [hashedNewPassword, 'DUAL', userId]
-      );
-      
-      console.log(`✅ Password added for Google OAuth user ${userId} - now supports dual authentication`);
-      
-      await query(
-        `INSERT INTO activity_logs (user_id, action, details)
-         VALUES ($1, $2, $3)`,
-        [userId, 'password_added', JSON.stringify({ auth_provider: 'GOOGLE', added_at: new Date() })]
-      );
-      
-      return res.json({ 
-        message: 'Password added successfully! You can now login with either Google or email/password.',
-        dual_auth: true
-      });
-    }
-    
-    // For users with existing passwords (LOCAL auth or Google with password)
     if (!currentPassword) {
       return res.status(400).json({ error: 'Current password is required' });
     }
@@ -377,9 +360,12 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     
     console.log(`✅ Profile updated for user ${userId}`);
     
+    const updatedUser = result.rows[0];
+    updatedUser.is_system_admin = isSystemAdminEmail(updatedUser.email);
+
     res.json({
       message: 'Profile updated successfully',
-      user: result.rows[0]
+      user: updatedUser
     });
   } catch (error) {
     console.error('Update profile error:', error);

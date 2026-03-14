@@ -23,7 +23,7 @@ const helpTopics: HelpTopic[] = [
     icon: Book,
     content: {
       steps: [
-        '1. Login with your credentials (email and password or Google Sign-In)',
+        '1. Login with your credentials (email and password)',
         '2. You will see the Dashboard with overview of orders, revenue, and customers',
         '3. Use the sidebar menu to navigate between different sections',
         '4. Your role (Admin/Manager/Desktop Agent) determines what features you can access',
@@ -276,9 +276,9 @@ export default function Help() {
                 </p>
               </div>
               <div>
-                <p className="font-medium text-sm">Q: Can I login with both Google and email/password?</p>
+                <p className="font-medium text-sm">Q: Can I create my own account?</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  A: Yes! If you have a Google account, you can add a password in Profile settings to enable dual authentication.
+                  A: Yes. Use the Create Account page, choose your role, and wait for Systems Administrator approval.
                 </p>
               </div>
               <div>

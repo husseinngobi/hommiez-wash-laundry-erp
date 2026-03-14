@@ -13,6 +13,15 @@ import bcrypt from 'bcryptjs';
 
 async function setupAdmin() {
   try {
+    const adminEmail = process.env.SETUP_ADMIN_EMAIL || 'husseinibram555@gmail.com';
+    const adminPassword = process.env.SETUP_ADMIN_PASSWORD;
+    const adminFullName = process.env.SETUP_ADMIN_FULL_NAME || 'Hussein Ngobi';
+    const adminPhone = process.env.SETUP_ADMIN_PHONE || '+256XXXXXXXXXX';
+
+    if (!adminPassword || adminPassword.length < 8) {
+      throw new Error('SETUP_ADMIN_PASSWORD is required and must be at least 8 characters');
+    }
+
     console.log('🔧 Step 1: Adding missing columns to users table...');
     
     // Add all missing columns that the application code expects
@@ -40,7 +49,7 @@ async function setupAdmin() {
     console.log('👤 Step 2: Creating admin user...');
     
     // Hash the password securely
-    const hashedPassword = await bcrypt.hash('551129@lush', 10);
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
     
     // Insert or update admin user
     await query(`
@@ -65,10 +74,10 @@ async function setupAdmin() {
         is_active = EXCLUDED.is_active,
         updated_at = NOW();
     `, [
-      'husseinibram555@gmail.com',
+      adminEmail,
       hashedPassword,
-      'Hussein Ngobi', // Edit if needed
-      '+256XXXXXXXXXX', // Add your full phone number
+      adminFullName,
+      adminPhone,
       'ADMIN',
       'ACTIVE',
       'LOCAL',
@@ -81,8 +90,8 @@ async function setupAdmin() {
     console.log('═══════════════════════════════════════');
     console.log('📋 LOGIN CREDENTIALS');
     console.log('═══════════════════════════════════════');
-    console.log('📧 Email:    husseinibram555@gmail.com');
-    console.log('🔑 Password: 551129@lush');
+    console.log(`📧 Email:    ${adminEmail}`);
+    console.log('🔑 Password: (from SETUP_ADMIN_PASSWORD env var)');
     console.log('👔 Role:     ADMIN');
     console.log('═══════════════════════════════════════');
     console.log('');

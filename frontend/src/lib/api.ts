@@ -21,14 +21,7 @@ function getApiBaseUrl(): string {
     return `${protocol}//${hostname}:5000/api`;
   }
   
-  // Special case 2: WiFi network (192.168.1.x)
-  // Multiple IPs, use WiFi IP
-  if (hostname.startsWith('192.168.1.')) {
-    console.log('📱 WiFi network detected - using 192.168.1.6:5000');
-    return `${protocol}//192.168.1.6:5000/api`;
-  }
-  
-  // Default: localhost or other IPs, use same hostname
+  // Default: localhost or any LAN IP, use same hostname
   return `${protocol}//${hostname}:5000/api`;
 }
 

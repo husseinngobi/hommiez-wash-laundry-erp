@@ -1,7 +1,11 @@
 const { Pool } = require('pg');
 
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is required. Refusing to use hardcoded credentials.');
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:Hussein75@localhost:5432/lush_laundry'
+  connectionString: process.env.DATABASE_URL
 });
 
 async function runMigration() {

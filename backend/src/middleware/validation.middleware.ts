@@ -40,6 +40,15 @@ export const validatePhone = body('phone')
   .withMessage('Phone number must be in format +256XXXXXXXXX')
   .escape();
 
+// Required phone validation for registration
+export const validateRequiredPhone = body('phone')
+  .trim()
+  .notEmpty()
+  .withMessage('Phone number is required')
+  .matches(/^\+256[0-9]{9}$/)
+  .withMessage('Phone number must be in format +256XXXXXXXXX')
+  .escape();
+
 // Login validation rules
 export const loginValidation = [
   validateEmail,
@@ -56,11 +65,11 @@ export const registerValidation = [
   validateEmail,
   validatePassword,
   validateFullName,
-  validatePhone,
+  validateRequiredPhone,
   body('role')
     .optional()
-    .isIn(['ADMIN', 'USER'])
-    .withMessage('Role must be either ADMIN or USER'),
+    .isIn(['ADMIN', 'MANAGER', 'DESKTOP_AGENT'])
+    .withMessage('Role must be one of ADMIN, MANAGER, or DESKTOP_AGENT'),
 ];
 
 // Password reset validation

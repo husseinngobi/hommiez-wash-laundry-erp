@@ -3,15 +3,21 @@ const jwt = require('jsonwebtoken');
 
 async function testFinancialAPI() {
   try {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is required to run this test.');
+    }
+
+    const apiBase = process.env.API_BASE_URL || 'http://localhost:5000/api';
+
     // Generate admin token
     const token = jwt.sign(
       { id: 4, email: 'admin@lushlaundry.com', role: 'ADMIN' },
-      'lush-laundry-super-secret-key-change-in-production'
+      process.env.JWT_SECRET
     );
 
     console.log('📊 Testing Financial Dashboard API...\n');
 
-    const response = await axios.get('http://localhost:5000/api/financial/dashboard', {
+    const response = await axios.get(`${apiBase}/financial/dashboard`, {
       headers: { Authorization: `Bearer ${token}` }
     });
 

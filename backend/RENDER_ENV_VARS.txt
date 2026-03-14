@@ -4,9 +4,9 @@
 # ============================================
 # DATABASE (CRITICAL - From Supabase)
 # ============================================
-DATABASE_URL=postgresql://postgres.xrkptygpwjdizvhkgvpo:YOUR_SUPABASE_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
+DATABASE_URL=postgresql://postgres.xrkptygpwjdizvhkgvpo:YOUR_SUPABASE_PASSWORD@aws-1-ap-south-1.pooler.supabase.com:6543/postgres
 DB_HOST=aws-1-ap-south-1.pooler.supabase.com
-DB_PORT=5432
+DB_PORT=6543
 DB_NAME=postgres
 DB_USER=postgres.xrkptygpwjdizvhkgvpo
 DB_PASSWORD=YOUR_SUPABASE_PASSWORD
@@ -30,6 +30,7 @@ BACKUP_EMAIL_PASSWORD=YOUR_16_CHAR_GMAIL_APP_PASSWORD
 # FRONTEND URL (Update after Netlify deployment)
 # ============================================
 FRONTEND_URL=https://laundrosys.netlify.app
+SYSTEM_ADMIN_EMAILS=husseinibram555@gmail.com
 
 # ============================================
 # OPTIONAL (Can enable later)

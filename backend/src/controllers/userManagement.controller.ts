@@ -4,11 +4,34 @@ import { AuthRequest } from '../middleware/auth';
 import { UserRole, UserStatus } from '../models/User';
 import bcrypt from 'bcryptjs';
 import { userNotificationService } from '../services/user-notification.service';
+import { getSystemAdminEmails, isSystemAdminEmail } from '../utils/systemAdmin';
+
+const getHiddenSystemAdminEmails = (req: AuthRequest): string[] => {
+  if (req.user?.is_system_admin) {
+    return [];
+  }
+  return getSystemAdminEmails();
+};
+
+const enforceTargetVisibility = (req: AuthRequest, targetEmail?: string) => {
+  if (!targetEmail) return null;
+  if (req.user?.is_system_admin) return null;
+
+  if (isSystemAdminEmail(targetEmail)) {
+    return {
+      status: 403,
+      payload: { error: 'Access denied for this account' },
+    };
+  }
+
+  return null;
+};
 
 // Get all users (Admin only)
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
     const { status, role, search, page, limit } = req.query;
+    const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
     
     // Pagination
     const pageNum = parseInt(page as string) || 1;
@@ -45,6 +68,12 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
       params.push(`%${search}%`);
       paramCount++;
     }
+
+    if (hiddenSystemAdminEmails.length > 0) {
+      queryText += ` AND (u.email IS NULL OR LOWER(u.email) != ALL($${paramCount}::text[]))`;
+      params.push(hiddenSystemAdminEmails);
+      paramCount++;
+    }
     
     // Get total count
     const countQuery = queryText.replace(
@@ -76,16 +105,23 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
 // Get inactive users (Admin only)
 export const getPendingUsers = async (req: AuthRequest, res: Response) => {
   try {
-    const result = await query(
-      `SELECT 
+    const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
+    let queryText = `SELECT 
         u.id, u.email, u.full_name, u.phone, u.role, u.status, u.created_at,
         c.full_name as created_by_name
        FROM users u
        LEFT JOIN users c ON u.created_by = c.id
-       WHERE u.status = $1
-       ORDER BY u.created_at ASC`,
-      [UserStatus.PENDING]
-    );
+       WHERE u.status = $1`;
+    const params: any[] = [UserStatus.PENDING];
+
+    if (hiddenSystemAdminEmails.length > 0) {
+      queryText += ` AND (u.email IS NULL OR LOWER(u.email) != ALL($2::text[]))`;
+      params.push(hiddenSystemAdminEmails);
+    }
+
+    queryText += ' ORDER BY u.created_at ASC';
+
+    const result = await query(queryText, params);
     
     res.json({
       success: true,
@@ -116,6 +152,11 @@ export const approveUser = async (req: AuthRequest, res: Response) => {
     }
     
     const user = userCheck.rows[0];
+
+    const visibilityBlock = enforceTargetVisibility(req, user.email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
     
     if (user.status !== UserStatus.PENDING) {
       return res.status(400).json({ error: 'User is not awaiting approval' });
@@ -196,6 +237,11 @@ export const rejectUser = async (req: AuthRequest, res: Response) => {
     }
     
     const user = userCheck.rows[0];
+
+    const visibilityBlock = enforceTargetVisibility(req, user.email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
     
     if (user.status !== UserStatus.PENDING) {
       return res.status(400).json({ error: 'User is not awaiting approval' });
@@ -266,6 +312,11 @@ export const suspendUser = async (req: AuthRequest, res: Response) => {
     }
     
     const user = userCheck.rows[0];
+
+    const visibilityBlock = enforceTargetVisibility(req, user.email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
     
     // Prevent suspending admins
     if (user.role === UserRole.ADMIN) {
@@ -331,6 +382,11 @@ export const activateUser = async (req: AuthRequest, res: Response) => {
     }
     
     const user = userCheck.rows[0];
+
+    const visibilityBlock = enforceTargetVisibility(req, user.email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
     
     if (user.status === UserStatus.ACTIVE) {
       return res.status(400).json({ error: 'User is already active' });
@@ -419,6 +475,11 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
     
     const user = userCheck.rows[0];
     const oldRole = user.role;
+
+    const visibilityBlock = enforceTargetVisibility(req, user.email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
     
     // Prevent self-demotion from admin
     if (user.id === adminId && role !== UserRole.ADMIN) {
@@ -484,6 +545,11 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     }
     
     const user = userCheck.rows[0];
+
+    const visibilityBlock = enforceTargetVisibility(req, user.email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
     
     // Prevent deleting admins
     if (user.role === UserRole.ADMIN) {
@@ -572,6 +638,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
 export const getActivityLogs = async (req: AuthRequest, res: Response) => {
   try {
     const { userId, action, resourceType, limit = '100', offset = '0' } = req.query;
+    const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
     
     let queryText = `
       SELECT 
@@ -602,6 +669,12 @@ export const getActivityLogs = async (req: AuthRequest, res: Response) => {
       params.push(resourceType);
       paramCount++;
     }
+
+    if (hiddenSystemAdminEmails.length > 0) {
+      queryText += ` AND (al.user_email IS NULL OR LOWER(al.user_email) != ALL($${paramCount}::text[]))`;
+      params.push(hiddenSystemAdminEmails);
+      paramCount++;
+    }
     
     queryText += ` ORDER BY al.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
     params.push(limit, offset);
@@ -626,6 +699,12 @@ export const getActivityLogs = async (req: AuthRequest, res: Response) => {
     if (resourceType) {
       countQuery += ` AND resource_type = $${countParamNum}`;
       countParams.push(resourceType);
+      countParamNum++;
+    }
+
+    if (hiddenSystemAdminEmails.length > 0) {
+      countQuery += ` AND (user_email IS NULL OR LOWER(user_email) != ALL($${countParamNum}::text[]))`;
+      countParams.push(hiddenSystemAdminEmails);
     }
     
     const countResult = await query(countQuery, countParams);
@@ -646,7 +725,9 @@ export const getActivityLogs = async (req: AuthRequest, res: Response) => {
 // Get user statistics
 export const getUserStatistics = async (req: AuthRequest, res: Response) => {
   try {
-    const stats = await query(`
+    const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
+    const statsQuery = hiddenSystemAdminEmails.length > 0
+      ? `
       SELECT 
         COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_users,
         COUNT(*) FILTER (WHERE status = 'PENDING') as pending_users,
@@ -656,7 +737,24 @@ export const getUserStatistics = async (req: AuthRequest, res: Response) => {
         COUNT(*) FILTER (WHERE role = 'DESKTOP_AGENT') as desktop_agent_count,
         COUNT(*) as total_users
       FROM users
-    `);
+      WHERE email IS NULL OR LOWER(email) != ALL($1::text[])
+    `
+      : `
+      SELECT 
+        COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_users,
+        COUNT(*) FILTER (WHERE status = 'PENDING') as pending_users,
+        COUNT(*) FILTER (WHERE status = 'SUSPENDED') as suspended_users,
+        COUNT(*) FILTER (WHERE role = 'ADMIN') as admin_count,
+        COUNT(*) FILTER (WHERE role = 'MANAGER') as manager_count,
+        COUNT(*) FILTER (WHERE role = 'DESKTOP_AGENT') as desktop_agent_count,
+        COUNT(*) as total_users
+      FROM users
+    `;
+
+    const stats = await query(
+      statsQuery,
+      hiddenSystemAdminEmails.length > 0 ? [hiddenSystemAdminEmails] : []
+    );
     
     const recentActivity = await query(`
       SELECT action, COUNT(*) as count
@@ -681,6 +779,7 @@ export const getUserStatistics = async (req: AuthRequest, res: Response) => {
 // Get all password reset requests (Admin only)
 export const getPasswordResetRequests = async (req: AuthRequest, res: Response) => {
   try {
+    const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
     const result = await query(`
       SELECT 
         pr.id, pr.user_id, pr.requested_at, pr.status,
@@ -688,8 +787,9 @@ export const getPasswordResetRequests = async (req: AuthRequest, res: Response) 
       FROM password_reset_requests pr
       JOIN users u ON pr.user_id = u.id
       WHERE pr.status = 'PENDING'
+        AND ($1::text[] = '{}'::text[] OR u.email IS NULL OR LOWER(u.email) != ALL($1::text[]))
       ORDER BY pr.requested_at DESC
-    `);
+    `, [hiddenSystemAdminEmails]);
     
     res.json({ 
       success: true,
@@ -704,6 +804,7 @@ export const getPasswordResetRequests = async (req: AuthRequest, res: Response) 
 // Get all password reset requests (PENDING, DENIED, COMPLETED)
 export const getAllPasswordResetRequests = async (req: AuthRequest, res: Response) => {
   try {
+    const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
     const result = await query(`
       SELECT 
         pr.id, pr.user_id, pr.requested_at, pr.status, pr.resolved_at, pr.resolved_by,
@@ -712,6 +813,7 @@ export const getAllPasswordResetRequests = async (req: AuthRequest, res: Respons
       FROM password_reset_requests pr
       JOIN users u ON pr.user_id = u.id
       LEFT JOIN users admin ON pr.resolved_by = admin.id
+      WHERE ($1::text[] = '{}'::text[] OR u.email IS NULL OR LOWER(u.email) != ALL($1::text[]))
       ORDER BY 
         CASE pr.status 
           WHEN 'PENDING' THEN 1
@@ -719,7 +821,7 @@ export const getAllPasswordResetRequests = async (req: AuthRequest, res: Respons
           WHEN 'COMPLETED' THEN 3
         END,
         pr.requested_at DESC
-    `);
+    `, [hiddenSystemAdminEmails]);
     
     res.json({ 
       success: true,
@@ -737,6 +839,16 @@ export const resetUserPassword = async (req: AuthRequest, res: Response) => {
     const { userId } = req.params;
     const { temporaryPassword } = req.body;
     const adminId = req.user!.id;
+
+    const targetUserResult = await query('SELECT email FROM users WHERE id = $1', [userId]);
+    if (targetUserResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const visibilityBlock = enforceTargetVisibility(req, targetUserResult.rows[0].email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
     
     if (!temporaryPassword || temporaryPassword.length < 6) {
       return res.status(400).json({ error: 'Temporary password must be at least 6 characters' });
@@ -846,6 +958,16 @@ export const getUserLoginHistory = async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     const { start_date, end_date } = req.query;
+
+    const targetUserResult = await query('SELECT email FROM users WHERE id = $1', [userId]);
+    if (targetUserResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const visibilityBlock = enforceTargetVisibility(req, targetUserResult.rows[0].email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
     
     let queryText = `
       SELECT id, user_id, action, ip_address, user_agent, created_at, details

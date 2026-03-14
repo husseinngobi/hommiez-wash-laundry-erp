@@ -8,13 +8,14 @@ interface User {
   id: number;
   email: string;
   full_name: string;
-  phone?: string;  // Optional - Google OAuth users don't have phone
+  phone?: string;
   role: 'ADMIN' | 'MANAGER' | 'DESKTOP_AGENT';
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+  is_system_admin?: boolean;
   profile_picture?: string;
   session_timeout_minutes?: number;  // User's session timeout preference (5-30 minutes)
   must_change_password?: boolean;  // Flag to force password change on next login
-  auth_provider?: 'GOOGLE' | 'LOCAL' | null;  // Authentication provider
+  auth_provider?: 'LOCAL' | null;
   created_at?: string;
   updated_at?: string;
   last_login?: string;
@@ -25,6 +26,7 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isSystemAdmin: boolean;
   isManager: boolean;
   isCashier: boolean;
   canAccessUserManagement: boolean;
@@ -269,9 +271,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     token,
     isAuthenticated: !!token && !!user,
     isAdmin: user?.role === 'ADMIN',
+    isSystemAdmin: user?.role === 'ADMIN' && !!user?.is_system_admin,
     isManager: user?.role === 'MANAGER',
     isCashier: user?.role === 'DESKTOP_AGENT',
-    canAccessUserManagement: user?.role === 'ADMIN', // Admin only can manage users
+    canAccessUserManagement: user?.role === 'ADMIN',
     canAccessSettings: user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'DESKTOP_AGENT',
     canAccessReports: user?.role === 'ADMIN' || user?.role === 'MANAGER', // Admin and Manager can access reports
     canAccessInventory: user?.role === 'ADMIN',

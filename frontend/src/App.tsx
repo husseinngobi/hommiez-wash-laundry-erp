@@ -10,7 +10,6 @@ import Login from "./pages/Login";
 import CreateAccount from "./pages/CreateAccount";
 import ForgotPassword from "./pages/ForgotPassword";
 import ChangePassword from "./pages/ChangePassword";
-import GoogleAuthCallback from "./pages/GoogleAuthCallback";
 import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders";
 import NewOrder from "./pages/NewOrder";
@@ -50,7 +49,6 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/create-account" element={<CreateAccount />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/auth/google/success" element={<GoogleAuthCallback />} />
               
               {/* Protected Route - Change Password (requires authentication) */}
               <Route 

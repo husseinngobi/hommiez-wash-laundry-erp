@@ -41,7 +41,7 @@
     ### 1. Admin Access
     ```
     Email:    husseinibram555@gmail.com
-    Password: 551129@lush
+    Password: [set securely in production - do not store in repo]
     Role:     ADMIN (full system access)
     ```
 

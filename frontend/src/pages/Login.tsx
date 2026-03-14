@@ -32,15 +32,6 @@ export default function Login() {
         case 'account_inactive':
           setError('❌ Your account is not active. Please contact support.');
           break;
-        case 'auth_failed':
-          setError('❌ Google authentication failed. Please try again.');
-          break;
-        case 'no_user':
-          setError('❌ Unable to retrieve user information. Please try again.');
-          break;
-        case 'token_generation_failed':
-          setError('❌ Failed to generate authentication token. Please try again.');
-          break;
         default:
           setError('❌ An error occurred during sign in. Please try again.');
       }

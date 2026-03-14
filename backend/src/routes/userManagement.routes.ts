@@ -4,7 +4,8 @@ import * as userManagementController from '../controllers/userManagement.control
 
 const router = express.Router();
 
-// All routes require authentication and admin privileges only
+// All routes require authentication and admin privileges.
+// System-admin visibility restrictions are enforced inside controller queries.
 router.use(authenticate as any, requireAdmin as any);
 
 // User management routes
