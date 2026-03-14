@@ -33,6 +33,12 @@ app.use(hppProtection); // HTTP Parameter Pollution protection
 app.use(hideServerInfo); // Hide server info
 app.use(extractRealIP); // Extract real IP for rate limiting
 
+// Mark API responses as non-indexable by search engines.
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+  next();
+});
+
 // CORS middleware - configure based on environment
 app.use(cors({
   origin: (origin, callback) => {
