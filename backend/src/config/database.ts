@@ -9,7 +9,7 @@ const pool = new Pool({
   password: config.database.password,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000, // 10 seconds (increased from 2s for image uploads)
+  connectionTimeoutMillis: 60000, // 60 seconds to tolerate Supabase cold starts
   statement_timeout: 30000, // 30 seconds for queries
   ssl: config.database.host.includes('supabase.com') 
     ? { rejectUnauthorized: false } // Enable SSL for Supabase
