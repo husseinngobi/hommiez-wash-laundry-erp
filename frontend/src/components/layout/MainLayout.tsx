@@ -1,13 +1,14 @@
 import { ReactNode, useState, useEffect } from 'react';
-import { API_BASE_URL } from '@/lib/api';
+import { API_BASE_URL, API_ORIGIN } from '@/lib/api';
 import { Sidebar } from './Sidebar';
-import { Search, Menu, X, Clock } from 'lucide-react';
+import { Search, Menu, X, Clock, LogOut } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { NotificationDropdown } from '@/components/notifications/NotificationDropdown';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { resolveProfilePictureUrl } from '@/lib/profilePicture';
 import axios from 'axios';
 
 interface MainLayoutProps {
@@ -40,7 +41,7 @@ export function MainLayout({ children, title, subtitle }: MainLayoutProps) {
   const [businessHours, setBusinessHours] = useState<BusinessHours | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { token } = useAuth();
+  const { token, user, logout } = useAuth();
 
   // Update sidebar state when screen size changes (but mark as interacted to enable transitions)
   useEffect(() => {
@@ -110,7 +111,11 @@ export function MainLayout({ children, title, subtitle }: MainLayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar isOpen={sidebarOpen} hasInteracted={hasInteracted} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        hasInteracted={hasInteracted}
+        onClose={isMobile ? () => setSidebarOpen(false) : undefined}
+      />
       
       {/* Mobile backdrop overlay */}
       {isMobile && sidebarOpen && (
@@ -176,6 +181,32 @@ export function MainLayout({ children, title, subtitle }: MainLayoutProps) {
             )}
             <ThemeToggle />
             <NotificationDropdown />
+            <Link
+              to="/profile"
+              className="h-8 w-8 rounded-full overflow-hidden ring-1 ring-border hover:ring-primary transition-colors"
+              title="Profile"
+              aria-label="Profile"
+            >
+              {(user?.profile_picture || user?.profile_picture_url) ? (
+                <img
+                  src={resolveProfilePictureUrl(user, API_ORIGIN)}
+                  alt={user?.full_name || 'User profile'}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="h-full w-full bg-muted flex items-center justify-center text-xs font-semibold text-foreground">
+                  {user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                </div>
+              )}
+            </Link>
+            <button
+              onClick={logout}
+              className="p-2 rounded-lg hover:bg-muted transition-colors"
+              title="Logout"
+              aria-label="Logout"
+            >
+              <LogOut className="h-5 w-5 text-muted-foreground" />
+            </button>
           </div>
         </header>
 

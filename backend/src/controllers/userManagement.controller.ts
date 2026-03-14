@@ -27,6 +27,18 @@ const enforceTargetVisibility = (req: AuthRequest, targetEmail?: string) => {
   return null;
 };
 
+const tableHasColumn = async (tableName: string, columnName: string): Promise<boolean> => {
+  const result = await query(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_name = $1 AND column_name = $2
+     ) AS exists`,
+    [tableName, columnName]
+  );
+  return result.rows[0]?.exists === true;
+};
+
 // Get all users (Admin only)
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
@@ -228,7 +240,7 @@ export const rejectUser = async (req: AuthRequest, res: Response) => {
     
     // Check if user exists and is pending
     const userCheck = await query(
-      'SELECT id, email, full_name, status FROM users WHERE id = $1',
+      'SELECT id, email, full_name, status, role FROM users WHERE id = $1',
       [userId]
     );
     
@@ -285,7 +297,7 @@ export const rejectUser = async (req: AuthRequest, res: Response) => {
     
     res.json({
       success: true,
-      message: 'User rejected and removed successfully',
+      message: 'User rejected successfully',
       user: { id: userId, email: user.email, full_name: user.full_name },
     });
   } catch (error) {
@@ -561,12 +573,24 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ error: 'Cannot delete your own account' });
     }
     
+    const expenseUserColumns: string[] = [];
+    if (await tableHasColumn('expenses', 'submitted_by')) expenseUserColumns.push('submitted_by');
+    if (await tableHasColumn('expenses', 'approved_by')) expenseUserColumns.push('approved_by');
+    if (await tableHasColumn('expenses', 'rejected_by')) expenseUserColumns.push('rejected_by');
+
+    const expenseCountPromise = expenseUserColumns.length > 0
+      ? query(
+          `SELECT COUNT(*) as count FROM expenses WHERE ${expenseUserColumns.map(col => `${col} = $1`).join(' OR ')}`,
+          [userId]
+        )
+      : Promise.resolve({ rows: [{ count: '0' }] } as any);
+
     // Check if user has any related activity that prevents deletion
     const activityChecks = await Promise.all([
       query('SELECT COUNT(*) as count FROM orders WHERE user_id = $1', [userId]),
       query('SELECT COUNT(*) as count FROM orders WHERE user_id = $1 AND payment_status IN (\'PENDING\', \'PARTIAL\')', [userId]),
       query('SELECT COUNT(*) as count FROM payments WHERE created_by = $1', [userId]),
-      query('SELECT COUNT(*) as count FROM expenses WHERE submitted_by = $1 OR approved_by = $1 OR rejected_by = $1', [userId]),
+      expenseCountPromise,
     ]);
     
     const totalOrderCount = parseInt(activityChecks[0].rows[0].count);
@@ -599,13 +623,30 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
       });
     }
     
-    // Soft delete user (set deleted_at timestamp)
-    await query(
-      `UPDATE users 
-       SET deleted_at = NOW(), deleted_by = $1, updated_at = NOW()
-       WHERE id = $2`,
-      [adminId, userId]
-    );
+    // Remove related password reset requests to avoid FK conflicts on hard delete fallback.
+    await query('DELETE FROM password_reset_requests WHERE user_id = $1', [userId]);
+
+    const hasDeletedAt = await tableHasColumn('users', 'deleted_at');
+    const hasDeletedBy = await tableHasColumn('users', 'deleted_by');
+
+    if (hasDeletedAt && hasDeletedBy) {
+      await query(
+        `UPDATE users 
+         SET deleted_at = NOW(), deleted_by = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [adminId, userId]
+      );
+    } else if (hasDeletedAt) {
+      await query(
+        `UPDATE users 
+         SET deleted_at = NOW(), updated_at = NOW()
+         WHERE id = $1`,
+        [userId]
+      );
+    } else {
+      // Legacy schema fallback: hard delete only when there is no financial/activity linkage.
+      await query('DELETE FROM users WHERE id = $1', [userId]);
+    }
     
     // Log activity
     await query(

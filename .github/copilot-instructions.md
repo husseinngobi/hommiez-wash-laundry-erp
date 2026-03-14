@@ -57,7 +57,7 @@ router.get('/orders', authenticate, authorize('ADMIN', 'MANAGER'), getOrders);
 ```
 
 **Roles Hierarchy:** ADMIN > MANAGER > DESKTOP_AGENT
-See [RBAC_PERMISSIONS_MATRIX.md](../RBAC_PERMISSIONS_MATRIX.md) for detailed permissions.
+See RBAC_PERMISSIONS_MATRIX.md for detailed permissions.
 
 ### 4. Database Queries
 **Direct PostgreSQL via `query()` function - NO ORM**
@@ -77,14 +77,14 @@ const count = result.rowCount;
 ```
 
 ### 5. Error Handling
-Centralized in [backend/src/middleware/error.ts](../backend/src/middleware/error.ts):
+Centralized in backend/src/middleware/error.ts:
 - Automatically handles PostgreSQL errors (unique violations, foreign keys)
 - Use try-catch in controllers, let middleware format responses
 - Never expose raw PG errors in production
 
 ### 6. Frontend State Management
 **No Redux/Zustand** - Uses React Context + local state:
-- **AuthContext** ([frontend/src/contexts/AuthContext.tsx](../frontend/src/contexts/AuthContext.tsx)): User session, RBAC permissions, auto-logout
+- **AuthContext** (frontend/src/contexts/AuthContext.tsx): User session, RBAC permissions, auto-logout
 - **TanStack Query**: Server state (data fetching, caching) - check components for usage patterns
 - **Component state**: UI state only
 
@@ -195,7 +195,7 @@ AT_USERNAME=...
 - **Price items:** Soft delete (is_active = false) if used in existing orders
 
 ### Discount System
-Role-based limits (see [RBAC_PERMISSIONS_MATRIX.md](../RBAC_PERMISSIONS_MATRIX.md)):
+Role-based limits (see RBAC_PERMISSIONS_MATRIX.md):
 - DESKTOP_AGENT: Up to 10%
 - MANAGER: Up to 20%
 - ADMIN: Up to 50%
@@ -206,17 +206,17 @@ Role-based limits (see [RBAC_PERMISSIONS_MATRIX.md](../RBAC_PERMISSIONS_MATRIX.m
 - Timeout preference stored in users.session_timeout_minutes
 
 ### Financial Year
-- Fiscal year structure for reporting (see [FISCAL_YEAR_MANAGEMENT.md](../FISCAL_YEAR_MANAGEMENT.md))
+- Fiscal year structure for reporting (see FISCAL_YEAR_MANAGEMENT.md)
 - Accounting periods tracked in fiscal_years table
 
 ## Documentation Reference
 
 **Must-read before modifying:**
-- [RBAC_PERMISSIONS_MATRIX.md](../RBAC_PERMISSIONS_MATRIX.md) - Complete permissions
-- [WORKFLOW_GUIDE.md](../WORKFLOW_GUIDE.md) - Order lifecycle
-- [PAYMENT_SYSTEM_ANALYSIS.md](../PAYMENT_SYSTEM_ANALYSIS.md) - Payment architecture
-- [SECURITY.md](../SECURITY.md) - Security implementation
-- [DEPLOYMENT_GUIDE.md](../DEPLOYMENT_GUIDE.md) - Production deployment
+- RBAC_PERMISSIONS_MATRIX.md - Complete permissions
+- WORKFLOW_GUIDE.md - Order lifecycle
+- PAYMENT_SYSTEM_ANALYSIS.md - Payment architecture
+- SECURITY.md - Security implementation
+- DEPLOYMENT_GUIDE.md - Production deployment
 
 **50+ .md files available** - Search for specific topics (delivery, inventory, WhatsApp, etc.)
 

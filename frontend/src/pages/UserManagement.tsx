@@ -317,9 +317,12 @@ const UserManagement = () => {
       fetchActivityLogs();
     } catch (error) {
       console.error('Error rejecting user:', error);
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+        : 'Failed to reject user';
       toast({
         title: 'Error',
-        description: 'Failed to reject user',
+        description: errorMessage || 'Failed to reject user',
         variant: 'destructive',
       });
     }

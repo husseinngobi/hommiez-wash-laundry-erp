@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { API_ORIGIN } from '@/lib/api';
 import { resolveProfilePictureUrl } from '@/lib/profilePicture';
@@ -23,6 +24,7 @@ import {
   FileText,
   ClipboardCheck,
   KeyRound,
+  X,
 } from 'lucide-react';
 import lushLogo from '@/assets/lush_logo.png';
 
@@ -54,11 +56,13 @@ const secondaryNavigation = [
 interface SidebarProps {
   isOpen: boolean;
   hasInteracted?: boolean; // Track if user has manually toggled sidebar
+  onClose?: () => void;
 }
 
-export function Sidebar({ isOpen, hasInteracted = false }: SidebarProps) {
+export function Sidebar({ isOpen, hasInteracted = false, onClose }: SidebarProps) {
+  const isMobile = useIsMobile();
   const location = useLocation();
-  const { user, logout, isAdmin, isCashier, isManager, canAccessSettings, canAccessReports, canAccessInventory, canAccessUserManagement } = useAuth();
+  const { user, isAdmin, isCashier, isManager, canAccessSettings } = useAuth();
 
   // Filter main navigation based on role
   const visibleNavigation = navigation.filter(item => {
@@ -121,12 +125,22 @@ export function Sidebar({ isOpen, hasInteracted = false }: SidebarProps) {
       !isOpen && "-translate-x-full"
     )}>
       {/* Logo */}
-      <div className="flex h-16 sm:h-20 items-center justify-center border-b border-sidebar-border px-4 flex-shrink-0">
+      <div className="flex h-16 sm:h-20 items-center justify-between border-b border-sidebar-border px-4 flex-shrink-0">
         <img
           src={lushLogo}
           alt="Lush Dry Cleaners"
           className="h-12 sm:h-14 w-auto object-contain"
         />
+        {isMobile && onClose && (
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-sidebar-accent transition-colors"
+            aria-label="Close menu"
+            title="Close menu"
+          >
+            <X className="h-5 w-5 text-sidebar-foreground/80" />
+          </button>
+        )}
       </div>
 
       {/* Main Navigation - Scrollable */}
@@ -214,14 +228,6 @@ export function Sidebar({ isOpen, hasInteracted = false }: SidebarProps) {
             </p>
           </div>
         </Link>
-        <button 
-          onClick={logout}
-          className="mt-2 w-full flex items-center justify-center gap-2 p-2 rounded-lg hover:bg-sidebar-accent text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
-          title="Logout"
-        >
-          <LogOut className="h-4 w-4 flex-shrink-0" />
-          <span className="text-sm">Logout</span>
-        </button>
       </div>
     </aside>
   );
