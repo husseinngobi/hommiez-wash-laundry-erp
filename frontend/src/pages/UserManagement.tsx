@@ -1,5 +1,6 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { API_BASE_URL, API_ORIGIN } from '@/lib/api';
+import { resolveProfilePictureUrl } from '@/lib/profilePicture';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -67,7 +68,7 @@ interface User {
   email: string;
   full_name: string;
   phone: string;
-  role: 'ADMIN' | 'CASHIER';
+  role: 'ADMIN' | 'MANAGER' | 'DESKTOP_AGENT';
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED';
   created_at: string;
   updated_at: string;
@@ -79,6 +80,7 @@ interface User {
   approved_by_name?: string;
   must_change_password?: boolean;
   profile_picture?: string;
+  profile_picture_url?: string;
 }
 
 interface LoginHistory {
@@ -692,7 +694,7 @@ const UserManagement = () => {
                             <div className="flex items-center gap-3">
                               <Avatar>
                                 <AvatarImage 
-                                  src={user.profile_picture ? `${API_ORIGIN}${user.profile_picture}` : undefined} 
+                                  src={resolveProfilePictureUrl(user, API_ORIGIN)} 
                                   alt={user.full_name} 
                                 />
                                 <AvatarFallback>
@@ -1007,7 +1009,7 @@ const UserManagement = () => {
                 <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6 pb-4 border-b">
                   <Avatar className="h-24 w-24 flex-shrink-0">
                     <AvatarImage 
-                      src={selectedUser.profile_picture ? `${API_ORIGIN}${selectedUser.profile_picture}` : undefined} 
+                      src={resolveProfilePictureUrl(selectedUser, API_ORIGIN)} 
                       alt={selectedUser.full_name} 
                     />
                     <AvatarFallback className="text-2xl">

@@ -13,6 +13,7 @@ interface User {
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
   is_system_admin?: boolean;
   profile_picture?: string;
+  profile_picture_url?: string;
   session_timeout_minutes?: number;  // User's session timeout preference (5-30 minutes)
   must_change_password?: boolean;  // Flag to force password change on next login
   auth_provider?: 'LOCAL' | null;

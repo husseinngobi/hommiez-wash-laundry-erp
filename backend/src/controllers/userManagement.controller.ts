@@ -41,7 +41,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     let queryText = `
       SELECT 
         u.id, u.email, u.full_name, u.phone, u.role, u.status, 
-        u.created_at, u.updated_at, u.last_login, u.profile_picture,
+        u.created_at, u.updated_at, u.last_login, u.profile_picture, u.profile_picture_url,
         c.full_name as created_by_name
       FROM users u
       LEFT JOIN users c ON u.created_by = c.id
@@ -77,7 +77,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     
     // Get total count
     const countQuery = queryText.replace(
-      'SELECT \n        u.id, u.email, u.full_name, u.phone, u.role, u.status, \n        u.created_at, u.updated_at, u.last_login, u.profile_picture,\n        c.full_name as created_by_name\n      FROM users u',
+      'SELECT \n        u.id, u.email, u.full_name, u.phone, u.role, u.status, \n        u.created_at, u.updated_at, u.last_login, u.profile_picture, u.profile_picture_url,\n        c.full_name as created_by_name\n      FROM users u',
       'SELECT COUNT(*) FROM users u'
     );
     const countResult = await query(countQuery, params);

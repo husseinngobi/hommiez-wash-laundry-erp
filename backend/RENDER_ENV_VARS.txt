@@ -33,6 +33,13 @@ FRONTEND_URL=https://laundrosys.netlify.app
 SYSTEM_ADMIN_EMAILS=husseinibram555@gmail.com
 
 # ============================================
+# SUPABASE STORAGE (PROFILE PICTURES)
+# ============================================
+SUPABASE_URL=https://xrkptygpwjdizvhkgvpo.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_STORAGE_BUCKET=profile-pictures
+
+# ============================================
 # OPTIONAL (Can enable later)
 # ============================================
 SMS_ENABLED=false

@@ -8,6 +8,7 @@ import { AuthRequest } from '../middleware/auth';
 import { UserRole, UserStatus } from '../models/User';
 import { userNotificationService } from '../services/user-notification.service';
 import { isSystemAdminEmail } from '../utils/systemAdmin';
+import { uploadProfileImageToSupabase } from '../services/supabaseStorage.service';
 import { 
   logFailedLogin, 
   logSuccessfulLogin, 
@@ -84,7 +85,7 @@ export const login = async (req: AuthRequest, res: Response) => {
     const userAgent = req.headers['user-agent'] || 'unknown';
     
     const result = await query(
-      'SELECT id, email, password, full_name, phone, role, status, profile_picture FROM users WHERE email = $1',
+      'SELECT id, email, password, full_name, phone, role, status, profile_picture, profile_picture_url FROM users WHERE email = $1',
       [email]
     );
     
@@ -143,6 +144,7 @@ export const login = async (req: AuthRequest, res: Response) => {
         full_name: user.full_name, 
         role: user.role,
         profile_picture: user.profile_picture,
+        profile_picture_url: user.profile_picture_url,
         is_system_admin: isSystemAdminEmail(user.email)
       },
       config.jwt.secret,
@@ -152,7 +154,7 @@ export const login = async (req: AuthRequest, res: Response) => {
     // Update last_login timestamp and get updated user data
     const updatedUserResult = await query(
       `UPDATE users SET last_login = NOW() WHERE id = $1 
-       RETURNING id, email, full_name, phone, role, status, profile_picture, 
+       RETURNING id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
                  created_at, updated_at, last_login`,
       [user.id]
     );
@@ -192,7 +194,7 @@ export const login = async (req: AuthRequest, res: Response) => {
 export const getMe = async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT id, email, full_name, phone, role, status, profile_picture, 
+      `SELECT id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
               created_at, updated_at, last_login, auth_provider, max_bargain_amount 
        FROM users WHERE id = $1`,
       [req.user!.id]
@@ -350,7 +352,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
       `UPDATE users 
        SET full_name = $1, phone = $2, updated_at = CURRENT_TIMESTAMP 
        WHERE id = $3
-       RETURNING id, email, full_name, phone, role, status, profile_picture, created_at, updated_at, last_login, auth_provider`,
+       RETURNING id, email, full_name, phone, role, status, profile_picture, profile_picture_url, created_at, updated_at, last_login, auth_provider`,
       [full_name, phone, userId]
     );
     
@@ -382,24 +384,27 @@ export const uploadProfilePicture = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
     
-    // Store the file path relative to the uploads directory
-    // The file has already been saved by multer to uploads/profiles/
-    const profilePicturePath = `/uploads/profiles/${file.filename}`;
-    
-    // Update user's profile picture in database
+    const uploadResult = await uploadProfileImageToSupabase(file, userId);
+
+    // Update user's profile picture in database with persistent URL storage.
     const result = await query(
       `UPDATE users 
-       SET profile_picture = $1, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $2
-       RETURNING profile_picture`,
-      [profilePicturePath, userId]
+       SET profile_picture = $1,
+           profile_picture_url = $2,
+           profile_picture_storage = 'SUPABASE',
+           profile_picture_migrated_at = NOW(),
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $3
+       RETURNING profile_picture, profile_picture_url`,
+      [uploadResult.publicUrl, uploadResult.publicUrl, userId]
     );
-    
-    console.log(`✅ Profile picture updated for user ${userId}: ${profilePicturePath}`);
+
+    console.log(`✅ Profile picture updated for user ${userId}: ${uploadResult.publicUrl}`);
     
     res.json({
       message: 'Profile picture uploaded successfully',
-      profile_picture: result.rows[0].profile_picture
+      profile_picture: result.rows[0].profile_picture,
+      profile_picture_url: result.rows[0].profile_picture_url
     });
   } catch (error) {
     console.error('Upload profile picture error:', error);

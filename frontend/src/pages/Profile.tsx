@@ -11,6 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { API_BASE_URL, API_ORIGIN } from '@/lib/api';
+import { resolveProfilePictureUrl } from '@/lib/profilePicture';
 import axios from 'axios';
 
 const Profile = () => {
@@ -157,13 +158,14 @@ const Profile = () => {
       );
 
       console.log('✅ Profile picture uploaded:', response.data.profile_picture);
-      console.log('📁 Full image URL will be:', `${API_ORIGIN}${response.data.profile_picture}`);
+      console.log('📁 Full image URL will be:', response.data.profile_picture_url || response.data.profile_picture);
 
       // Update local user context
       if (updateUser) {
         updateUser({
           ...user!,
           profile_picture: response.data.profile_picture,
+          profile_picture_url: response.data.profile_picture_url,
         });
       }
 
@@ -342,14 +344,7 @@ const Profile = () => {
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
               <Avatar className="h-24 w-24 flex-shrink-0">
                 <AvatarImage 
-                  src={
-                    profilePicturePreview || 
-                    (user.profile_picture?.startsWith('http') 
-                      ? user.profile_picture 
-                      : user.profile_picture 
-                        ? `${API_ORIGIN}${user.profile_picture}` 
-                        : undefined)
-                  } 
+                  src={profilePicturePreview || resolveProfilePictureUrl(user, API_ORIGIN)} 
                 />
                 <AvatarFallback className="text-2xl bg-gradient-to-br from-blue-500 to-purple-600 text-white">
                   {getInitials(user.full_name)}

@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { API_ORIGIN } from '@/lib/api';
+import { resolveProfilePictureUrl } from '@/lib/profilePicture';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -175,14 +176,10 @@ export function Sidebar({ isOpen, hasInteracted = false }: SidebarProps) {
           to="/profile"
           className="flex items-center gap-2 sm:gap-3 p-2 rounded-lg hover:bg-sidebar-accent transition-colors group"
         >
-          {user?.profile_picture ? (
+          {(user?.profile_picture || user?.profile_picture_url) ? (
             <>
               <img
-                src={
-                  user.profile_picture.startsWith('http')
-                    ? user.profile_picture
-                    : `${API_ORIGIN}${user.profile_picture}`
-                }
+                src={resolveProfilePictureUrl(user, API_ORIGIN)}
                 alt={user.full_name}
                 className="h-9 w-9 sm:h-10 sm:w-10 rounded-full object-cover flex-shrink-0"
                 onError={(e) => {

@@ -1,20 +1,8 @@
 import multer from 'multer';
-import path from 'path';
 import { Request } from 'express';
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: (req: Request, file: Express.Multer.File, cb) => {
-    cb(null, 'uploads/profiles/');
-  },
-  filename: (req: Request, file: Express.Multer.File, cb) => {
-    // Get user ID from request
-    const userId = (req as any).user?.id || 'unknown';
-    // Generate unique filename: userId_timestamp_originalname
-    const uniqueName = `${userId}_${Date.now()}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  }
-});
+// Keep profile uploads in memory so they can be sent to persistent storage.
+const storage = multer.memoryStorage();
 
 // File filter to accept only images
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
