@@ -9,6 +9,13 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Loader2, Mail, Lock, Sparkles, UserPlus, Eye, EyeOff } from 'lucide-react';
 
+interface LoginPageError extends Error {
+  locked?: boolean;
+  locked_until?: string;
+}
+
+const isLoginPageError = (error: unknown): error is LoginPageError => error instanceof Error;
+
 export default function Login() {
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
@@ -16,7 +23,27 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [lockedUntil, setLockedUntil] = useState<Date | null>(null);
+  const [countdown, setCountdown] = useState(0);
   const { login } = useAuth();
+
+  // Countdown timer for account lockout
+  useEffect(() => {
+    if (!lockedUntil) return;
+    const update = () => {
+      const remaining = Math.ceil((lockedUntil.getTime() - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockedUntil(null);
+        setCountdown(0);
+        setError('');
+      } else {
+        setCountdown(remaining);
+      }
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [lockedUntil]);
 
   // Check for OAuth error messages in URL
   useEffect(() => {
@@ -41,6 +68,11 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    // Block submission if account is still locked
+    if (lockedUntil && lockedUntil > new Date()) {
+      return;
+    }
     
     // Validation
     if (!email || !password) {
@@ -60,14 +92,21 @@ export default function Login() {
     } catch (err: unknown) {
       // Provide specific error messages
       const message = err instanceof Error ? err.message : '';
-      if (message.includes('Incorrect login credentials') || message.includes('Invalid credentials') || message.includes('401')) {
-        setError('❌ Incorrect login credentials. Please try again.');
+
+      if (isLoginPageError(err) && err.locked && err.locked_until) {
+        // Per-account lockout with countdown timer
+        setLockedUntil(new Date(err.locked_until));
+        setError(`🔒 ${message}`);
+      } else if (message.includes('locked') || message.includes('Too many failed')) {
+        setError(`🔒 ${message}`);
+      } else if (message.includes('Incorrect login credentials') || message.includes('Invalid credentials')) {
+        setError(`❌ ${message}`);
       } else if (message.includes('rejected')) {
         setError(`❌ ${message}`);
-      } else if (message.includes('pending')) {
-        setError('⏳ Your account is pending approval. Please contact an administrator.');
+      } else if (message.includes('pending') || message.includes('awaiting approval')) {
+        setError(`⏳ ${message}`);
       } else if (message.includes('suspended')) {
-        setError('🚫 Your account has been suspended. Please contact an administrator.');
+        setError(`🚫 ${message}`);
       } else {
         setError(message || '⚠️ Login failed. Please try again.');
       }
@@ -134,7 +173,7 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-8 sm:pl-10 h-9 sm:h-10 text-xs sm:text-sm"
                     required
-                    disabled={loading}
+                    disabled={loading || !!lockedUntil}
                   />
                 </div>
               </div>
@@ -159,13 +198,13 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-8 sm:pl-10 pr-9 h-9 sm:h-10 text-xs sm:text-sm"
                     required
-                    disabled={loading}
+                    disabled={loading || !!lockedUntil}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-2.5 sm:right-3 top-2.5 sm:top-3 text-muted-foreground hover:text-foreground transition-colors"
-                    disabled={loading}
+                    disabled={loading || !!lockedUntil}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -179,13 +218,15 @@ export default function Login() {
               <Button
                 type="submit"
                 className="w-full h-9 sm:h-10 text-xs sm:text-sm font-semibold mt-4"
-                disabled={loading}
+                disabled={loading || !!lockedUntil}
               >
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Signing in...
                   </>
+                ) : lockedUntil ? (
+                  `🔒 Locked — try again in ${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')}`
                 ) : (
                   'Sign In'
                 )}

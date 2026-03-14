@@ -84,8 +84,13 @@ export const login = async (req: AuthRequest, res: Response) => {
     const clientIP = req.ip || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
     
+    const MAX_FAILED_ATTEMPTS = 5;
+    const LOCKOUT_DURATION_MINUTES = 30;
+
     const result = await query(
-      'SELECT id, email, password, full_name, phone, role, status, profile_picture, profile_picture_url FROM users WHERE email = $1',
+      `SELECT id, email, password, full_name, phone, role, status, profile_picture, profile_picture_url,
+              failed_login_attempts, account_locked_until, last_failed_login
+       FROM users WHERE email = $1`,
       [email]
     );
     
@@ -98,6 +103,20 @@ export const login = async (req: AuthRequest, res: Response) => {
     }
     
     const user = result.rows[0];
+
+    // Check if account is currently locked out (per-account brute-force protection)
+    if (user.account_locked_until && new Date(user.account_locked_until) > new Date()) {
+      const lockedUntil = new Date(user.account_locked_until);
+      const remainingMs = lockedUntil.getTime() - Date.now();
+      const remainingMinutes = Math.ceil(remainingMs / 60000);
+      await logFailedLogin(email, clientIP, userAgent, `Account locked until ${lockedUntil.toISOString()}`);
+      return res.status(429).json({
+        error: `Account is temporarily locked due to too many failed login attempts. Please try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}.`,
+        locked: true,
+        locked_until: lockedUntil.toISOString(),
+        remaining_minutes: remainingMinutes,
+      });
+    }
     
     // Check if user is active
     if (user.status !== UserStatus.ACTIVE) {
@@ -131,9 +150,41 @@ export const login = async (req: AuthRequest, res: Response) => {
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
+      // Increment failed attempt counter and potentially lock the account
+      const newAttempts = (user.failed_login_attempts || 0) + 1;
+      let lockUntil: Date | null = null;
+      if (newAttempts >= MAX_FAILED_ATTEMPTS) {
+        lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000);
+      }
+
+      await query(
+        `UPDATE users
+         SET failed_login_attempts = $1,
+             last_failed_login = NOW(),
+             account_locked_until = $2
+         WHERE id = $3`,
+        [newAttempts, lockUntil, user.id]
+      );
+
       // Log failed login attempt - wrong password
-      await logFailedLogin(email, clientIP, userAgent, 'Invalid password');
-      return res.status(401).json({ error: 'Incorrect login credentials' });
+      await logFailedLogin(email, clientIP, userAgent, `Invalid password (attempt ${newAttempts})`);
+
+      if (lockUntil) {
+        await logAccountLocked(user.id, email, clientIP, newAttempts);
+        const remainingMinutes = LOCKOUT_DURATION_MINUTES;
+        return res.status(429).json({
+          error: `Too many failed login attempts. Your account has been locked for ${remainingMinutes} minutes.`,
+          locked: true,
+          locked_until: lockUntil.toISOString(),
+          remaining_minutes: remainingMinutes,
+        });
+      }
+
+      const attemptsLeft = MAX_FAILED_ATTEMPTS - newAttempts;
+      return res.status(401).json({
+        error: `Incorrect login credentials. ${attemptsLeft} attempt${attemptsLeft !== 1 ? 's' : ''} remaining before account is locked.`,
+        attempts_remaining: attemptsLeft,
+      });
     }
     
     // Generate JWT token
@@ -151,9 +202,14 @@ export const login = async (req: AuthRequest, res: Response) => {
       { expiresIn: '7d' }  // Fixed expiration time
     );
     
-    // Update last_login timestamp and get updated user data
+    // Update last_login timestamp, reset failed attempts, and get updated user data
     const updatedUserResult = await query(
-      `UPDATE users SET last_login = NOW() WHERE id = $1 
+      `UPDATE users
+       SET last_login = NOW(),
+           failed_login_attempts = 0,
+           account_locked_until = NULL,
+           last_failed_login = NULL
+       WHERE id = $1 
        RETURNING id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
                  created_at, updated_at, last_login`,
       [user.id]

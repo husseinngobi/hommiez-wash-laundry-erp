@@ -8,6 +8,9 @@ export default defineConfig(() => ({
     host: "::",
     port: 8080,
   },
+  build: {
+    chunkSizeWarningLimit: 2500,
+  },
   plugins: [react()],
   resolve: {
     alias: {

@@ -45,6 +45,25 @@ interface AuthContextType {
   loading: boolean;
 }
 
+interface LoginResponse {
+  token: string;
+  user: User;
+  error?: string;
+  locked?: boolean;
+  locked_until?: string;
+  remaining_minutes?: number;
+  attempts_remaining?: number;
+}
+
+interface LoginError extends Error {
+  locked?: boolean;
+  locked_until?: string;
+  remaining_minutes?: number;
+  attempts_remaining?: number;
+}
+
+const isLoginError = (error: unknown): error is LoginError => error instanceof Error;
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Session timeout constants
@@ -210,11 +229,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       console.log('✅ Login response status:', response.status);
-      const data = await response.json();
+      const data: LoginResponse = await response.json();
       console.log('📦 Login response data:', data);
 
       if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
+        const loginErr: LoginError = new Error(data.error || 'Login failed');
+        if (data.locked) {
+          loginErr.locked = true;
+          loginErr.locked_until = data.locked_until;
+          loginErr.remaining_minutes = data.remaining_minutes;
+        }
+        if (data.attempts_remaining !== undefined) {
+          loginErr.attempts_remaining = data.attempts_remaining;
+        }
+        throw loginErr;
       }
 
       // Save to state and localStorage
@@ -239,7 +267,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('❌ Error type:', error instanceof Error ? 'Error' : typeof error);
       const message = error instanceof Error ? error.message : 'Login failed';
       console.error('❌ Error message:', message);
-      throw new Error(message);
+      const rethrow: LoginError = new Error(message);
+      if (isLoginError(error) && error.locked) {
+        rethrow.locked = true;
+        rethrow.locked_until = error.locked_until;
+        rethrow.remaining_minutes = error.remaining_minutes;
+      }
+      if (isLoginError(error) && error.attempts_remaining !== undefined) {
+        rethrow.attempts_remaining = error.attempts_remaining;
+      }
+      throw rethrow;
     }
   };
 

@@ -1,4 +1,4 @@
-# Lush Laundry ERP - AI Agent Instructions
+﻿# Lush Laundry ERP - AI Agent Instructions
 
 ## Architecture Overview
 
@@ -6,31 +6,31 @@
 
 ```
 lush_laundry/
-├── backend/           # API server (port 5000)
-│   ├── src/
-│   │   ├── controllers/   # Business logic (AuthRequest pattern)
-│   │   ├── routes/        # 25+ route modules → routes/index.ts
-│   │   ├── middleware/    # auth.ts (JWT + RBAC), error.ts, validation.ts
-│   │   ├── database/      # Direct SQL via query() - NO ORM
-│   │   └── types/         # TypeScript interfaces
-│   └── migrations/        # SQL migration scripts
-└── frontend/
-    └── src/
-        ├── pages/         # Route components
-        ├── components/    # shadcn/ui + custom
-        ├── contexts/      # AuthContext (session management)
-        └── hooks/         # Custom React hooks
+â”œâ”€â”€ backend/           # API server (port 5000)
+â”‚   â”œâ”€â”€ src/
+â”‚   â”‚   â”œâ”€â”€ controllers/   # Business logic (AuthRequest pattern)
+â”‚   â”‚   â”œâ”€â”€ routes/        # 25+ route modules â†’ routes/index.ts
+â”‚   â”‚   â”œâ”€â”€ middleware/    # auth.ts (JWT + RBAC), error.ts, validation.ts
+â”‚   â”‚   â”œâ”€â”€ database/      # Direct SQL via query() - NO ORM
+â”‚   â”‚   â””â”€â”€ types/         # TypeScript interfaces
+â”‚   â””â”€â”€ migrations/        # SQL migration scripts
+â””â”€â”€ frontend/
+    â””â”€â”€ src/
+        â”œâ”€â”€ pages/         # Route components
+        â”œâ”€â”€ components/    # shadcn/ui + custom
+        â”œâ”€â”€ contexts/      # AuthContext (session management)
+        â””â”€â”€ hooks/         # Custom React hooks
 ```
 
 ## Critical Patterns
 
 ### 1. Money Handling (NEVER use floats)
 ```typescript
-// ✅ CORRECT - Always use integers (cents)
+// CORRECT - Always use integers (cents)
 const price = 5000; // $50.00 or UGX 5,000
 const discount = 500; // $5.00 or UGX 500
 
-// ❌ WRONG - Never use floats
+// WRONG - Never use floats
 const price = 50.00; // Will cause precision errors
 ```
 
@@ -38,7 +38,7 @@ const price = 50.00; // Will cause precision errors
 **All date queries MUST use Africa/Nairobi (EAT = UTC+3)**
 
 ```typescript
-// ✅ Example from dashboard.controller.ts
+// Example from dashboard.controller.ts
 const filter = "WHERE DATE(created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi') = DATE(NOW() AT TIME ZONE 'Africa/Nairobi')";
 ```
 
@@ -56,7 +56,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
 router.get('/orders', authenticate, authorize('ADMIN', 'MANAGER'), getOrders);
 ```
 
-**Roles Hierarchy:** ADMIN > MANAGER > DESKTOP_AGENT  
+**Roles Hierarchy:** ADMIN > MANAGER > DESKTOP_AGENT
 See [RBAC_PERMISSIONS_MATRIX.md](../RBAC_PERMISSIONS_MATRIX.md) for detailed permissions.
 
 ### 4. Database Queries
@@ -90,8 +90,8 @@ Centralized in [backend/src/middleware/error.ts](../backend/src/middleware/error
 
 ### 7. Order Workflow (Manual Status Updates)
 ```
-RECEIVED → PROCESSING → READY → DELIVERED
-                              ↓
+RECEIVED â†’ PROCESSING â†’ READY â†’ DELIVERED
+                              â†“
                          CANCELLED
 ```
 **Key Rules:**
@@ -150,7 +150,7 @@ Agent:    agent@lushlaundry.com / Agent123!
 1. **Controllers:** Export async functions, use try-catch, return res.json()
 2. **Routes:** Import from routes/index.ts (central aggregator)
 3. **Validation:** Use express-validator in middleware/validation.ts
-4. **Logging:** Use console.log with emojis (🚀, ✅, ❌) for visibility
+4. **Logging:** Use console.log with emojis for visibility
 5. **File uploads:** Multer middleware, stored in backend/uploads/
 
 ### Frontend
@@ -238,7 +238,7 @@ node backend/show_customer_payments.js    # Payment debugging
 
 ## Common Pitfalls
 
-❌ **Don't:**
+Don't:
 - Use floating-point for money calculations
 - Forget timezone conversion in date queries
 - Bypass RBAC checks (always use authorize() middleware)
@@ -246,7 +246,7 @@ node backend/show_customer_payments.js    # Payment debugging
 - Hardcode API URLs (use config/index.ts)
 - Use ORM methods (this project uses raw SQL)
 
-✅ **Do:**
+Do:
 - Store money as integers (cents)
 - Use parameterized queries ($1, $2) for SQL injection prevention
 - Check req.user.role before executing sensitive operations
@@ -256,5 +256,5 @@ node backend/show_customer_payments.js    # Payment debugging
 
 ---
 
-**Last Updated:** February 2026  
+**Last Updated:** February 2026
 **For questions:** Check extensive .md documentation first, then examine similar existing implementations.

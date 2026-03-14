@@ -6,13 +6,12 @@ import { Request, Response, NextFunction } from 'express';
 // Rate limiter for login attempts - prevents brute force attacks
 export const loginLimiter = rateLimit({
   windowMs: 30 * 60 * 1000, // 30 minutes
-  max: 4, // Lock after 4 failed login attempts
+  max: 15, // Secondary IP-level protection (per-account DB lockout fires first at 5 attempts)
   message: {
-    error: 'Too many failed login attempts. Please wait 30 minutes before trying again.'
+    error: 'Too many login attempts from this IP address. Please wait 30 minutes before trying again.'
   },
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  // Only count failed login attempts toward lockout.
+  standardHeaders: true,
+  legacyHeaders: false,
   skipSuccessfulRequests: true,
   skipFailedRequests: false,
 });
