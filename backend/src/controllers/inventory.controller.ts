@@ -31,6 +31,7 @@ export const getAllInventoryItems = async (req: AuthRequest, res: Response) => {
         updated_at
       FROM inventory_items 
       WHERE 1=1
+        AND COALESCE(is_active, TRUE) = TRUE
     `;
     const values: any[] = [];
     let paramCount = 1;

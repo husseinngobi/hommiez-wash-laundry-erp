@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import pool from '../config/database';
-import { authenticate } from '../middleware/auth';
+import { authenticate, authorize } from '../middleware/auth';
+import { UserRole } from '../models/User';
 
 const router = Router();
 
@@ -35,7 +36,11 @@ router.get('/', authenticate as any, async (req: Request, res: Response) => {
 });
 
 // PUT /api/automation-settings - Update automation settings
-router.put('/', authenticate as any, async (req: Request, res: Response) => {
+router.put(
+  '/',
+  authenticate as any,
+  authorize(UserRole.ADMIN, UserRole.MANAGER) as any,
+  async (req: Request, res: Response) => {
   const {
     whatsapp_auto_send_receipt,
     whatsapp_auto_send_ready,
@@ -43,7 +48,7 @@ router.put('/', authenticate as any, async (req: Request, res: Response) => {
   } = req.body;
 
   try {
-    const userId = (req as any).user.userId;
+    const userId = (req as any).user.id;
 
     // Update each setting
     const updates = [

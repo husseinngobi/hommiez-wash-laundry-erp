@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS fiscal_years (
   CONSTRAINT unique_fiscal_year UNIQUE (start_date, end_date)
 );
 
--- Table for year-end closing entries (snapshot of accounts)
+-- Table for year-end closing entries (snapshot of accounts) 
 CREATE TABLE IF NOT EXISTS year_end_snapshots (
   id SERIAL PRIMARY KEY,
   fiscal_year_id INTEGER REFERENCES fiscal_years(id) ON DELETE CASCADE,

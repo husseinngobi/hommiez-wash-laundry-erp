@@ -113,9 +113,10 @@ export const sendOrderReminder = async (req: AuthRequest, res: Response) => {
 function generateReminderMessage(order: any): string {
   const businessName = process.env.BUSINESS_NAME || 'Lush Laundry';
   const businessPhone = process.env.BUSINESS_PHONE || '+256700000000';
+  const normalizedOrderStatus = String(order.order_status || '').toLowerCase();
 
   // READY for collection
-  if (order.order_status === 'READY') {
+  if (normalizedOrderStatus === 'ready') {
     if (order.payment_status === 'PAID') {
       return `Hello ${order.customer_name}! 🎉
 
@@ -154,7 +155,7 @@ Please make payment and collect your items.
   }
 
   // DELIVERED but payment pending
-  if (order.order_status === 'DELIVERED' && order.payment_status !== 'PAID') {
+  if (normalizedOrderStatus === 'delivered' && order.payment_status !== 'PAID') {
     const daysOverdue = order.due_date 
       ? Math.floor((new Date().getTime() - new Date(order.due_date).getTime()) / (1000 * 60 * 60 * 24))
       : 0;
@@ -190,7 +191,7 @@ ${businessName}
   }
 
   // PROCESSING - general update
-  if (order.order_status === 'PROCESSING') {
+  if (normalizedOrderStatus === 'processing') {
     return `Hello ${order.customer_name}! 👕
 
 Your order ${order.order_number} is currently being processed.
@@ -325,7 +326,7 @@ export const getOrdersNeedingReminders = async (req: AuthRequest, res: Response)
           c.name as customer_name, c.phone as customer_phone
         FROM orders o
         JOIN customers c ON o.customer_id = c.id
-        WHERE o.status = 'READY'
+        WHERE o.status = 'ready'
           AND c.sms_opt_in = true
           AND o.updated_at < NOW() - INTERVAL '${settings.reminders.ready_for_collection.after_days} days'
         ORDER BY o.updated_at ASC
@@ -347,7 +348,7 @@ export const getOrdersNeedingReminders = async (req: AuthRequest, res: Response)
           c.name as customer_name, c.phone as customer_phone
         FROM orders o
         JOIN customers c ON o.customer_id = c.id
-        WHERE o.status = 'DELIVERED'
+        WHERE o.status = 'delivered'
           AND o.payment_status IN ('UNPAID', 'PARTIAL')
           AND o.due_date < CURRENT_DATE
           AND c.sms_opt_in = true

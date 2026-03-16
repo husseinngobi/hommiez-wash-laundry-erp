@@ -212,16 +212,35 @@ export const getPaymentById = async (req: AuthRequest, res: Response) => {
 
     const result = await query(
       `SELECT 
-        o.*,
+        p.id,
+        p.order_id,
+        p.customer_id,
+        p.amount,
+        p.payment_method,
+        p.transaction_reference,
+        p.payment_date,
+        p.notes,
+        p.created_by,
+        p.created_at,
+        p.is_refund,
+        p.refund_reason,
+        p.refund_date,
+        p.refunded_payment_id,
+        o.order_number,
+        o.payment_status,
+        o.total_amount,
+        o.amount_paid,
+        o.balance,
         c.name as customer_name,
         c.phone as customer_phone,
         c.email as customer_email,
         u.full_name as received_by,
         u.email as receiver_email
-       FROM orders o
-       LEFT JOIN customers c ON o.customer_id = c.id
-       LEFT JOIN users u ON o.user_id = u.id
-       WHERE o.id = $1`,
+       FROM payments p
+       LEFT JOIN orders o ON p.order_id = o.id
+       LEFT JOIN customers c ON p.customer_id = c.id
+       LEFT JOIN users u ON p.created_by = u.id
+       WHERE p.id = $1`,
       [id]
     );
 
@@ -229,16 +248,19 @@ export const getPaymentById = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Payment not found' });
     }
 
-    // Get order items
-    const items = await query(
-      `SELECT 
-        oi.*,
-        pi.name as item_name
-       FROM order_items oi
-       LEFT JOIN price_items pi ON oi.price_item_id = pi.id
-       WHERE oi.order_id = $1`,
-      [id]
-    );
+    // Get order items for the payment's order if available
+    let items: { rows: any[] } = { rows: [] };
+    if (result.rows[0].order_id) {
+      items = await query(
+        `SELECT 
+          oi.*,
+          pi.name as item_name
+         FROM order_items oi
+         LEFT JOIN price_items pi ON oi.price_item_id = pi.id
+         WHERE oi.order_id = $1`,
+        [result.rows[0].order_id]
+      );
+    }
 
     res.json({
       payment: result.rows[0],

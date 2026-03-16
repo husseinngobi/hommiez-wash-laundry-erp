@@ -24,7 +24,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
     if (userRole !== 'ADMIN') {
       whereClause += ` AND o.status != 'cancelled'`;
     }
-    
+
     // Search by order number, customer name, or phone
     if (search) {
       whereClause += ` AND (
@@ -142,7 +142,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
     if (orderResult.rows.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    
+
     // Get order items
     const itemsResult = await query(
       `SELECT oi.*, p.name as item_name, p.category, p.item_id
@@ -790,7 +790,7 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Order not found' });
     }
     const currentOrder = currentOrderResult.rows[0];
-    
+
     const updates: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -951,7 +951,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     if (orderBeforeUpdate.rows.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    
+
     const oldStatus = orderBeforeUpdate.rows[0].status;
     const orderNumber = orderBeforeUpdate.rows[0].order_number;
     const customerName = orderBeforeUpdate.rows[0].customer_name;
