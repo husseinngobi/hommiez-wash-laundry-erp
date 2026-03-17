@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import pool from '../config/database';
+import { query } from '../config/database';
 import { authenticate, authorize } from '../middleware/auth';
 import { UserRole } from '../models/User';
 
@@ -8,7 +8,7 @@ const router = Router();
 // GET /api/automation-settings - Get all automation settings
 router.get('/', authenticate as any, async (req: Request, res: Response) => {
   try {
-    const result = await pool.query(`
+    const result = await query(`
       SELECT setting_key, setting_value, description, updated_at
       FROM automation_settings
       ORDER BY setting_key
@@ -58,7 +58,7 @@ router.put(
     ].filter(setting => setting.value !== undefined);
 
     for (const setting of updates) {
-      await pool.query(`
+      await query(`
         UPDATE automation_settings
         SET setting_value = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2
         WHERE setting_key = $3
@@ -66,7 +66,7 @@ router.put(
     }
 
     // Fetch updated settings
-    const result = await pool.query(`
+    const result = await query(`
       SELECT setting_key, setting_value, description, updated_at
       FROM automation_settings
       ORDER BY setting_key
