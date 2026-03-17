@@ -150,7 +150,6 @@ export const getPendingUsers = async (req: AuthRequest, res: Response) => {
 export const approveUser = async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
-    const { role } = req.body; // Optional role to assign during approval
     const adminId = req.user?.id;
     
     // Check if user exists and is pending
@@ -173,22 +172,14 @@ export const approveUser = async (req: AuthRequest, res: Response) => {
     if (user.status !== UserStatus.PENDING) {
       return res.status(400).json({ error: 'User is not awaiting approval' });
     }
-    
-    // Determine role to assign (use provided role or keep current)
-    const assignedRole = role || user.role;
-    
-    // Validate role if provided
-    if (role && !['ADMIN', 'MANAGER', 'DESKTOP_AGENT'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role specified' });
-    }
-    
-    // Approve user and assign role
+
+    // Approve user only. Keep role selected during registration.
     const result = await query(
       `UPDATE users 
-       SET status = $1, role = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3
+       SET status = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
        RETURNING id, email, full_name, role, status`,
-      [UserStatus.ACTIVE, assignedRole, userId]
+      [UserStatus.ACTIVE, userId]
     );
 
     const approvedUser = result.rows[0];
