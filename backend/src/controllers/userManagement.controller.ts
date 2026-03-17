@@ -203,22 +203,26 @@ export const approveUser = async (req: AuthRequest, res: Response) => {
       // Don't fail approval if email fails
     });
     
-    // Log activity
-    await query(
-      `INSERT INTO activity_logs (user_id, user_email, user_name, user_role, action, resource_type, resource_id, details, ip_address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        adminId,
-        req.user?.email,
-        req.user?.full_name,
-        req.user?.role,
-        'APPROVE_USER',
-        'USER',
-        userId,
-        JSON.stringify({ approved_user: user.full_name, approved_user_email: user.email }),
-        req.ip || 'unknown'
-      ]
-    );
+    // Log activity without blocking approval response on logging schema drift/issues.
+    try {
+      await query(
+        `INSERT INTO activity_logs (user_id, user_email, user_name, user_role, action, resource_type, resource_id, details, ip_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          adminId,
+          req.user?.email,
+          req.user?.full_name,
+          req.user?.role,
+          'APPROVE_USER',
+          'USER',
+          userId,
+          JSON.stringify({ approved_user: user.full_name, approved_user_email: user.email }),
+          req.ip || 'unknown'
+        ]
+      );
+    } catch (logError) {
+      console.error('Approve user activity log insert failed:', logError);
+    }
     
     res.json({
       success: true,
@@ -278,22 +282,26 @@ export const rejectUser = async (req: AuthRequest, res: Response) => {
       // Don't fail rejection if email fails
     });
     
-    // Log activity
-    await query(
-      `INSERT INTO activity_logs (user_id, user_email, user_name, user_role, action, resource_type, resource_id, details, ip_address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        adminId,
-        req.user?.email,
-        req.user?.full_name,
-        req.user?.role,
-        'REJECT_USER',
-        'USER',
-        userId,
-        JSON.stringify({ rejected_user: user.full_name, rejected_user_email: user.email, reason }),
-        req.ip || 'unknown'
-      ]
-    );
+    // Log activity without blocking rejection response on logging schema drift/issues.
+    try {
+      await query(
+        `INSERT INTO activity_logs (user_id, user_email, user_name, user_role, action, resource_type, resource_id, details, ip_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          adminId,
+          req.user?.email,
+          req.user?.full_name,
+          req.user?.role,
+          'REJECT_USER',
+          'USER',
+          userId,
+          JSON.stringify({ rejected_user: user.full_name, rejected_user_email: user.email, reason }),
+          req.ip || 'unknown'
+        ]
+      );
+    } catch (logError) {
+      console.error('Reject user activity log insert failed:', logError);
+    }
     
     res.json({
       success: true,
