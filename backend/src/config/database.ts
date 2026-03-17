@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { config } from '../config';
+import { getCurrentTenantId } from '../utils/tenantContext';
 
 const pool = new Pool({
   host: config.database.host,
@@ -30,19 +31,46 @@ pool.on('error', (err) => {
 
 export const query = async (text: string, params?: any[]) => {
   const start = Date.now();
+  const tenantId = getCurrentTenantId();
+  const client = await pool.connect();
+
   try {
-    const result = await pool.query(text, params);
+    await client.query("SELECT set_config('app.current_tenant_id', $1, false)", [String(tenantId)]);
+    const result = await client.query(text, params);
     const duration = Date.now() - start;
-    console.log('Executed query', { text, duration, rows: result.rowCount });
+    console.log('Executed query', { text, duration, rows: result.rowCount, tenantId });
     return result;
   } catch (error) {
     console.error('Database query error:', error);
     throw error;
+  } finally {
+    try {
+      await client.query("SELECT set_config('app.current_tenant_id', $1, false)", [String(config.tenancy.defaultTenantId)]);
+    } catch (resetError) {
+      console.error('Failed to reset tenant context for pooled client:', resetError);
+    }
+    client.release();
   }
 };
 
-export const getClient = (): Promise<PoolClient> => {
-  return pool.connect();
+export const getClient = async (): Promise<PoolClient> => {
+  const tenantId = getCurrentTenantId();
+  const client = await pool.connect();
+  await client.query("SELECT set_config('app.current_tenant_id', $1, false)", [String(tenantId)]);
+
+  const originalRelease = client.release.bind(client);
+  (client as any).release = (err?: Error | boolean) => {
+    client
+      .query("SELECT set_config('app.current_tenant_id', $1, false)", [String(config.tenancy.defaultTenantId)])
+      .catch((resetError) => {
+        console.error('Failed to reset tenant context on client release:', resetError);
+      })
+      .finally(() => {
+        originalRelease(err as any);
+      });
+  };
+
+  return client;
 };
 
 export default pool;

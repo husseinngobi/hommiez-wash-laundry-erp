@@ -16,6 +16,7 @@ import { dailyBackupScheduler } from './services/daily-backup.scheduler';
 import path from 'path';
 import dns from 'dns';
 import { ensureDirectories } from './utils/ensureDirectories';
+import { tenantContextMiddleware } from './middleware/tenant';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -88,6 +89,7 @@ app.use('/uploads', (req, res, next) => {
 }, express.static(path.join(__dirname, '../uploads')));
 
 // API routes
+app.use('/api', tenantContextMiddleware);
 app.use('/api', routes);
 
 // Root endpoint

@@ -12,6 +12,9 @@ export interface AuthRequest extends Request {
     role: UserRole;
     is_system_admin?: boolean;
   };
+  tenant?: {
+    id: number;
+  };
   file?: Express.Multer.File;
 }
 

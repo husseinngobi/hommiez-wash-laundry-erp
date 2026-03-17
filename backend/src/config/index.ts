@@ -32,6 +32,12 @@ const databaseConfig = {
 export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
+  tenancy: {
+    // Default tenant used when request-level override is absent.
+    defaultTenantId: parseInt(process.env.DEFAULT_TENANT_ID || '1', 10),
+    // When enabled, API clients can specify x-tenant-id or tenant_id.
+    allowRequestOverride: (process.env.ALLOW_TENANT_OVERRIDE || 'false').toLowerCase() === 'true',
+  },
   
   database: databaseConfig,
   
