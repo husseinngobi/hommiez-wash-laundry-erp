@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { getSystemAdminEmails } from '../utils/systemAdmin';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
@@ -445,6 +446,7 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
     const { period = 'week' } = req.query;
     const userRole = req.user?.role;
     const userId = req.user?.id;
+    const hiddenSystemAdminEmails = getSystemAdminEmails();
     
     let dateFilter = '';
     if (period === 'today' || period === 'day') {
@@ -461,10 +463,21 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
       dateFilter = "1=1"; // Default to all time if period not recognized
     }
 
-    // Role-based filter: DESKTOP_AGENT sees only their own stats
-    const userFilter = userRole === 'DESKTOP_AGENT' 
-      ? `AND u.id = ${userId}` 
-      : '';
+    // Role-based filter: DESKTOP_AGENT sees only their own stats.
+    const staffWhereClauses = ["u.role IN ('ADMIN', 'MANAGER', 'DESKTOP_AGENT')"];
+    const staffWhereParams: any[] = [];
+
+    if (userRole === 'DESKTOP_AGENT' && userId) {
+      staffWhereParams.push(userId);
+      staffWhereClauses.push(`u.id = $${staffWhereParams.length}`);
+    }
+
+    if (hiddenSystemAdminEmails.length > 0) {
+      staffWhereParams.push(hiddenSystemAdminEmails);
+      staffWhereClauses.push(`(u.email IS NULL OR LOWER(u.email) != ALL($${staffWhereParams.length}::text[]))`);
+    }
+
+    const staffWhereSql = staffWhereClauses.join(' AND ');
 
     // Staff performance: orders created by each staff member - revenue counted when PAYMENT RECEIVED
     const staffStats = await query(`
@@ -480,11 +493,25 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
       FROM users u
       LEFT JOIN orders o ON u.id = o.user_id
       LEFT JOIN payments p ON o.id = p.order_id ${dateFilter !== '1=1' ? `AND ${dateFilter}` : ''}
-      WHERE u.role IN ('ADMIN', 'MANAGER', 'DESKTOP_AGENT')
-        ${userFilter}
+      WHERE ${staffWhereSql}
       GROUP BY u.id, u.full_name, u.role
       ORDER BY total_revenue DESC
-    `);
+    `, staffWhereParams);
+
+    const dailyWhereClauses = [dateFilter];
+    const dailyWhereParams: any[] = [];
+
+    if (userRole === 'DESKTOP_AGENT' && userId) {
+      dailyWhereParams.push(userId);
+      dailyWhereClauses.push(`u.id = $${dailyWhereParams.length}`);
+    }
+
+    if (hiddenSystemAdminEmails.length > 0) {
+      dailyWhereParams.push(hiddenSystemAdminEmails);
+      dailyWhereClauses.push(`(u.email IS NULL OR LOWER(u.email) != ALL($${dailyWhereParams.length}::text[]))`);
+    }
+
+    const dailyWhereSql = dailyWhereClauses.join(' AND ');
 
     // Daily breakdown for visualization - revenue counted by PAYMENT RECEIPT DATE
     const dailyStaffPerformance = await query(`
@@ -496,11 +523,10 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
       FROM payments p
       JOIN orders o ON p.order_id = o.id
       JOIN users u ON o.user_id = u.id
-      WHERE ${dateFilter}
-        ${userFilter}
+      WHERE ${dailyWhereSql}
       GROUP BY DATE(p.payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi'), u.full_name
       ORDER BY date DESC, revenue DESC
-    `);
+    `, dailyWhereParams);
 
     res.json({
       staff_stats: staffStats.rows,
