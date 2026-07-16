@@ -44,6 +44,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
     const { status, role, search, page, limit } = req.query;
     const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
+    const hasDeletedAt = await tableHasColumn('users', 'deleted_at');
     
     // Pagination
     const pageNum = parseInt(page as string) || 1;
@@ -79,6 +80,10 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
       queryText += ` AND (u.full_name ILIKE $${paramCount} OR u.email ILIKE $${paramCount})`;
       params.push(`%${search}%`);
       paramCount++;
+    }
+
+    if (hasDeletedAt) {
+      queryText += ' AND u.deleted_at IS NULL';
     }
 
     if (hiddenSystemAdminEmails.length > 0) {
@@ -118,6 +123,7 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
 export const getPendingUsers = async (req: AuthRequest, res: Response) => {
   try {
     const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
+    const hasDeletedAt = await tableHasColumn('users', 'deleted_at');
     let queryText = `SELECT 
         u.id, u.email, u.full_name, u.phone, u.role, u.status, u.created_at,
         c.full_name as created_by_name
@@ -125,6 +131,10 @@ export const getPendingUsers = async (req: AuthRequest, res: Response) => {
        LEFT JOIN users c ON u.created_by = c.id
        WHERE u.status = $1`;
     const params: any[] = [UserStatus.PENDING];
+
+    if (hasDeletedAt) {
+      queryText += ' AND u.deleted_at IS NULL';
+    }
 
     if (hiddenSystemAdminEmails.length > 0) {
       queryText += ` AND (u.email IS NULL OR LOWER(u.email) != ALL($2::text[]))`;
@@ -766,6 +776,7 @@ export const getActivityLogs = async (req: AuthRequest, res: Response) => {
 export const getUserStatistics = async (req: AuthRequest, res: Response) => {
   try {
     const hiddenSystemAdminEmails = getHiddenSystemAdminEmails(req);
+    const hasDeletedAt = await tableHasColumn('users', 'deleted_at');
     const statsQuery = hiddenSystemAdminEmails.length > 0
       ? `
       SELECT 
@@ -778,6 +789,7 @@ export const getUserStatistics = async (req: AuthRequest, res: Response) => {
         COUNT(*) as total_users
       FROM users
       WHERE email IS NULL OR LOWER(email) != ALL($1::text[])
+      ${hasDeletedAt ? 'AND deleted_at IS NULL' : ''}
     `
       : `
       SELECT 
@@ -789,6 +801,7 @@ export const getUserStatistics = async (req: AuthRequest, res: Response) => {
         COUNT(*) FILTER (WHERE role = 'DESKTOP_AGENT') as desktop_agent_count,
         COUNT(*) as total_users
       FROM users
+      ${hasDeletedAt ? 'WHERE deleted_at IS NULL' : ''}
     `;
 
     const stats = await query(
