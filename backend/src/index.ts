@@ -21,8 +21,6 @@ import { tenantContextMiddleware } from './middleware/tenant';
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
 
-console.log('🌐 DNS Configuration: IPv4 priority (fixing Windows DNS issues)');
-
 const app = express();
 
 // Required for correct client IP handling behind reverse proxies (Render, Nginx, etc.).
@@ -124,9 +122,7 @@ const startServer = async () => {
       console.log('🚀 ========================================');
       console.log(`🚀 Server running on port ${config.port}`);
       console.log(`🚀 Environment: ${config.nodeEnv}`);
-      console.log(`🚀 API URL: http://localhost:${config.port}`);
-      console.log(`🚀 Network Access: http://<server-ip>:${config.port}`);
-      console.log(`🚀 Health Check: http://localhost:${config.port}/api/health`);
+      console.log('🚀 Health Check: /api/health');
       console.log('🚀 ========================================');
       console.log('');
       

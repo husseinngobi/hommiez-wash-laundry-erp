@@ -34,8 +34,8 @@ export const helmetConfig = helmet({
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"], // Allow inline styles for React
       scriptSrc: ["'self'", "'unsafe-inline'"], // Allow inline scripts for React
-      imgSrc: ["'self'", "data:", "https:", "http://localhost:5000"], // Allow images from backend
-      connectSrc: ["'self'", "http://localhost:8080", "http://localhost:5000"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
       fontSrc: ["'self'", "data:"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
