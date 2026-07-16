@@ -136,7 +136,7 @@ export default function Login() {
             <img src="/favicon.png" alt="Lush Laundry" className="w-10 h-10 sm:w-14 sm:h-14 object-contain" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1">
-            Lush Laundry ERP
+            Lush Drycleaners & Laundromat ERP
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground flex items-center justify-center gap-1.5">
             <Sparkles className="h-3 w-3 flex-shrink-0" />
@@ -255,7 +255,7 @@ export default function Login() {
 
         {/* Footer */}
         <p className="text-center text-[10px] sm:text-xs text-muted-foreground mt-2 sm:mt-4 animate-in fade-in delay-700">
-          © 2026 Lush Laundry
+          © 2026 Lushlaundromat
         </p>
       </div>
     </div>
