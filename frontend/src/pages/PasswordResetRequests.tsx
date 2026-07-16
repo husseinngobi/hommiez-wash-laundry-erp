@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Key, Clock, CheckCircle2, XCircle, AlertCircle, Copy, RotateCcw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { API_BASE_URL } from '@/lib/api';
 import axios from 'axios';
 
 interface PasswordResetRequest {
@@ -44,7 +45,7 @@ const PasswordResetRequests = () => {
     try {
       setLoading(true);
       const response = await axios.get(
-        `${import.meta.env.VITE_API_URL}/api/user-management/password-reset-requests/all`,
+        `${API_BASE_URL}/user-management/password-reset-requests/all`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -91,7 +92,7 @@ const PasswordResetRequests = () => {
     try {
       setApproving(true);
       const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/user-management/users/${selectedRequest.user_id}/reset-password`,
+        `${API_BASE_URL}/user-management/users/${selectedRequest.user_id}/reset-password`,
         { temporaryPassword },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -123,7 +124,7 @@ const PasswordResetRequests = () => {
   const handleDeny = async (requestId: number) => {
     try {
       await axios.delete(
-        `${import.meta.env.VITE_API_URL}/api/user-management/password-reset-requests/${requestId}`,
+        `${API_BASE_URL}/user-management/password-reset-requests/${requestId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -147,7 +148,7 @@ const PasswordResetRequests = () => {
     try {
       // Set status back to PENDING
       await axios.patch(
-        `${import.meta.env.VITE_API_URL}/api/user-management/password-reset-requests/${request.id}/reactivate`,
+        `${API_BASE_URL}/user-management/password-reset-requests/${request.id}/reactivate`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );

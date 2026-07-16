@@ -477,7 +477,7 @@ export default function Settings() {
 
       // Call backend API to save session timeout preference
       const response = await axios.put(
-        `${import.meta.env.VITE_API_URL}/api/auth/session-timeout`,
+        `${API_BASE_URL}/auth/session-timeout`,
         { minutes: sessionTimeout },
         {
           headers: {

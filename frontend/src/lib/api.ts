@@ -1,38 +1,20 @@
 import axios from 'axios';
 
-// Dynamic API URL: when accessed via network IP (e.g., phone), use that same hostname
-// This allows the frontend to work from localhost AND from network IPs like 192.168.x.x
+const devApiUrl = import.meta.env.DEV ? import.meta.env.VITE_API_URL : undefined;
+
 function getApiBaseUrl(): string {
-  // If VITE_API_URL is explicitly set, use it
-  if (import.meta.env.VITE_API_URL) {
-    return `${import.meta.env.VITE_API_URL}/api`;
+  // In production, keep requests same-origin so the backend host is not exposed in the browser.
+  if (!devApiUrl) {
+    return '/api';
   }
-  
-  // Otherwise, dynamically detect based on access method
-  const protocol = window.location.protocol;
-  const hostname = window.location.hostname;
-  
-  console.log('🌐 Detecting API URL from hostname:', hostname);
-  
-  // Special case 1: WiFi hotspot network (192.168.137.x)
-  // When phone connects via laptop's hotspot
-  if (hostname.startsWith('192.168.137.')) {
-    console.log('📱 Hotspot network detected - using same IP for backend');
-    return `${protocol}//${hostname}:5000/api`;
-  }
-  
-  // Default: localhost or any LAN IP, use same hostname
-  return `${protocol}//${hostname}:5000/api`;
+
+  return `${devApiUrl}/api`;
 }
 
 export const API_BASE_URL = getApiBaseUrl();
 
-// Also export just the server origin (for non-/api paths like profile pictures, Google OAuth)
-export const API_ORIGIN = API_BASE_URL.replace('/api', '');
-
-// Debug: Log the API URL being used
-console.log('🌐 API Base URL:', API_BASE_URL);
-console.log('🔧 Hostname:', window.location.hostname);
+// Use the frontend origin in production so uploads and profile images can be proxied through the same site.
+export const API_ORIGIN = devApiUrl || window.location.origin;
 
 // Create axios instance
 const api = axios.create({
