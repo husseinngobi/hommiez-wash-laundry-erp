@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import { query } from '../config/database';
+import { config } from '../config';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { sendWhatsAppMessage } from '../services/whatsapp.service';
 
@@ -203,9 +204,23 @@ router.post('/webhook', async (req: Request, res: Response) => {
   }
 });
 
-// GET endpoint - For verification
+// GET endpoint - For Meta webhook verification
 router.get('/webhook', (req: Request, res: Response) => {
-  res.send('WhatsApp webhook is active! ✅');
+  const mode = req.query['hub.mode'] as string | undefined;
+  const token = req.query['hub.verify_token'] as string | undefined;
+  const challenge = req.query['hub.challenge'] as string | undefined;
+
+  if (mode === 'subscribe' && token && token === config.whatsapp.webhookVerifyToken) {
+    console.log('✅ Meta WhatsApp webhook verified successfully');
+    return res.status(200).send(challenge || '');
+  }
+
+  console.warn('⚠️ Meta WhatsApp webhook verification failed', {
+    mode,
+    tokenProvided: Boolean(token),
+  });
+
+  return res.status(403).send('Verification failed');
 });
 
 // Health check

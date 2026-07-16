@@ -53,4 +53,8 @@ export const config = {
       ? process.env.FRONTEND_URL || false
       : true, // Allow any origin in development
   },
+
+  whatsapp: {
+    webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
+  },
 };
