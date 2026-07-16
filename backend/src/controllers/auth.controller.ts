@@ -16,6 +16,19 @@ import {
   logSuspiciousActivity 
 } from '../utils/activityLogger';
 
+const tableHasColumn = async (tableName: string, columnName: string): Promise<boolean> => {
+  const result = await query(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_name = $1 AND column_name = $2
+     ) AS exists`,
+    [tableName, columnName]
+  );
+
+  return result.rows[0]?.exists === true;
+};
+
 export const register = async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
@@ -51,26 +64,51 @@ export const register = async (req: AuthRequest, res: Response) => {
       const existingUser = existingUserResult.rows[0];
 
       if (existingUser.deleted_at) {
-        const result = await query(
-          `UPDATE users
-           SET password = $1,
-               full_name = $2,
-               phone = $3,
-               role = $4,
-               status = $5,
-               created_by = $6,
-               deleted_at = NULL,
-               deleted_by = NULL,
-               rejection_reason = NULL,
-               must_change_password = FALSE,
-               failed_login_attempts = 0,
-               account_locked_until = NULL,
-               last_failed_login = NULL,
-               updated_at = NOW()
-           WHERE id = $7
-           RETURNING id, email, full_name, phone, role, status, created_at`,
-          [hashedPassword, full_name, phone, userRole, status, req.user?.id || null, existingUser.id]
-        );
+        const hasDeletedBy = await tableHasColumn('users', 'deleted_by');
+        const restoreQuery = hasDeletedBy
+          ? `UPDATE users
+             SET password = $1,
+                 full_name = $2,
+                 phone = $3,
+                 role = $4,
+                 status = $5,
+                 created_by = $6,
+                 deleted_at = NULL,
+                 deleted_by = NULL,
+                 rejection_reason = NULL,
+                 must_change_password = FALSE,
+                 failed_login_attempts = 0,
+                 account_locked_until = NULL,
+                 last_failed_login = NULL,
+                 updated_at = NOW()
+             WHERE id = $7
+             RETURNING id, email, full_name, phone, role, status, created_at`
+          : `UPDATE users
+             SET password = $1,
+                 full_name = $2,
+                 phone = $3,
+                 role = $4,
+                 status = $5,
+                 created_by = $6,
+                 deleted_at = NULL,
+                 rejection_reason = NULL,
+                 must_change_password = FALSE,
+                 failed_login_attempts = 0,
+                 account_locked_until = NULL,
+                 last_failed_login = NULL,
+                 updated_at = NOW()
+             WHERE id = $7
+             RETURNING id, email, full_name, phone, role, status, created_at`;
+
+        const result = await query(restoreQuery, [
+          hashedPassword,
+          full_name,
+          phone,
+          userRole,
+          status,
+          req.user?.id || null,
+          existingUser.id,
+        ]);
 
         newUser = result.rows[0];
       } else {
