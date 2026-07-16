@@ -189,7 +189,6 @@ export default function Reports() {
       const response = await axios.get(`${API_BASE_URL}/reports/vat-summary?period=${period}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      console.log('✅ VAT Summary loaded:', response.data);
       setVatSummary(response.data);
     } catch (error: unknown) {
       console.error('❌ Failed to load VAT summary:', error);

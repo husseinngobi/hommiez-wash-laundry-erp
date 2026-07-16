@@ -267,7 +267,6 @@ export default function Messages() {
         ? response.data 
         : (response.data.customers || []);
       setCustomers(customerData);
-      console.log(`✅ Loaded ${customerData.length} customers (SMS opt-in only) for bulk messaging`);
     } catch (error) {
       console.error("Fetch customers error:", error);
       setCustomers([]); // Set empty array on error

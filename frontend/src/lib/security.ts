@@ -49,9 +49,6 @@ export const disableDevTools = () => {
       
       if (widthThreshold || heightThreshold) {
         console.clear();
-        console.log('%c⚠️ SECURITY WARNING', 'color: red; font-size: 20px; font-weight: bold;');
-        console.log('%cUnauthorized access to developer tools is prohibited.', 'color: red; font-size: 14px;');
-        console.log('%cAll activities are logged and monitored.', 'color: red; font-size: 14px;');
       }
     };
 
@@ -113,7 +110,5 @@ export const initializeProductionSecurity = () => {
     // Uncomment if needed:
     // disableTextSelection();
     // detectDebugger(); // Warning: This is aggressive and may affect performance
-    
-    console.log('%c🔒 Security Active', 'color: green; font-size: 16px; font-weight: bold;');
   }
 };

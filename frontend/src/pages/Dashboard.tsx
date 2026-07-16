@@ -442,9 +442,6 @@ export default function Dashboard() {
         // Ensure all values are numbers
         const total = paymentBreakdown.reduce((sum, m) => sum + Number(m.total_amount || 0), 0);
         
-        console.log('Payment Breakdown Data:', paymentBreakdown);
-        console.log('Total Amount:', total);
-        
         const COLORS = {
           'Mobile Money (MTN)': '#FCD34D',
           'Mobile Money (Airtel)': '#EF4444',
@@ -463,8 +460,6 @@ export default function Dashboard() {
             color: COLORS[method.method as keyof typeof COLORS] || '#6B7280'
           };
         });
-        
-        console.log('Chart Data:', chartData);
 
         return (
           <div className="mb-8 bg-card rounded-xl border border-border p-6">

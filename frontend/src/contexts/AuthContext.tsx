@@ -216,9 +216,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password: string) => {
     try {
       const loginUrl = `${API_BASE_URL}/auth/login`;
-      console.log('🔐 Login attempt to:', loginUrl);
-      console.log('📱 Window location:', window.location.href);
-      console.log('🌐 API_BASE_URL:', API_BASE_URL);
       
       const response = await fetch(loginUrl, {
         method: 'POST',
@@ -228,9 +225,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ email, password }),
       });
 
-      console.log('✅ Login response status:', response.status);
       const data: LoginResponse = await response.json();
-      console.log('📦 Login response data:', data);
 
       if (!response.ok) {
         const loginErr: LoginError = new Error(data.error || 'Login failed');
@@ -264,9 +259,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       navigate('/dashboard');
     } catch (error: unknown) {
       console.error('❌ Login error:', error);
-      console.error('❌ Error type:', error instanceof Error ? 'Error' : typeof error);
       const message = error instanceof Error ? error.message : 'Login failed';
-      console.error('❌ Error message:', message);
       const rethrow: LoginError = new Error(message);
       if (isLoginError(error) && error.locked) {
         rethrow.locked = true;

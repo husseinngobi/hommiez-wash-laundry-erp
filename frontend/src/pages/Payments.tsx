@@ -868,7 +868,6 @@ const Payments = () => {
                               <Button
                                 size="sm"
                                 onClick={() => {
-                                  console.log('🖱️ Assign button clicked', payment);
                                   setSelectedPendingPayment(payment);
                                   setShowAssignDialog(true);
                                 }}

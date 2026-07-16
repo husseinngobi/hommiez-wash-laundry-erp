@@ -48,9 +48,6 @@ const Profile = () => {
         phone: user.phone || '',
         email: user.email,
       });
-      
-      // Debug logging for auth_provider
-      console.log('🔍 User auth_provider:', user.auth_provider, 'Type:', typeof user.auth_provider);
     }
   }, [user]);
 
@@ -156,9 +153,6 @@ const Profile = () => {
           },
         }
       );
-
-      console.log('✅ Profile picture uploaded:', response.data.profile_picture);
-      console.log('📁 Full image URL will be:', response.data.profile_picture_url || response.data.profile_picture);
 
       // Update local user context
       if (updateUser) {

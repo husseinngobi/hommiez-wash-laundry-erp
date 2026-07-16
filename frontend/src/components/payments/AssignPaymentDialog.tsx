@@ -184,13 +184,6 @@ export default function AssignPaymentDialog({
 
   useEffect(() => {
     if (payment && isOpen) {
-      console.log('🔔 AssignPaymentDialog opened', {
-        paymentId: payment.id,
-        amount: payment.amount,
-        sender: payment.sender_phone,
-        reference: payment.transaction_reference
-      });
-      
       // Load recent orders and customers
       loadRecentOrders();
       loadCustomersWithUnpaidOrders();
@@ -206,8 +199,6 @@ export default function AssignPaymentDialog({
   }, [payment, isOpen]);
 
   const handleAssign = async () => {
-    console.log('🎯 handleAssign called', { selectedOrder, payment });
-    
     if (!selectedOrder || !payment) {
       console.error('❌ Missing selectedOrder or payment', { selectedOrder, payment });
       toast({
@@ -217,14 +208,6 @@ export default function AssignPaymentDialog({
       });
       return;
     }
-
-    console.log('📤 Sending assignment request:', {
-      paymentId: payment.id,
-      orderId: selectedOrder.id,
-      paymentType,
-      amount: payment.amount,
-      orderBalance: selectedOrder.balance_due
-    });
 
     try {
       setIsAssigning(true);
@@ -237,8 +220,6 @@ export default function AssignPaymentDialog({
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      console.log('✅ Assignment successful:', response.data);
 
       toast({
         title: '✅ Payment Assigned Successfully',

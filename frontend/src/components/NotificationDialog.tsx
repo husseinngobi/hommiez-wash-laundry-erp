@@ -53,18 +53,13 @@ export default function NotificationDialog({
     const fetchNotifications = async () => {
       try {
         setLoading(true);
-        console.log('🔔 Fetching notifications from backend...');
         
         const response = await axios.get(`${API_BASE_URL}/notifications?limit=50`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
-        console.log('✅ Response:', response.data);
-        
         const data = Array.isArray(response.data) ? response.data : [];
         setNotifications(data);
-        
-        console.log(`📊 Loaded ${data.length} notifications`);
       } catch (error: unknown) {
         console.error('❌ Failed to fetch notifications:', error);
         const axiosError = error as { response?: { status?: number } };
@@ -123,7 +118,6 @@ export default function NotificationDialog({
       
       default:
         // For unknown types, just mark as read
-        console.log('Unknown notification type:', notification.type);
     }
   };
 

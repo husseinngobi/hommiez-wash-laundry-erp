@@ -220,13 +220,9 @@ export default function Customers() {
   const fetchStats = useCallback(async () => {
     try {
       if (!token) return;
-      
-      console.log('Fetching customer stats...');
       const response = await axios.get(`${API_BASE_URL}/customers/stats/overview`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
-      console.log('Stats response:', response.data);
       setStats(response.data);
     } catch (error) {
       console.error("Fetch stats error:", error);
@@ -237,8 +233,6 @@ export default function Customers() {
   const fetchCustomers = useCallback(async () => {
     try {
       setLoading(true);
-      
-      console.log("Token from AuthContext:", token ? "Token exists" : "No token found");
       
       if (!token) {
         return;
@@ -292,8 +286,6 @@ export default function Customers() {
         toast.error("Name and phone are required");
         return;
       }
-      
-      console.log("Sending customer data:", formData);
       
       await axios.post(
         `${API_BASE_URL}/customers`,
