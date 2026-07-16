@@ -36,15 +36,56 @@ export const register = async (req: AuthRequest, res: Response) => {
     const status = UserStatus.PENDING;
     const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.DESKTOP_AGENT];
     const userRole = allowedRoles.includes(role) ? role : UserRole.DESKTOP_AGENT;
-    
-    const result = await query(
-      `INSERT INTO users (email, password, full_name, phone, role, status, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, email, full_name, phone, role, status, created_at`,
-      [email, hashedPassword, full_name, phone, userRole, status, req.user?.id || null]
+
+    const existingUserResult = await query(
+      `SELECT id, email, deleted_at
+       FROM users
+       WHERE LOWER(email) = LOWER($1)
+       LIMIT 1`,
+      [email]
     );
-    
-    const newUser = result.rows[0];
+
+    let newUser;
+
+    if (existingUserResult.rows.length > 0) {
+      const existingUser = existingUserResult.rows[0];
+
+      if (existingUser.deleted_at) {
+        const result = await query(
+          `UPDATE users
+           SET password = $1,
+               full_name = $2,
+               phone = $3,
+               role = $4,
+               status = $5,
+               created_by = $6,
+               deleted_at = NULL,
+               deleted_by = NULL,
+               rejection_reason = NULL,
+               must_change_password = FALSE,
+               failed_login_attempts = 0,
+               account_locked_until = NULL,
+               last_failed_login = NULL,
+               updated_at = NOW()
+           WHERE id = $7
+           RETURNING id, email, full_name, phone, role, status, created_at`,
+          [hashedPassword, full_name, phone, userRole, status, req.user?.id || null, existingUser.id]
+        );
+
+        newUser = result.rows[0];
+      } else {
+        return res.status(409).json({ error: 'Email already exists' });
+      }
+    } else {
+      const result = await query(
+        `INSERT INTO users (email, password, full_name, phone, role, status, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, email, full_name, phone, role, status, created_at`,
+        [email, hashedPassword, full_name, phone, userRole, status, req.user?.id || null]
+      );
+
+      newUser = result.rows[0];
+    }
 
     // Send email notification to admins if user is pending
     if (status === UserStatus.PENDING) {
@@ -68,7 +109,7 @@ export const register = async (req: AuthRequest, res: Response) => {
       user: newUser,
     });
   } catch (error: any) {
-    if (error.message.includes('duplicate key')) {
+    if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
       return res.status(409).json({ error: 'Email already exists' });
     }
     console.error('Registration error:', error);
