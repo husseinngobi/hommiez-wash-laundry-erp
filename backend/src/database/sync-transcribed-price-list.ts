@@ -98,7 +98,7 @@ const syncTranscribedPriceList = async () => {
     console.log('🔄 Syncing transcribed price list into live price_items table...');
 
     const existingResult = await client.query('SELECT item_id FROM price_items');
-    const existingIds = new Set(existingResult.rows.map((row) => row.item_id as string));
+    const existingIds = new Set<string>(existingResult.rows.map((row) => String(row.item_id)));
     const allocatedIds = new Set<string>();
 
     let updatedCount = 0;

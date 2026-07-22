@@ -1,5 +1,15 @@
 import { query } from '../config/database';
 
+type PriceSeedItem = {
+  item_id: string;
+  name: string;
+  category: string;
+  subcategory?: string;
+  unit?: 'piece' | 'kg';
+  price: number;
+  ironing: number;
+};
+
 /**
  * SAFE TEST DATA SEEDING SCRIPT
  * - Preserves your Google OAuth admin account
@@ -32,7 +42,7 @@ async function seedTestDataSafe() {
     if (parseInt(priceCount.rows[0].count) > 0) {
       console.log(`   ℹ️  Found ${priceCount.rows[0].count} existing price items. Skipping price seeding.`);
     } else {
-      const priceItems = [
+      const priceItems: PriceSeedItem[] = [
         // GENTS (25 items)
         { item_id: 'g1', name: "Men's 2pc Suit", category: 'gents', price: 15000, ironing: 7500 },
         { item_id: 'g2', name: "Men's 3pc Suit", category: 'gents', price: 17000, ironing: 8500 },

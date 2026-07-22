@@ -1,6 +1,16 @@
 import pool from '../config/database';
 import bcrypt from 'bcryptjs';
 
+type PriceSeedItem = {
+  item_id: string;
+  name: string;
+  category: string;
+  subcategory?: string;
+  unit?: 'piece' | 'kg';
+  price: number;
+  ironing: number;
+};
+
 const seed = async () => {
   const client = await pool.connect();
   
@@ -32,7 +42,7 @@ const seed = async () => {
     console.log('✅ Created sample users');
     
     // 3. Seed Price Items (from your mock data)
-    const priceItems = [
+    const priceItems: PriceSeedItem[] = [
       // GENTS
       { item_id: 'g1', name: "Men's 2pc Suit", category: 'gents', price: 15000, ironing: 7500 },
       { item_id: 'g2', name: "Men's 3pc Suit", category: 'gents', price: 17000, ironing: 8500 },
