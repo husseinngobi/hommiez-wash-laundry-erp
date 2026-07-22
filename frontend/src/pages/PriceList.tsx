@@ -51,6 +51,7 @@ interface PriceItem {
   name: string;
   category: string;
   subcategory?: string;
+  unit?: string;
   price: number;
   ironing_price: number;
   express_price?: number | null;
@@ -71,6 +72,11 @@ const categoryConfig = {
   general: { label: 'Household', icon: '🏠', color: 'green' },
   kids: { label: 'Kids', icon: '👶', color: 'yellow' },
   home_services: { label: 'Home Services', icon: '🏡', color: 'purple' },
+};
+
+const unitConfig = {
+  piece: { label: 'Piece' },
+  kg: { label: 'Kilogram' },
 };
 
 
@@ -102,6 +108,7 @@ export default function PriceList() {
     name: '',
     category: 'gents',
     subcategory: '',
+    unit: 'piece',
     price: 0,
     ironing_price: 0,
     express_price: null as number | null,
@@ -188,6 +195,7 @@ export default function PriceList() {
         name: formData.name,
         category: formData.category,
         subcategory: formData.subcategory || undefined,
+        unit: formData.unit,
         price: formData.price,
         ironing_price: formData.ironing_price,
         express_price: formData.use_auto_express ? null : formData.express_price,
@@ -210,6 +218,7 @@ export default function PriceList() {
         name: '', 
         category: 'gents', 
         subcategory: '', 
+        unit: 'piece',
         price: 0, 
         ironing_price: 0, 
         express_price: null,
@@ -238,6 +247,7 @@ export default function PriceList() {
       name: item.name,
       category: item.category,
       subcategory: item.subcategory || '',
+      unit: item.unit || 'piece',
       price: item.price,
       ironing_price: item.ironing_price,
       express_price: item.express_price || null,
@@ -432,6 +442,7 @@ export default function PriceList() {
                 <TableHead className="font-semibold whitespace-nowrap">Item Name</TableHead>
                 <TableHead className="font-semibold whitespace-nowrap">Category</TableHead>
                 <TableHead className="font-semibold whitespace-nowrap">Subcategory</TableHead>
+                <TableHead className="font-semibold whitespace-nowrap">Unit</TableHead>
                 <TableHead className="font-semibold text-right whitespace-nowrap">Washing Price</TableHead>
                 <TableHead className="font-semibold text-right whitespace-nowrap">Express Price</TableHead>
                 <TableHead className="font-semibold text-right whitespace-nowrap">Ironing Price</TableHead>
@@ -441,7 +452,7 @@ export default function PriceList() {
           <TableBody>
             {paginatedItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                   No items found
                 </TableCell>
               </TableRow>
@@ -462,6 +473,11 @@ export default function PriceList() {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{item.subcategory || '-'}</TableCell>
+                <TableCell>
+                  <Badge variant="outline" className="capitalize">
+                    {unitConfig[item.unit as keyof typeof unitConfig]?.label || item.unit || 'Piece'}
+                  </Badge>
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex flex-col items-end gap-1">
                     {item.has_active_discount ? (
@@ -644,6 +660,18 @@ export default function PriceList() {
                 onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="unit">Measurement Unit</Label>
+              <Select value={formData.unit} onValueChange={(value) => setFormData({ ...formData, unit: value })}>
+                <SelectTrigger id="unit">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="piece">Piece</SelectItem>
+                  <SelectItem value="kg">Kilogram</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="price">Washing Price (UGX) *</Label>
@@ -764,6 +792,18 @@ export default function PriceList() {
                 value={formData.subcategory}
                 onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-unit">Measurement Unit</Label>
+              <Select value={formData.unit} onValueChange={(value) => setFormData({ ...formData, unit: value })}>
+                <SelectTrigger id="edit-unit">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="piece">Piece</SelectItem>
+                  <SelectItem value="kg">Kilogram</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

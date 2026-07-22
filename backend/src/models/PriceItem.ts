@@ -6,12 +6,18 @@ export enum PriceCategory {
   KIDS = 'kids',
 }
 
+export enum PriceUnit {
+  PIECE = 'piece',
+  KG = 'kg',
+}
+
 export interface PriceItem {
   id: number;
   item_id: string; // e.g., "g1", "l1"
   name: string;
   category: PriceCategory;
   subcategory?: string;
+  unit: PriceUnit;
   price: number; // washing price in UGX
   ironing_price: number; // ironing price in UGX
   is_active: boolean;
@@ -24,6 +30,7 @@ export interface PriceItemCreateDTO {
   name: string;
   category: PriceCategory;
   subcategory?: string;
+  unit?: PriceUnit;
   price: number;
   ironing_price: number;
 }
@@ -32,6 +39,7 @@ export interface PriceItemUpdateDTO {
   name?: string;
   category?: PriceCategory;
   subcategory?: string;
+  unit?: PriceUnit;
   price?: number;
   ironing_price?: number;
   is_active?: boolean;

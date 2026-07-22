@@ -30,7 +30,8 @@ async function checkMissingColumns() {
     const requiredColumns = [
       'discount_percentage',
       'discount_start_date',
-      'discount_end_date'
+      'discount_end_date',
+      'unit'
     ];
 
     const missingColumns = requiredColumns.filter(col => !existingColumns.includes(col));
@@ -64,6 +65,17 @@ async function checkMissingColumns() {
           ADD COLUMN discount_end_date TIMESTAMP
         `);
         console.log('✅ Added discount_end_date column');
+      }
+
+      if (missingColumns.includes('unit')) {
+        await pool.query(`
+          ALTER TABLE price_items 
+          ADD COLUMN unit VARCHAR(20) NOT NULL DEFAULT 'piece'
+        `);
+        await pool.query(`
+          UPDATE price_items SET unit = 'piece' WHERE unit IS NULL
+        `);
+        console.log('✅ Added unit column');
       }
 
       console.log('\n✅ All missing columns added!');

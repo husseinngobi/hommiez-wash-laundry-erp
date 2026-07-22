@@ -200,7 +200,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     for (const item of items) {
       // Fetch actual price from database (prevent price manipulation)
       const priceResult = await client.query(
-        `SELECT id, name, price, ironing_price, express_price,
+        `SELECT id, name, unit, price, ironing_price, express_price,
          discount_percentage, discount_start_date, discount_end_date,
          CASE 
            WHEN discount_percentage > 0 
@@ -235,6 +235,15 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       
       const priceItem = priceResult.rows[0];
       const serviceType = item.service_type?.toUpperCase(); // Normalize to uppercase
+      const quantity = Number(item.quantity);
+
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error(`Invalid quantity for item ID ${item.price_item_id}`);
+      }
+
+      if (priceItem.unit !== 'kg' && !Number.isInteger(quantity)) {
+        throw new Error(`${priceItem.name} must use a whole number quantity`);
+      }
       
       let actualUnitPrice = 0;
       if (serviceType === 'WASH') {
@@ -248,13 +257,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         throw new Error(`Invalid service type: ${item.service_type}`);
       }
       
-      const itemTotal = item.quantity * actualUnitPrice;
+      const normalizedQuantity = priceItem.unit === 'kg' ? Math.round(quantity * 2) / 2 : quantity;
+      const itemTotal = Math.round(normalizedQuantity * actualUnitPrice);
       calculatedSubtotal += itemTotal;
       
       validatedItems.push({
         price_item_id: item.price_item_id,
         service_type: item.service_type,
-        quantity: item.quantity,
+        quantity: normalizedQuantity,
         unit_price: actualUnitPrice, // Use actual DB price, not frontend
         total_price: itemTotal
       });

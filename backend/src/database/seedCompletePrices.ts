@@ -122,13 +122,14 @@ const seedCompletePriceList = async () => {
     for (const item of completePriceData) {
       try {
         await client.query(`
-          INSERT INTO price_items (item_id, name, category, subcategory, price, ironing_price)
-          VALUES ($1, $2, $3, $4, $5, $6)
+          INSERT INTO price_items (item_id, name, category, subcategory, unit, price, ironing_price)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
         `, [
           item.item_id,
           item.name,
           item.category,
           item.subcategory || null,
+          item.unit || 'piece',
           item.price,
           item.ironing
         ]);

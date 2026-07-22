@@ -65,6 +65,7 @@ interface PriceItem {
   name: string;
   category: string;
   subcategory?: string;
+  unit?: string;
   price: number;
   ironing_price: number;
   express_price?: number | null;
@@ -82,6 +83,7 @@ interface OrderItem {
   quantity: number;
   unit_price: number;
   subtotal: number;
+  unit?: string;
 }
 
 
@@ -225,7 +227,7 @@ export default function NewOrder() {
 
     if (existingIndex >= 0) {
       const updated = [...orderItems];
-      updated[existingIndex].quantity += 1;
+      updated[existingIndex].quantity += item.unit === 'kg' ? 0.5 : 1;
       updated[existingIndex].subtotal = Number(updated[existingIndex].quantity) * Number(updated[existingIndex].unit_price);
       setOrderItems(updated);
     } else {
@@ -238,6 +240,7 @@ export default function NewOrder() {
           quantity: 1,
           unit_price: unitPrice,
           subtotal: unitPrice,
+          unit: item.unit || 'piece',
         },
       ]);
     }
@@ -250,9 +253,15 @@ export default function NewOrder() {
 
   // Update quantity
   const updateQuantity = (index: number, newQuantity: number) => {
-    if (newQuantity < 1) return;
+    const currentItem = orderItems[index];
+    const minimumQuantity = currentItem.unit === 'kg' ? 0.5 : 1;
+    const normalizedQuantity = currentItem.unit === 'kg'
+      ? Math.max(minimumQuantity, Math.round(newQuantity * 2) / 2)
+      : Math.max(minimumQuantity, Math.round(newQuantity));
+
+    if (normalizedQuantity < minimumQuantity) return;
     const updated = [...orderItems];
-    updated[index].quantity = newQuantity;
+    updated[index].quantity = normalizedQuantity;
     updated[index].subtotal = Number(updated[index].quantity) * Number(updated[index].unit_price);
     setOrderItems(updated);
   };
@@ -525,7 +534,9 @@ export default function NewOrder() {
                   Cart ({orderItems.length} items)
                 </h3>
                 <span className="text-xs text-muted-foreground">
-                  {orderItems.reduce((sum, i) => sum + i.quantity, 0)} pcs
+                  {orderItems.length === 0
+                    ? 'No items'
+                    : orderItems.reduce((sum, i) => sum + i.quantity, 0).toFixed(1).replace(/\.0$/, '') + ' units'}
                 </span>
               </div>
               
@@ -546,24 +557,31 @@ export default function NewOrder() {
                           <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
                             {item.service_type}
                           </Badge>
-                          <span>{formatUGX(item.unit_price)}</span>
+                            <span>{formatUGX(item.unit_price)} / {item.unit || 'piece'}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0">
                         <Button
                           size="icon"
                           variant="ghost"
                           className="h-6 w-6"
-                          onClick={() => updateQuantity(index, item.quantity - 1)}
+                          onClick={() => updateQuantity(index, item.quantity - (item.unit === 'kg' ? 0.5 : 1))}
                         >
                           <Minus className="h-3 w-3" />
                         </Button>
-                        <span className="text-sm font-bold w-6 text-center">{item.quantity}</span>
+                          <Input
+                            type="number"
+                            min={item.unit === 'kg' ? 0.5 : 1}
+                            step={item.unit === 'kg' ? 0.5 : 1}
+                            value={item.unit === 'kg' ? item.quantity.toFixed(1) : item.quantity}
+                            onChange={(e) => updateQuantity(index, parseFloat(e.target.value) || (item.unit === 'kg' ? 0.5 : 1))}
+                            className="h-6 w-16 text-center text-sm font-bold px-1"
+                          />
                         <Button
                           size="icon"
                           variant="ghost"
                           className="h-6 w-6"
-                          onClick={() => updateQuantity(index, item.quantity + 1)}
+                          onClick={() => updateQuantity(index, item.quantity + (item.unit === 'kg' ? 0.5 : 1))}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
@@ -835,6 +853,9 @@ export default function NewOrder() {
                       <span className="text-[10px] text-muted-foreground capitalize">
                         {item.category === 'home_services' ? 'Home' : item.category}
                       </span>
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 capitalize">
+                        {item.unit || 'piece'}
+                      </Badge>
                       {item.has_active_discount && (
                         <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
                           -{item.discount_percentage}%

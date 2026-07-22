@@ -70,6 +70,7 @@ const migrate = async () => {
         name VARCHAR(255) NOT NULL,
         category price_category NOT NULL,
         subcategory VARCHAR(100),
+        unit VARCHAR(20) NOT NULL DEFAULT 'piece',
         price INTEGER NOT NULL DEFAULT 0,
         ironing_price INTEGER NOT NULL DEFAULT 0,
         is_active BOOLEAN DEFAULT TRUE,

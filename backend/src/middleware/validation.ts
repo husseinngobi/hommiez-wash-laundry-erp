@@ -1,7 +1,7 @@
 import { body, param, query, ValidationChain } from 'express-validator';
 import { UserRole } from '../models/User';
 import { OrderStatus } from '../models/Order';
-import { PriceCategory } from '../models/PriceItem';
+import { PriceCategory, PriceUnit } from '../models/PriceItem';
 
 export const authValidation = {
   register: [
@@ -61,6 +61,7 @@ export const priceValidation = {
     body('name').trim().notEmpty().withMessage('Item name is required'),
     body('category').isIn(Object.values(PriceCategory)).withMessage('Invalid category'),
     body('subcategory').optional().trim(),
+    body('unit').optional().isIn(Object.values(PriceUnit)).withMessage('Invalid unit'),
     body('price').isInt({ min: 0 }).withMessage('Price must be a positive number'),
     body('ironing_price').isInt({ min: 0 }).withMessage('Ironing price must be a positive number'),
   ],
@@ -70,6 +71,7 @@ export const priceValidation = {
     body('name').optional().trim().notEmpty(),
     body('category').optional().isIn(Object.values(PriceCategory)),
     body('subcategory').optional().trim(),
+    body('unit').optional().isIn(Object.values(PriceUnit)),
     body('price').optional().isInt({ min: 0 }),
     body('ironing_price').optional().isInt({ min: 0 }),
     body('is_active').optional().isBoolean(),
@@ -83,7 +85,7 @@ export const orderValidation = {
     body('items').isArray({ min: 1 }).withMessage('At least one item is required'),
     body('items.*.price_item_id').isInt({ min: 1 }),
     body('items.*.service_type').isIn(['WASH', 'IRON', 'EXPRESS']),
-    body('items.*.quantity').isInt({ min: 1 }),
+    body('items.*.quantity').isFloat({ min: 0.1 }),
     body('discount').optional().isInt({ min: 0 }),
     body('notes').optional().trim(),
   ],

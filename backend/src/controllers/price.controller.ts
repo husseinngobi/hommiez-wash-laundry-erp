@@ -93,13 +93,13 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
     
-    const { item_id, name, category, subcategory, price, ironing_price, express_price } = req.body;
+    const { item_id, name, category, subcategory, unit = 'piece', price, ironing_price, express_price } = req.body;
     
     const result = await query(
-      `INSERT INTO price_items (item_id, name, category, subcategory, price, ironing_price, express_price)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO price_items (item_id, name, category, subcategory, unit, price, ironing_price, express_price)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [item_id, name, category, subcategory, price, ironing_price, express_price]
+      [item_id, name, category, subcategory, unit, price, ironing_price, express_price]
     );
     
     res.status(201).json({
@@ -127,6 +127,7 @@ export const updatePrice = async (req: AuthRequest, res: Response) => {
       name, 
       category, 
       subcategory, 
+      unit,
       price, 
       ironing_price,
       express_price,
@@ -151,6 +152,10 @@ export const updatePrice = async (req: AuthRequest, res: Response) => {
     if (subcategory !== undefined) {
       updates.push(`subcategory = $${paramCount++}`);
       values.push(subcategory);
+    }
+    if (unit !== undefined) {
+      updates.push(`unit = $${paramCount++}`);
+      values.push(unit);
     }
     if (price !== undefined) {
       updates.push(`price = $${paramCount++}`);

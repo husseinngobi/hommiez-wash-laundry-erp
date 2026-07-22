@@ -127,10 +127,10 @@ async function seedTestDataSafe() {
 
       for (const item of priceItems) {
         await query(`
-          INSERT INTO price_items (item_id, name, category, subcategory, price, ironing_price, is_active)
-          VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+          INSERT INTO price_items (item_id, name, category, subcategory, unit, price, ironing_price, is_active)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
           ON CONFLICT (item_id) DO NOTHING
-        `, [item.item_id, item.name, item.category, item.subcategory || null, item.price, item.ironing]);
+        `, [item.item_id, item.name, item.category, item.subcategory || null, item.unit || 'piece', item.price, item.ironing]);
       }
       console.log(`   ✅ Seeded ${priceItems.length} price items\n`);
     }
