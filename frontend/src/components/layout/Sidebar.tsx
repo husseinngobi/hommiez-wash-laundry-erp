@@ -26,7 +26,7 @@ import {
   KeyRound,
   X,
 } from 'lucide-react';
-import lushLogo from '@/assets/lush_logo.png';
+import lushLogo from '@/assets/lush_logo.jpeg';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
