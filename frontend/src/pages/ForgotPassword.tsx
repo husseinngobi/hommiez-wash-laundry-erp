@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Mail, ArrowLeft, CheckCircle2, Sparkles } from 'lucide-react';
-import lushLogo from '@/assets/lush_logo.jpeg';
+import lushLogo from '@/assets/lush_logo.png';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');

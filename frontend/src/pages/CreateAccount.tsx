@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Mail, Lock, User, ArrowLeft, CheckCircle2, Sparkles, Eye, EyeOff, Phone } from 'lucide-react';
 import { validatePassword, getPasswordStrengthColor, getPasswordStrengthLabel } from '@/lib/passwordValidation';
-import lushLogo from '@/assets/lush_logo.jpeg';
+import lushLogo from '@/assets/lush_logo.png';
 
 export default function CreateAccount() {
   const [formData, setFormData] = useState({

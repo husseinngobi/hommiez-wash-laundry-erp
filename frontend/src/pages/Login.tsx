@@ -8,7 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Loader2, Mail, Lock, Sparkles, UserPlus, Eye, EyeOff } from 'lucide-react';
-import lushLogo from '@/assets/lush_logo.jpeg';
+import lushLogoLight from '@/assets/lush_logo.png';
+import lushLogoDark from '@/assets/lush_logo.png';
 
 interface LoginPageError extends Error {
   locked?: boolean;
@@ -133,8 +134,17 @@ export default function Login() {
       >
         {/* Logo and Brand */}
         <div className="text-center mb-3 sm:mb-6 animate-in fade-in slide-in-from-top duration-700">
-          <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl shadow-lg mb-2 sm:mb-3 overflow-hidden bg-white">
-            <img src={lushLogo} alt="Lush Laundry" className="w-10 h-10 sm:w-14 sm:h-14 object-contain" />
+          <div className="inline-flex items-center justify-center w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl shadow-lg mb-2 sm:mb-3 overflow-hidden bg-white dark:bg-neutral-950 border border-border">
+            <img
+              src={lushLogoLight}
+              alt="Lush Laundry"
+              className="block dark:hidden w-full h-full object-contain p-1"
+            />
+            <img
+              src={lushLogoDark}
+              alt="Lush Laundry"
+              className="hidden dark:block w-full h-full object-contain p-1"
+            />
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1">
             Lush Drycleaners & Laundromat ERP
