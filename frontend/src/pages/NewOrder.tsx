@@ -87,9 +87,29 @@ interface OrderItem {
 }
 
 
+const MAX_DISCOUNT_BY_ROLE: Record<string, number> = {
+  DESKTOP_AGENT: 10,
+  MANAGER: 20,
+  ADMIN: 50,
+};
+
+function getApiErrorMessage(error: unknown, fallback: string): string {
+  const axiosError = error as AxiosError<{ error?: string; message?: string; errors?: Array<{ msg: string }> }>;
+  const data = axiosError.response?.data;
+
+  if (data?.message) return data.message;
+  if (data?.error) return data.error;
+  if (data?.errors?.length) {
+    return data.errors.map((entry) => entry.msg).join(', ');
+  }
+
+  return fallback;
+}
+
 export default function NewOrder() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { toast } = useToast();
+  const maxDiscountPercent = MAX_DISCOUNT_BY_ROLE[user?.role ?? 'DESKTOP_AGENT'] ?? 10;
 
   // URA Compliance state
   const [uraComplianceEnabled, setUraComplianceEnabled] = useState(false);
@@ -335,11 +355,10 @@ export default function NewOrder() {
         description: `${newCustomer.name} has been added to the system`,
       });
     } catch (error) {
-      const axiosError = error as AxiosError<{ error: string }>;
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: axiosError.response?.data?.error || 'Failed to add customer',
+        description: getApiErrorMessage(error, 'Failed to add customer'),
       });
     }
   };
@@ -410,11 +429,10 @@ export default function NewOrder() {
       setNotes('');
       setItemSearch('');
     } catch (error) {
-      const axiosError = error as AxiosError<{ error: string }>;
       toast({
         variant: 'destructive',
         title: 'Error Creating Order',
-        description: axiosError.response?.data?.error || 'Failed to create order',
+        description: getApiErrorMessage(error, 'Failed to create order'),
       });
     } finally {
       setLoading(false);
@@ -638,19 +656,36 @@ export default function NewOrder() {
               {/* Compact controls row */}
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <Label className="text-xs text-muted-foreground">Discount %</Label>
+                  <Label className="text-xs text-muted-foreground">
+                    Discount % <span className="text-muted-foreground/70">(max {maxDiscountPercent}%)</span>
+                  </Label>
                   <Input
                     type="number"
                     min="0"
-                    max="100"
+                    max={maxDiscountPercent}
                     value={transactionDiscount || ''}
-                    onChange={(e) => setTransactionDiscount(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value) || 0;
+                      if (value <= maxDiscountPercent) {
+                        setTransactionDiscount(value);
+                      } else {
+                        toast({
+                          variant: 'destructive',
+                          title: 'Discount Limit',
+                          description: `Your role allows up to ${maxDiscountPercent}% discount`,
+                        });
+                      }
+                    }}
                     placeholder="0"
                     className="h-8 text-sm mt-1"
                   />
                 </div>
                 <div>
-                  <Label className="text-xs text-muted-foreground">Bargain</Label>
+                  <Label className="text-xs text-muted-foreground">
+                    Bargain {maxBargainAmount > 0 && (
+                      <span className="text-muted-foreground/70">(max {formatUGX(maxBargainAmount)})</span>
+                    )}
+                  </Label>
                   <Input
                     type="number"
                     min="0"

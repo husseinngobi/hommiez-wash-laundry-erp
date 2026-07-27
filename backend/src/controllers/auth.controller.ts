@@ -8,6 +8,7 @@ import { AuthRequest } from '../middleware/auth';
 import { UserRole, UserStatus } from '../models/User';
 import { userNotificationService } from '../services/user-notification.service';
 import { isSystemAdminEmail } from '../utils/systemAdmin';
+import { getEffectiveBargainLimit } from '../utils/roleLimits';
 import { uploadProfileImageToSupabase } from '../services/supabaseStorage.service';
 import { 
   logFailedLogin, 
@@ -290,12 +291,16 @@ export const login = async (req: AuthRequest, res: Response) => {
            last_failed_login = NULL
        WHERE id = $1 
        RETURNING id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
-                 created_at, updated_at, last_login`,
+                 created_at, updated_at, last_login, max_bargain_amount`,
       [user.id]
     );
     
     const updatedUser = updatedUserResult.rows[0];
     updatedUser.is_system_admin = isSystemAdminEmail(updatedUser.email);
+    updatedUser.max_bargain_amount = getEffectiveBargainLimit(
+      updatedUser.role,
+      updatedUser.max_bargain_amount
+    );
     
     // Auto-cancel any pending password reset requests (user successfully logged in, so they remember their password)
     try {
@@ -341,6 +346,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     
     const user = result.rows[0];
     user.is_system_admin = isSystemAdminEmail(user.email);
+    user.max_bargain_amount = getEffectiveBargainLimit(user.role, user.max_bargain_amount);
     res.json({ user });
   } catch (error) {
     console.error('Get user error:', error);

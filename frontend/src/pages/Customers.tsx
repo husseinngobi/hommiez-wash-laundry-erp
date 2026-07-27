@@ -309,7 +309,11 @@ export default function Customers() {
           .join(', ');
         toast.error(`Validation failed: ${validationErrors}`);
       } else {
-        toast.error(axiosError.response?.data?.error || "Failed to add customer");
+        toast.error(
+          axiosError.response?.data?.message ||
+          axiosError.response?.data?.error ||
+          "Failed to add customer"
+        );
       }
     }
   };
@@ -332,9 +336,13 @@ export default function Customers() {
       fetchCustomers();
       fetchStats(); // Refresh statistics
     } catch (error) {
-      const axiosError = error as AxiosError<{ error: string }>;
+      const axiosError = error as AxiosError<{ error: string; message?: string }>;
       console.error("Update customer error:", error);
-      toast.error(axiosError.response?.data?.error || "Failed to update customer");
+      toast.error(
+        axiosError.response?.data?.message ||
+        axiosError.response?.data?.error ||
+        "Failed to update customer"
+      );
     }
   };
 

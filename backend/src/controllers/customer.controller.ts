@@ -3,6 +3,47 @@ import { validationResult } from 'express-validator';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { logCreate, logUpdate, logDelete } from '../utils/activityLogger';
+import { normalizePhone, normalizeCustomerName } from '../utils/roleLimits';
+
+async function findCustomerByPhone(phone: string, excludeId?: number) {
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) return null;
+
+  const values: Array<string | number> = [normalizedPhone];
+  let sql = `
+    SELECT id, name, customer_id, phone
+    FROM customers
+    WHERE regexp_replace(phone, '[^0-9]', '', 'g') = $1
+  `;
+
+  if (excludeId !== undefined) {
+    sql += ' AND id != $2';
+    values.push(excludeId);
+  }
+
+  const result = await query(sql, values);
+  return result.rows[0] ?? null;
+}
+
+async function findCustomerByName(name: string, excludeId?: number) {
+  const normalizedName = normalizeCustomerName(name);
+  if (!normalizedName) return null;
+
+  const values: Array<string | number> = [normalizedName];
+  let sql = `
+    SELECT id, name, customer_id, phone
+    FROM customers
+    WHERE LOWER(TRIM(regexp_replace(name, '\\s+', ' ', 'g'))) = $1
+  `;
+
+  if (excludeId !== undefined) {
+    sql += ' AND id != $2';
+    values.push(excludeId);
+  }
+
+  const result = await query(sql, values);
+  return result.rows[0] ?? null;
+}
 
 export const getAllCustomers = async (req: AuthRequest, res: Response) => {
   try {
@@ -156,6 +197,26 @@ export const createCustomer = async (req: AuthRequest, res: Response) => {
       name, phone, email, location, notes, 
       sms_opt_in, customer_type 
     } = req.body;
+
+    const existingPhone = await findCustomerByPhone(phone);
+    if (existingPhone) {
+      return res.status(409).json({
+        error: 'DUPLICATE_PHONE',
+        message: `Phone number already exists for customer "${existingPhone.name}" (ID: ${existingPhone.customer_id}). ` +
+          'If this is a different person, use a unique phone number or add a distinguishing letter to the name.',
+        existingCustomer: existingPhone
+      });
+    }
+
+    const existingName = await findCustomerByName(name);
+    if (existingName) {
+      return res.status(409).json({
+        error: 'DUPLICATE_NAME',
+        message: `Customer name "${existingName.name}" already exists (ID: ${existingName.customer_id}). ` +
+          'Add a distinguishing letter or character to the name if this is a different person.',
+        existingCustomer: existingName
+      });
+    }
     
     // Convert empty strings to NULL for optional fields (allows multiple NULL values, but unique non-empty values)
     const normalizedEmail = email?.trim() || null;
@@ -293,6 +354,31 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
       name, phone, email, location, notes,
       sms_opt_in, customer_type
     } = req.body;
+
+    const customerId = parseInt(id, 10);
+
+    if (phone !== undefined) {
+      const existingPhone = await findCustomerByPhone(phone, customerId);
+      if (existingPhone) {
+        return res.status(409).json({
+          error: 'DUPLICATE_PHONE',
+          message: `Phone number already exists for customer "${existingPhone.name}" (ID: ${existingPhone.customer_id})`,
+          existingCustomer: existingPhone
+        });
+      }
+    }
+
+    if (name !== undefined) {
+      const existingName = await findCustomerByName(name, customerId);
+      if (existingName) {
+        return res.status(409).json({
+          error: 'DUPLICATE_NAME',
+          message: `Customer name "${existingName.name}" already exists (ID: ${existingName.customer_id}). ` +
+            'Add a distinguishing letter or character to the name if this is a different person.',
+          existingCustomer: existingName
+        });
+      }
+    }
     
     // Convert empty strings to NULL for optional fields
     const normalizedEmail = email !== undefined ? (email?.trim() || null) : undefined;
@@ -567,12 +653,9 @@ export const checkDuplicateCustomer = async (req: AuthRequest, res: Response) =>
     
     // Check phone number (CRITICAL - must be unique)
     if (phone && typeof phone === 'string') {
-      const phoneResult = await query(
-        'SELECT id, customer_id, name, phone, email FROM customers WHERE phone = $1',
-        [phone]
-      );
-      if (phoneResult.rows.length > 0) {
-        duplicates.phone = phoneResult.rows[0];
+      const existingPhone = await findCustomerByPhone(phone);
+      if (existingPhone) {
+        duplicates.phone = existingPhone;
       }
     }
     
@@ -580,24 +663,18 @@ export const checkDuplicateCustomer = async (req: AuthRequest, res: Response) =>
     if (email && typeof email === 'string' && email.trim() !== '') {
       const emailResult = await query(
         'SELECT id, customer_id, name, phone, email FROM customers WHERE email = $1',
-        [email]
+        [email.trim()]
       );
       if (emailResult.rows.length > 0) {
         duplicates.email = emailResult.rows[0];
       }
     }
     
-    // Check similar names (WARNING - allow but warn user)
+    // Check exact name match (CRITICAL - must be unique unless differentiated)
     if (name && typeof name === 'string' && name.trim() !== '') {
-      const nameResult = await query(
-        `SELECT id, customer_id, name, phone, email 
-         FROM customers 
-         WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))
-         LIMIT 5`,
-        [name]
-      );
-      if (nameResult.rows.length > 0) {
-        duplicates.similarNames = nameResult.rows;
+      const existingName = await findCustomerByName(name);
+      if (existingName) {
+        duplicates.similarNames = [existingName];
       }
     }
     
@@ -605,11 +682,16 @@ export const checkDuplicateCustomer = async (req: AuthRequest, res: Response) =>
                           duplicates.email !== null || 
                           duplicates.similarNames.length > 0;
     
+    const blockingDuplicate = duplicates.phone !== null ||
+      duplicates.email !== null ||
+      duplicates.similarNames.length > 0;
+    
     res.json({
       hasDuplicates,
+      blockingDuplicate,
       duplicates,
       message: hasDuplicates 
-        ? 'Potential duplicates found - please review before proceeding'
+        ? 'Duplicate customer found - use a unique phone number or add a distinguishing letter to the name'
         : 'No duplicates found - safe to proceed'
     });
   } catch (error) {

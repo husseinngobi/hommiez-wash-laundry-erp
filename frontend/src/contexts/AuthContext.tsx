@@ -306,7 +306,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isManager: user?.role === 'MANAGER',
     isCashier: user?.role === 'DESKTOP_AGENT',
     canAccessUserManagement: user?.role === 'ADMIN',
-    canAccessSettings: user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'DESKTOP_AGENT',
+    canAccessSettings: user?.role === 'ADMIN' || user?.role === 'MANAGER',
     canAccessReports: user?.role === 'ADMIN' || user?.role === 'MANAGER', // Admin and Manager can access reports
     canAccessInventory: user?.role === 'ADMIN',
     canDeleteCustomers: user?.role === 'ADMIN',

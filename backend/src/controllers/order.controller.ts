@@ -8,6 +8,7 @@ import { sendOrderConfirmation } from '../services/whatsapp.service';
 import { sendOrderReady } from '../services/whatsapp.service';
 import { generateOrderReceiptPDF } from '../services/pdf.service';
 import { logCreate, logUpdate, logDelete } from '../utils/activityLogger';
+import { getEffectiveBargainLimit, getMaxDiscountForRole } from '../utils/roleLimits';
 import fs from 'fs';
 
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
@@ -270,12 +271,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       });
     }
     
-    // 2. Validate and calculate discount
+    // 2. Validate and calculate discount (role-based limit)
     const discountPercentageValue = parseFloat(discount_percentage.toString()) || 0;
+    const maxDiscountForRole = getMaxDiscountForRole(req.user!.role);
     
-    // Validate discount percentage (max 50% to prevent abuse)
-    if (discountPercentageValue < 0 || discountPercentageValue > 50) {
-      throw new Error(`Invalid discount percentage: ${discountPercentageValue}. Must be between 0-50%`);
+    if (discountPercentageValue < 0 || discountPercentageValue > maxDiscountForRole) {
+      throw new Error(
+        `Invalid discount percentage: ${discountPercentageValue}%. Your role allows up to ${maxDiscountForRole}%`
+      );
     }
     
     const discount_amount = Math.round(calculatedSubtotal * (discountPercentageValue / 100));
@@ -287,9 +290,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       throw new Error('Bargain amount cannot be negative');
     }
     
-    // Fetch user's maximum bargain limit
+    // Fetch user's maximum bargain limit (with role-based default if unset)
     const userResult = await client.query(
-      `SELECT max_bargain_amount FROM users WHERE id = $1`,
+      `SELECT max_bargain_amount, role FROM users WHERE id = $1`,
       [req.user!.id]
     );
     
@@ -297,7 +300,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       throw new Error('User not found');
     }
     
-    const maxBargainAmount = userResult.rows[0].max_bargain_amount;
+    const maxBargainAmount = getEffectiveBargainLimit(
+      userResult.rows[0].role,
+      userResult.rows[0].max_bargain_amount
+    );
     
     // Validate bargain amount doesn't exceed user's limit
     if (bargainAmountValue > maxBargainAmount) {
@@ -739,10 +745,12 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       order: createdOrder,
     });
     
-  } catch (error) {
+  } catch (error: any) {
     await client.query('ROLLBACK');
     console.error('Create order error:', error);
-    res.status(500).json({ error: 'Failed to create order' });
+    const message = error?.message || 'Failed to create order';
+    const statusCode = error?.message && !error?.code ? 400 : 500;
+    res.status(statusCode).json({ error: message });
   } finally {
     client.release();
   }
