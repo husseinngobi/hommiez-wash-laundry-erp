@@ -191,13 +191,18 @@ export default function PriceList() {
     }
 
     try {
+      const washPrice = formData.price;
+      const ironingPrice = formData.ironing_price > 0
+        ? formData.ironing_price
+        : Math.round(washPrice / 2);
+
       const dataToSend = {
         name: formData.name,
         category: formData.category,
         subcategory: formData.subcategory || undefined,
         unit: formData.unit,
-        price: formData.price,
-        ironing_price: formData.ironing_price,
+        price: washPrice,
+        ironing_price: ironingPrice,
         express_price: formData.use_auto_express ? null : formData.express_price,
       };
       
@@ -229,11 +234,12 @@ export default function PriceList() {
       });
       fetchPriceItems();
     } catch (error) {
-      const axiosError = error as AxiosError<{ error: string }>;
+      const axiosError = error as AxiosError<{ error?: string; errors?: Array<{ msg: string }> }>;
+      const validationMsg = axiosError.response?.data?.errors?.map((e) => e.msg).join('; ');
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: axiosError.response?.data?.error || 'Failed to add price item',
+        description: axiosError.response?.data?.error || validationMsg || 'Failed to add price item',
       });
     }
   };
@@ -401,7 +407,23 @@ export default function PriceList() {
         </div>
 
         {canEditPrices && (
-          <Button onClick={() => setAddDialogOpen(true)} size="sm">
+          <Button onClick={() => {
+            setFormData({
+              item_id: '',
+              name: '',
+              category: 'general',
+              subcategory: '',
+              unit: 'piece',
+              price: 0,
+              ironing_price: 0,
+              express_price: null,
+              use_auto_express: true,
+              discount_percentage: 0,
+              discount_start_date: '',
+              discount_end_date: '',
+            });
+            setAddDialogOpen(true);
+          }} size="sm">
             <Plus className="mr-2 h-4 w-4" />
             Add Item
           </Button>
@@ -639,6 +661,7 @@ export default function PriceList() {
                   <SelectItem value="ladies">👗 Ladies</SelectItem>
                   <SelectItem value="general">🏠 Household</SelectItem>
                   <SelectItem value="kids">👶 Kids</SelectItem>
+                  <SelectItem value="home_services">🏡 Home Services</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -680,7 +703,15 @@ export default function PriceList() {
                   type="number"
                   placeholder="0"
                   value={formData.price || ''}
-                  onChange={(e) => setFormData({ ...formData, price: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const wash = parseInt(e.target.value) || 0;
+                    setFormData({
+                      ...formData,
+                      price: wash,
+                      // Keep ironing at half wash unless user already set a custom ironing price
+                      ironing_price: Math.round(wash / 2),
+                    });
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -688,10 +719,11 @@ export default function PriceList() {
                 <Input
                   id="ironing_price"
                   type="number"
-                  placeholder="0"
+                  placeholder="Auto: half wash"
                   value={formData.ironing_price || ''}
                   onChange={(e) => setFormData({ ...formData, ironing_price: parseInt(e.target.value) || 0 })}
                 />
+                <p className="text-xs text-muted-foreground">Defaults to half of wash price</p>
               </div>
             </div>
 
@@ -773,6 +805,7 @@ export default function PriceList() {
                     <SelectItem value="ladies">👗 Ladies</SelectItem>
                     <SelectItem value="general">🏠 Household</SelectItem>
                     <SelectItem value="kids">👶 Kids</SelectItem>
+                    <SelectItem value="home_services">🏡 Home Services</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -812,7 +845,19 @@ export default function PriceList() {
                   id="edit-price"
                   type="number"
                   value={formData.price || ''}
-                  onChange={(e) => setFormData({ ...formData, price: parseInt(e.target.value) || 0 })}
+                  onChange={(e) => {
+                    const wash = parseInt(e.target.value) || 0;
+                    const halfIron = Math.round(wash / 2);
+                    // If ironing was exactly half of previous wash, keep the half rule in sync
+                    const prevHalf = Math.round(formData.price / 2);
+                    setFormData({
+                      ...formData,
+                      price: wash,
+                      ironing_price: formData.ironing_price === prevHalf || formData.ironing_price === 0
+                        ? halfIron
+                        : formData.ironing_price,
+                    });
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -823,6 +868,7 @@ export default function PriceList() {
                   value={formData.ironing_price || ''}
                   onChange={(e) => setFormData({ ...formData, ironing_price: parseInt(e.target.value) || 0 })}
                 />
+                <p className="text-xs text-muted-foreground">Typically half of wash · Express defaults to 2× wash</p>
               </div>
             </div>
 

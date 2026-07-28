@@ -57,13 +57,14 @@ export const customerValidation = {
 
 export const priceValidation = {
   create: [
-    body('item_id').trim().notEmpty().withMessage('Item ID is required'),
+    body('item_id').optional({ values: 'falsy' }).trim(),
     body('name').trim().notEmpty().withMessage('Item name is required'),
     body('category').isIn(Object.values(PriceCategory)).withMessage('Invalid category'),
     body('subcategory').optional().trim(),
     body('unit').optional().isIn(Object.values(PriceUnit)).withMessage('Invalid unit'),
     body('price').isInt({ min: 0 }).withMessage('Price must be a positive number'),
-    body('ironing_price').isInt({ min: 0 }).withMessage('Ironing price must be a positive number'),
+    body('ironing_price').optional().isInt({ min: 0 }).withMessage('Ironing price must be a positive number'),
+    body('express_price').optional({ nullable: true }).isInt({ min: 0 }),
   ],
   
   update: [
@@ -74,6 +75,7 @@ export const priceValidation = {
     body('unit').optional().isIn(Object.values(PriceUnit)),
     body('price').optional().isInt({ min: 0 }),
     body('ironing_price').optional().isInt({ min: 0 }),
+    body('express_price').optional({ nullable: true }).isInt({ min: 0 }),
     body('is_active').optional().isBoolean(),
   ],
 };

@@ -36,6 +36,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -45,6 +46,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  openWhatsAppMessenger,
+  buildOrderReceiptWhatsAppMessage,
+} from '@/lib/whatsapp';
 
 interface Order {
   id: number;
@@ -192,92 +197,31 @@ const isOverdue = (order: Order): boolean => {
 };
 
 // WhatsApp helper functions
-const formatPhoneForWhatsApp = (phone: string): string => {
-  // Remove all non-numeric characters
-  let cleaned = phone.replace(/\D/g, '');
-  
-  // If starts with 0, replace with 256 (Uganda country code)
-  if (cleaned.startsWith('0')) {
-    cleaned = '256' + cleaned.substring(1);
-  }
-  
-  // If doesn't start with country code, add 256
-  if (!cleaned.startsWith('256')) {
-    cleaned = '256' + cleaned;
-  }
-  
-  return cleaned;
-};
-
 const generateOrderReceiptMessage = (order: Order, items: OrderItem[]): string => {
-  let message = `╔═══════════════════════════════╗\n`;
-  message += `║  🧺 LUSH DRY CLEANERS        ║\n`;
-  message += `║     & LAUNDROMAT              ║\n`;
-  message += `╠═══════════════════════════════╣\n`;
-  message += `║     📋 ORDER RECEIPT          ║\n`;
-  message += `╚═══════════════════════════════╝\n\n`;
-  
-  message += `┌───────────────────────────────┐\n`;
-  message += `│ ORDER DETAILS                 │\n`;
-  message += `├───────────────────────────────┤\n`;
-  message += `│ Order #:  ${order.order_number.padEnd(19)}│\n`;
-  message += `│ Date:     ${formatDate(order.created_at).padEnd(19)}│\n`;
-  message += `│ Customer: ${order.customer_name.substring(0, 19).padEnd(19)}│\n`;
-  message += `└───────────────────────────────┘\n\n`;
-  
-  message += `┌─────────────────────────────────────┐\n`;
-  message += `│           ITEMS ORDERED             │\n`;
-  message += `├─────────────────────────────────────┤\n`;
-  items.forEach((item, index) => {
-    const itemNum = `${index + 1}.`.padEnd(3);
-    const itemName = item.item_name.substring(0, 20).padEnd(20);
-    message += `│ ${itemNum}${itemName}         │\n`;
-    const serviceQty = `${item.service_type} × ${item.quantity}`.padEnd(20);
-    const price = formatUGX(item.total_price).padStart(15);
-    message += `│    ${serviceQty}${price} │\n`;
-    if (index < items.length - 1) {
-      message += `├─────────────────────────────────────┤\n`;
-    }
-  });
-  message += `└─────────────────────────────────────┘\n\n`;
-  
-  message += `┌─────────────────────────────────────┐\n`;
-  message += `│        PAYMENT SUMMARY              │\n`;
-  message += `├─────────────────────────────────────┤\n`;
-  message += `│ Subtotal:        ${formatUGX(order.subtotal).padStart(18)} │\n`;
-  if (order.discount_percentage > 0) {
-    message += `│ Discount (${order.discount_percentage}%):   -${formatUGX(order.discount_amount).padStart(17)} │\n`;
-  }
-  if (order.bargain_amount > 0) {
-    message += `│ Bargain:         -${formatUGX(order.bargain_amount).padStart(17)} │\n`;
-  }
-  if (order.tax_amount > 0) {
-    message += `│ VAT (${order.tax_rate}%):    +${formatUGX(order.tax_amount).padStart(17)} │\n`;
-  }
-  message += `├─────────────────────────────────────┤\n`;
-  message += `│ *TOTAL:*           ${formatUGX(order.total_amount).padStart(16)} │\n`;
-  message += `├─────────────────────────────────────┤\n`;
-  message += `│ Amount Paid:     ${formatUGX(order.amount_paid).padStart(18)} │\n`;
-  if (order.balance > 0) {
-    message += `│ *Balance Due:*     ${formatUGX(order.balance).padStart(16)} │\n`;
-  } else {
-    message += `│ *Status:*          ✅ FULLY PAID │\n`;
-  }
-  message += `└─────────────────────────────────────┘\n\n`;
-  
-  message += `✅ *Your order is READY for pickup!*\n\n`;
-  message += `⚠️ *IMPORTANT NOTICE* ⚠️\n`;
-  message += `═══════════════════════════════════════\n`;
-  message += `Please CHECK ALL ITEMS before leaving.\n`;
-  message += `Complaints after 7 days from pickup\n`;
-  message += `will NOT be accepted.\n`;
-  message += `═══════════════════════════════════════\n\n`;
-  message += `Thank you for choosing Lush!\n`;
-  message += `📞 Call us for any inquiries\n`;
-  message += `🌟 We value your business!\n`;
-  message += `═══════════════════════════════════════`;
-  
-  return message;
+  return buildOrderReceiptWhatsAppMessage(
+    {
+      order_number: order.order_number,
+      customer_name: order.customer_name,
+      created_at: order.created_at,
+      subtotal: Number(order.subtotal),
+      discount_percentage: Number(order.discount_percentage || 0),
+      discount_amount: Number(order.discount_amount || 0),
+      bargain_amount: Number(order.bargain_amount || 0),
+      tax_rate: Number(order.tax_rate || 0),
+      tax_amount: Number(order.tax_amount || 0),
+      total_amount: Number(order.total_amount),
+      amount_paid: Number(order.amount_paid),
+      balance: Number(order.balance),
+      payment_status: order.payment_status,
+      order_status: order.order_status,
+    },
+    items.map((item) => ({
+      item_name: item.item_name,
+      service_type: item.service_type,
+      quantity: item.quantity,
+      total_price: Number(item.total_price),
+    }))
+  );
 };
 
 const generateOrderReadyMessage = (order: Order): string => {
@@ -325,40 +269,33 @@ const generateOrderReadyMessage = (order: Order): string => {
   return message;
 };
 
-const openWhatsApp = (phone: string, message: string) => {
-  const formattedPhone = formatPhoneForWhatsApp(phone);
-  const encodedMessage = encodeURIComponent(message);
-  const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
-  window.open(whatsappUrl, '_blank');
-};
-
 // Generate context-aware reminder message for WhatsApp
-const generateReminderMessage = (order: Order): string => {
+const generateReminderMessage = (order: Order, businessPhone?: string): string => {
   const businessName = 'Lush Laundry';
-  const businessPhone = '+256700000000';
+  const phoneLine = businessPhone ? `\n📞 ${businessPhone}` : '';
 
   // READY for collection
   if (order.order_status === 'ready') {
     if (order.payment_status === 'PAID') {
-      return `Hello ${order.customer_name}! 🎉\n\nYour order ${order.order_number} is READY for collection!\n\n📊 Total Amount: ${formatUGX(order.total_amount)}\n✅ Payment Status: Fully Paid\n\nPlease collect at your earliest convenience.\n\nThank you for choosing ${businessName}!\n📞 ${businessPhone}`;
+      return `Hello ${order.customer_name}! 🎉\n\nYour order ${order.order_number} is READY for collection!\n\n📊 Total Amount: ${formatUGX(order.total_amount)}\n✅ Payment Status: Fully Paid\n\nPlease collect at your earliest convenience.\n\nThank you for choosing ${businessName}!${phoneLine}`;
     } else {
-      return `Hello ${order.customer_name}! 👋\n\nYour order ${order.order_number} is READY for collection.\n\n📊 Total: ${formatUGX(order.total_amount)}\n💰 Balance Due: ${formatUGX(order.balance)}\n\nPlease collect and settle the balance.\n\n${businessName}\n📞 ${businessPhone}`;
+      return `Hello ${order.customer_name}! 👋\n\nYour order ${order.order_number} is READY for collection.\n\n📊 Total: ${formatUGX(order.total_amount)}\n💰 Balance Due: ${formatUGX(order.balance)}\n\nPlease collect and settle the balance.\n\n${businessName}${phoneLine}`;
     }
   }
 
   // DELIVERED but UNPAID/PARTIAL - Payment reminder
   if (order.order_status === 'delivered' && order.payment_status !== 'PAID') {
     const daysOverdue = order.due_date ? Math.floor((new Date().getTime() - new Date(order.due_date).getTime()) / (1000 * 60 * 60 * 24)) : 0;
-    return `Hello ${order.customer_name},\n\nReminder: Your order ${order.order_number} has an outstanding balance.\n\n💰 Amount Due: ${formatUGX(order.balance)}${daysOverdue > 0 ? `\n⚠️ Overdue by ${daysOverdue} days` : ''}\n\nKindly settle your balance at your earliest convenience.\n\nThank you,\n${businessName}\n📞 ${businessPhone}`;
+    return `Hello ${order.customer_name},\n\nReminder: Your order ${order.order_number} has an outstanding balance.\n\n💰 Amount Due: ${formatUGX(order.balance)}${daysOverdue > 0 ? `\n⚠️ Overdue by ${daysOverdue} days` : ''}\n\nKindly settle your balance at your earliest convenience.\n\nThank you,\n${businessName}${phoneLine}`;
   }
 
   // PROCESSING
   if (order.order_status === 'processing') {
-    return `Hello ${order.customer_name}! 👋\n\nYour order ${order.order_number} is currently being processed.\n\nWe'll notify you once it's ready for collection.\n\nThank you for your patience!\n${businessName}\n📞 ${businessPhone}`;
+    return `Hello ${order.customer_name}! 👋\n\nYour order ${order.order_number} is currently being processed.\n\nWe'll notify you once it's ready for collection.\n\nThank you for your patience!\n${businessName}${phoneLine}`;
   }
 
   // Generic reminder
-  return `Hello ${order.customer_name}! 👋\n\nThis is a reminder about your order ${order.order_number}.\n\n📊 Total: ${formatUGX(order.total_amount)}\n💰 Balance: ${formatUGX(order.balance)}\n📍 Status: ${order.order_status}\n\nFor any questions, please contact us:\n📞 ${businessPhone}\n\n${businessName}`;
+  return `Hello ${order.customer_name}! 👋\n\nThis is a reminder about your order ${order.order_number}.\n\n📊 Total: ${formatUGX(order.total_amount)}\n💰 Balance: ${formatUGX(order.balance)}\n📍 Status: ${order.order_status}\n\nFor any questions, please contact us.${phoneLine}\n\n${businessName}`;
 };
 
 // Print receipt function
@@ -663,6 +600,16 @@ export default function Orders() {
   const [reminderOrder, setReminderOrder] = useState<Order | null>(null);
   const [reminderMessage, setReminderMessage] = useState('');
   const [reminderChannel, setReminderChannel] = useState<'sms' | 'whatsapp' | 'both'>('both');
+  const [businessPhone, setBusinessPhone] = useState('');
+
+  // Manual WhatsApp Messenger compose (editable before send)
+  type WhatsAppComposeKind = 'receipt' | 'ready' | 'reminder' | 'custom';
+  const [showWhatsAppCompose, setShowWhatsAppCompose] = useState(false);
+  const [whatsAppComposeKind, setWhatsAppComposeKind] = useState<WhatsAppComposeKind>('receipt');
+  const [whatsAppComposeMessage, setWhatsAppComposeMessage] = useState('');
+  const [whatsAppComposeOrder, setWhatsAppComposeOrder] = useState<Order | null>(null);
+  const [whatsAppComposeItems, setWhatsAppComposeItems] = useState<OrderItem[]>([]);
+  const [whatsAppComposePhone, setWhatsAppComposePhone] = useState('');
 
   // Track if we've already auto-opened an order from navigation
   const hasAutoOpenedRef = useRef(false);
@@ -719,6 +666,106 @@ export default function Orders() {
       setLoading(false);
     }
   }, [token, toast, currentPage, searchQuery, statusFilter, paymentFilter]);
+
+  useEffect(() => {
+    if (!token) return;
+    axios
+      .get(`${API_BASE_URL}/settings/all`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBusinessPhone(res.data.business_phone || ''))
+      .catch(() => setBusinessPhone(''));
+  }, [token]);
+
+  const buildWhatsAppTemplate = (
+    kind: WhatsAppComposeKind,
+    order: Order,
+    items: OrderItem[]
+  ): string => {
+    switch (kind) {
+      case 'receipt':
+        return generateOrderReceiptMessage(order, items);
+      case 'ready':
+        return generateOrderReadyMessage(order);
+      case 'reminder':
+        return generateReminderMessage(order, businessPhone || undefined);
+      case 'custom':
+      default:
+        return `Hello ${order.customer_name},\n\nThis is Lush Dry Cleaners & Laundromat regarding your order *${order.order_number}*.\n\n${businessPhone ? `📞 ${businessPhone}\n\n` : ''}Thank you for choosing Lush!`;
+    }
+  };
+
+  const openWhatsAppCompose = async (
+    order: Order,
+    kind: WhatsAppComposeKind,
+    itemsOverride?: OrderItem[]
+  ) => {
+    let items = itemsOverride;
+    if (!items) {
+      if (selectedOrder?.id === order.id && orderItems.length > 0) {
+        items = orderItems;
+      } else if (kind === 'receipt') {
+        try {
+          const response = await axios.get(`${API_BASE_URL}/orders/${order.id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          items = response.data.items || [];
+        } catch {
+          items = [];
+        }
+      } else {
+        items = [];
+      }
+    }
+
+    setWhatsAppComposeOrder(order);
+    setWhatsAppComposeItems(items || []);
+    setWhatsAppComposeKind(kind);
+    setWhatsAppComposePhone(order.customer_phone || '');
+    setWhatsAppComposeMessage(buildWhatsAppTemplate(kind, order, items || []));
+    setShowWhatsAppCompose(true);
+  };
+
+  const applyWhatsAppTemplate = (kind: WhatsAppComposeKind) => {
+    if (!whatsAppComposeOrder) return;
+    setWhatsAppComposeKind(kind);
+    setWhatsAppComposeMessage(
+      buildWhatsAppTemplate(kind, whatsAppComposeOrder, whatsAppComposeItems)
+    );
+  };
+
+  const confirmOpenWhatsAppMessenger = () => {
+    if (!whatsAppComposePhone?.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing phone',
+        description: 'Customer needs a WhatsApp number on their profile.',
+      });
+      return;
+    }
+    if (!whatsAppComposeMessage.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Empty message',
+        description: 'Write or customize the message before opening WhatsApp.',
+      });
+      return;
+    }
+
+    const opened = openWhatsAppMessenger(whatsAppComposePhone, whatsAppComposeMessage);
+    if (opened) {
+      toast({
+        title: 'Opening WhatsApp Messenger',
+        description: businessPhone
+          ? `Send from your business WhatsApp (${businessPhone}). Review the message, then tap Send.`
+          : 'Review the message on WhatsApp, then tap Send. Set business phone in Settings for branding.',
+      });
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Could not open WhatsApp',
+        description: 'Check the customer phone number format.',
+      });
+    }
+  };
 
   // Handle navigation from customer order history or dashboard
   useEffect(() => {
@@ -1003,31 +1050,7 @@ export default function Orders() {
 
   // Generate reminder message preview (client-side)
   const generateReminderPreview = (order: Order): string => {
-    const businessName = 'Lush Laundry';
-    const businessPhone = '+256700000000';
-
-    // READY for collection
-    if (order.order_status === 'ready') {
-      if (order.payment_status === 'PAID') {
-        return `Hello ${order.customer_name}! 🎉\n\nYour order ${order.order_number} is READY for collection!\n\n📊 Total Amount: UGX ${formatUGX(order.total_amount)}\n✅ Payment Status: Fully Paid\n\nPlease collect at your earliest convenience.\n\nThank you for choosing ${businessName}!\n📞 ${businessPhone}`;
-      } else {
-        return `Hello ${order.customer_name}! 👋\n\nYour order ${order.order_number} is READY for collection.\n\n📊 Total: UGX ${formatUGX(order.total_amount)}\n💰 Balance Due: UGX ${formatUGX(order.balance)}\n\nPlease collect and settle the balance.\n\n${businessName}\n📞 ${businessPhone}`;
-      }
-    }
-
-    // DELIVERED but UNPAID/PARTIAL
-    if (order.order_status === 'delivered' && order.payment_status !== 'PAID') {
-      const daysOverdue = order.due_date ? Math.floor((new Date().getTime() - new Date(order.due_date).getTime()) / (1000 * 60 * 60 * 24)) : 0;
-      return `Hello ${order.customer_name},\n\nReminder: Your order ${order.order_number} has an outstanding balance.\n\n💰 Amount Due: UGX ${formatUGX(order.balance)}${daysOverdue > 0 ? `\n⚠️ Overdue by ${daysOverdue} days` : ''}\n\nKindly settle your balance at your earliest convenience.\n\nThank you,\n${businessName}\n📞 ${businessPhone}`;
-    }
-
-    // PROCESSING
-    if (order.order_status === 'processing') {
-      return `Hello ${order.customer_name}! 👋\n\nYour order ${order.order_number} is currently being processed.\n\nWe'll notify you once it's ready for collection.\n\nThank you for your patience!\n${businessName}\n📞 ${businessPhone}`;
-    }
-
-    // Generic reminder
-    return `Hello ${order.customer_name}! 👋\n\nThis is a reminder about your order ${order.order_number}.\n\n📊 Total: UGX ${formatUGX(order.total_amount)}\n💰 Balance: UGX ${formatUGX(order.balance)}\n📍 Status: ${order.order_status}\n\nFor any questions, please contact us:\n📞 ${businessPhone}\n\n${businessName}`;
+    return generateReminderMessage(order, businessPhone || undefined);
   };
 
   // Send reminder to customer
@@ -1506,10 +1529,20 @@ export default function Orders() {
                               Print Receipt
                             </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem
-                              onClick={() => openWhatsApp(order.customer_phone, `Hello ${order.customer_name}, this is Lush Dry Cleaners & Laundromat. Regarding your order ${order.order_number}... `)}
+                              onClick={() => {
+                                void openWhatsAppCompose(order, 'receipt');
+                              }}
                             >
                               <MessageCircle className="h-4 w-4 mr-2" />
-                              Send via WhatsApp
+                              WhatsApp Receipt
+                            </DropdownMenuCheckboxItem>
+                            <DropdownMenuCheckboxItem
+                              onClick={() => {
+                                void openWhatsAppCompose(order, 'ready');
+                              }}
+                            >
+                              <MessageCircle className="h-4 w-4 mr-2" />
+                              Notify Ready (WhatsApp)
                             </DropdownMenuCheckboxItem>
                             <DropdownMenuCheckboxItem
                               onClick={() => {
@@ -2075,31 +2108,41 @@ export default function Orders() {
               <div className="space-y-4 pt-4 border-t">
                 <h3 className="font-semibold text-lg flex items-center gap-2">
                   <MessageCircle className="h-5 w-5 text-green-600" />
-                  WhatsApp Communication
+                  WhatsApp Messenger
                 </h3>
+                <p className="text-sm text-muted-foreground">
+                  Opens WhatsApp on this computer/phone so you can send from your business WhatsApp account.
+                  Edit the message first, then tap Send in Messenger.
+                  {businessPhone ? (
+                    <span className="block mt-1 text-green-700 dark:text-green-400">
+                      Business contact on messages: {businessPhone} (from Settings)
+                    </span>
+                  ) : (
+                    <span className="block mt-1 text-amber-700 dark:text-amber-400">
+                      Tip: set Business Phone in Settings so receipts include your number.
+                    </span>
+                  )}
+                </p>
                 <div className="flex flex-wrap gap-2 p-4 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
                   <Button
-                    onClick={() => openWhatsApp(selectedOrder.customer_phone, generateOrderReceiptMessage(selectedOrder, orderItems))}
+                    onClick={() => void openWhatsAppCompose(selectedOrder, 'receipt', orderItems)}
                     variant="outline"
                     className="gap-2 border-green-600 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900"
                   >
                     <MessageCircle className="h-4 w-4" />
                     Send Receipt
                   </Button>
-                  {selectedOrder.order_status === 'ready' && (
-                    <Button
-                      onClick={() => openWhatsApp(selectedOrder.customer_phone, generateOrderReadyMessage(selectedOrder))}
-                      variant="outline"
-                      className="gap-2 border-green-600 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      Notify Order Ready
-                    </Button>
-                  )}
-                  {/* Send Reminder Button - Manual WhatsApp communication */}
+                  <Button
+                    onClick={() => void openWhatsAppCompose(selectedOrder, 'ready', orderItems)}
+                    variant="outline"
+                    className="gap-2 border-green-600 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Notify Order Ready
+                  </Button>
                   {!(selectedOrder.order_status === 'delivered' && selectedOrder.payment_status === 'PAID') && (
                     <Button
-                      onClick={() => openWhatsApp(selectedOrder.customer_phone, generateReminderMessage(selectedOrder))}
+                      onClick={() => void openWhatsAppCompose(selectedOrder, 'reminder', orderItems)}
                       variant="outline"
                       className="gap-2 border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900"
                     >
@@ -2108,7 +2151,7 @@ export default function Orders() {
                     </Button>
                   )}
                   <Button
-                    onClick={() => openWhatsApp(selectedOrder.customer_phone, `Hello ${selectedOrder.customer_name}, this is Lush Dry Cleaners & Laundromat. `)}
+                    onClick={() => void openWhatsAppCompose(selectedOrder, 'custom', orderItems)}
                     variant="outline"
                     className="gap-2 border-green-600 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900"
                   >
@@ -2131,7 +2174,7 @@ export default function Orders() {
                     Print Order Receipt
                   </Button>
                   <p className="text-sm text-gray-600 dark:text-gray-400 w-full mt-2">
-                    💡 Opens print dialog. Connect to thermal or regular printer.
+                    Opens the print dialog for thermal (80mm) or regular printers connected to this computer.
                   </p>
                 </div>
 
@@ -2619,6 +2662,28 @@ export default function Orders() {
                 >
                   Cancel
                 </Button>
+                {(reminderChannel === 'whatsapp' || reminderChannel === 'both') && reminderOrder && (
+                  <Button
+                    variant="outline"
+                    className="w-full sm:flex-1 border-green-600 text-green-700"
+                    disabled={!reminderMessage.trim()}
+                    onClick={() => {
+                      const opened = openWhatsAppMessenger(
+                        reminderOrder.customer_phone,
+                        reminderMessage
+                      );
+                      if (opened) {
+                        toast({
+                          title: 'Opening WhatsApp Messenger',
+                          description: 'Use this when WhatsApp API automation is off.',
+                        });
+                      }
+                    }}
+                  >
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    Open Messenger
+                  </Button>
+                )}
                 <Button
                   onClick={sendReminder}
                   disabled={sendingReminder !== null || !reminderMessage.trim()}
@@ -2631,9 +2696,111 @@ export default function Orders() {
                   ) : (
                     <>
                       <Bell className="h-4 w-4 mr-2" />
-                      Send Reminder
+                      Send via API
                     </>
                   )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* WhatsApp Messenger compose — edit then open Messenger */}
+      <Dialog open={showWhatsAppCompose} onOpenChange={setShowWhatsAppCompose}>
+        <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[96dvh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-green-600" />
+              WhatsApp Messenger
+            </DialogTitle>
+            <DialogDescription>
+              Customize the message, then open WhatsApp to send to the customer from your business account on this device.
+            </DialogDescription>
+          </DialogHeader>
+
+          {whatsAppComposeOrder && (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/40 p-3 text-sm space-y-1">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Order</span>
+                  <span className="font-medium">{whatsAppComposeOrder.order_number}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Customer</span>
+                  <span className="font-medium">{whatsAppComposeOrder.customer_name}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Customer WhatsApp</span>
+                  <span className="font-medium">{whatsAppComposePhone || '—'}</span>
+                </div>
+                {businessPhone && (
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">Business contact</span>
+                    <span className="font-medium">{businessPhone}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm">Message template</Label>
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      ['receipt', 'Receipt'],
+                      ['ready', 'Order Ready'],
+                      ['reminder', 'Reminder'],
+                      ['custom', 'Custom'],
+                    ] as Array<[WhatsAppComposeKind, string]>
+                  ).map(([kind, label]) => (
+                    <Button
+                      key={kind}
+                      type="button"
+                      size="sm"
+                      variant={whatsAppComposeKind === kind ? 'default' : 'outline'}
+                      onClick={() => applyWhatsAppTemplate(kind)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="wa-compose-phone">Customer phone</Label>
+                <Input
+                  id="wa-compose-phone"
+                  value={whatsAppComposePhone}
+                  onChange={(e) => setWhatsAppComposePhone(e.target.value)}
+                  placeholder="07xxxxxxxx or +256..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="wa-compose-message">Message (edit freely)</Label>
+                <Textarea
+                  id="wa-compose-message"
+                  value={whatsAppComposeMessage}
+                  onChange={(e) => setWhatsAppComposeMessage(e.target.value)}
+                  rows={12}
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t">
+                <Button
+                  variant="outline"
+                  className="w-full sm:flex-1"
+                  onClick={() => setShowWhatsAppCompose(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="w-full sm:flex-1 bg-green-600 hover:bg-green-700"
+                  onClick={confirmOpenWhatsAppMessenger}
+                >
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  Open WhatsApp Messenger
                 </Button>
               </div>
             </div>

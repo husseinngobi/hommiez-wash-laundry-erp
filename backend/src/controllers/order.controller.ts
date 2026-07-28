@@ -374,21 +374,25 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     const year = new Date().getFullYear();
     const order_number = `ORD${year}${String(nextNumber).padStart(4, '0')}`;
     
+    // On Account = credit sale: force unpaid with zero amount paid
+    let finalPaymentMethod = payment_method || 'CASH';
+    let finalPaymentStatus = payment_status;
+    let finalAmountPaidValue = amount_paid;
+
+    if (finalPaymentMethod === 'ON_ACCOUNT') {
+      finalPaymentStatus = 'UNPAID';
+      finalAmountPaidValue = 0;
+      console.log('💳 On Account selected — payment status forced to UNPAID');
+    }
+
     // Calculate balance
-    const balance = total_amount - amount_paid;
+    const balance = total_amount - finalAmountPaidValue;
     
     // Validate amount_paid doesn't exceed total_amount (prevents negative balance)
-    if (amount_paid > total_amount) {
-      const amountPaidDisplay = amount_paid.toLocaleString('en-UG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    if (finalAmountPaidValue > total_amount) {
+      const amountPaidDisplay = finalAmountPaidValue.toLocaleString('en-UG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
       const totalDisplay = total_amount.toLocaleString('en-UG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
       throw new Error(`Payment amount (UGX ${amountPaidDisplay}) exceeds the order total (UGX ${totalDisplay}). Maximum payment allowed is UGX ${totalDisplay}.`);
-    }
-    
-    // Auto-set payment method to ON_ACCOUNT for unpaid orders (credit/pending)
-    let finalPaymentMethod = payment_method;
-    if (payment_status === 'UNPAID' && !payment_method) {
-      finalPaymentMethod = 'ON_ACCOUNT';
-      console.log('💳 Auto-set payment method to ON_ACCOUNT for unpaid order');
     }
     
     // Generate invoice number
@@ -436,9 +440,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         discount_amount,
         bargainAmountValue,
         total_amount, 
-        payment_status,
-        finalPaymentMethod, // Use auto-set payment method for unpaid orders
-        amount_paid,
+        finalPaymentStatus,
+        finalPaymentMethod, // Use auto-set payment method for unpaid/on-account orders
+        finalAmountPaidValue,
         balance,
         'pending', // Initial status (lowercase to match enum: pending, processing, ready, delivered, cancelled)
         transaction_reference || null,
@@ -474,7 +478,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     }
     
     // Create payment transaction if order has payment (PAID or PARTIAL)
-    if (amount_paid > 0 && payment_status !== 'UNPAID' && finalPaymentMethod && finalPaymentMethod !== 'ON_ACCOUNT') {
+    if (finalAmountPaidValue > 0 && finalPaymentStatus !== 'UNPAID' && finalPaymentMethod && finalPaymentMethod !== 'ON_ACCOUNT') {
       await client.query(
         `INSERT INTO payments (
           order_id,
@@ -489,14 +493,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         [
           orderId,
           customer_id,
-          amount_paid,
+          finalAmountPaidValue,
           finalPaymentMethod,
           transaction_reference || null,
           `Initial payment for order ${order_number}`,
           req.user!.id
         ]
       );
-      console.log(`💰 Payment transaction created: ${finalPaymentMethod} - UGX ${amount_paid.toLocaleString()}`);
+      console.log(`💰 Payment transaction created: ${finalPaymentMethod} - UGX ${finalAmountPaidValue.toLocaleString()}`);
     }
     
     await client.query('COMMIT');

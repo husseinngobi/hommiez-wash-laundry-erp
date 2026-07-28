@@ -86,20 +86,60 @@ export const getPriceById = async (req: AuthRequest, res: Response) => {
   }
 };
 
+const CATEGORY_PREFIX: Record<string, string> = {
+  gents: 'g',
+  ladies: 'l',
+  general: 'h',
+  kids: 'k',
+  home_services: 'hs',
+};
+
+async function generateNextItemId(category: string): Promise<string> {
+  const prefix = CATEGORY_PREFIX[category] || 'x';
+  const result = await query(
+    `SELECT item_id FROM price_items WHERE item_id ~ $1`,
+    [`^${prefix}\\d+$`]
+  );
+
+  let max = 0;
+  for (const row of result.rows) {
+    const match = String(row.item_id).match(new RegExp(`^${prefix}(\\d+)$`, 'i'));
+    if (match) {
+      max = Math.max(max, Number(match[1]));
+    }
+  }
+
+  return `${prefix}${max + 1}`;
+}
+
 export const createPrice = async (req: AuthRequest, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({
+        error: errors.array().map((e: any) => e.msg).join('; '),
+        errors: errors.array(),
+      });
     }
     
-    const { item_id, name, category, subcategory, unit = 'piece', price, ironing_price, express_price } = req.body;
+    const { name, category, subcategory, unit = 'piece', price, express_price } = req.body;
+    let { item_id, ironing_price } = req.body;
+
+    // Auto-generate item_id when not provided (UI expects this)
+    if (!item_id || String(item_id).trim() === '') {
+      item_id = await generateNextItemId(category);
+    }
+
+    // Default ironing to half wash price when omitted
+    if (ironing_price === undefined || ironing_price === null || ironing_price === '') {
+      ironing_price = Math.round(Number(price) / 2);
+    }
     
     const result = await query(
       `INSERT INTO price_items (item_id, name, category, subcategory, unit, price, ironing_price, express_price)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [item_id, name, category, subcategory, unit, price, ironing_price, express_price]
+      [item_id, name, category, subcategory || null, unit, price, ironing_price, express_price ?? null]
     );
     
     res.status(201).json({
@@ -107,7 +147,7 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
       price: result.rows[0],
     });
   } catch (error: any) {
-    if (error.message.includes('duplicate key')) {
+    if (error.message?.includes('duplicate key')) {
       return res.status(409).json({ error: 'Item ID already exists' });
     }
     console.error('Create price error:', error);
@@ -225,7 +265,7 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
       SELECT 
         COUNT(DISTINCT o.id) as total_orders,
         COUNT(DISTINCT CASE WHEN o.payment_status IN ('UNPAID', 'PARTIAL') THEN o.id END) as unpaid_orders,
-        COUNT(DISTINCT CASE WHEN o.order_status NOT IN ('delivered', 'cancelled') THEN o.id END) as pending_orders
+        COUNT(DISTINCT CASE WHEN LOWER(COALESCE(o.status, o.order_status::text, '')) NOT IN ('delivered', 'cancelled') THEN o.id END) as pending_orders
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE oi.price_item_id = $1

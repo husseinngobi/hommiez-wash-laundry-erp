@@ -19,19 +19,27 @@ const seed = async () => {
     
     await client.query('BEGIN');
     
-    // 1. Create Admin User
-    const hashedPassword = await bcrypt.hash('Admin123!', 10);
+    // 1. Create Admin User — password from SEED_ADMIN_PASSWORD in .env
+    const adminPlainPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!adminPlainPassword) {
+      throw new Error('Set SEED_ADMIN_PASSWORD in backend/.env before seeding (see .env.example)');
+    }
+    const hashedPassword = await bcrypt.hash(adminPlainPassword, 10);
     const adminResult = await client.query(`
       INSERT INTO users (email, password, full_name, phone, role, status)
       VALUES ($1, $2, $3, $4, 'ADMIN', 'ACTIVE')
       RETURNING id
-    `, ['admin@lushlaundry.com', hashedPassword, 'System Administrator', '+256 700 000 000']);
+    `, [process.env.SEED_ADMIN_EMAIL || 'admin@lushlaundry.com', hashedPassword, 'System Administrator', process.env.SEED_ADMIN_PHONE || '+256700000000']);
     
     const adminId = adminResult.rows[0].id;
     console.log('✅ Created admin user');
     
-    // 2. Create sample users
-    const userPassword = await bcrypt.hash('User123!', 10);
+    // 2. Create sample users — password from SEED_USER_PASSWORD in .env
+    const userPlainPassword = process.env.SEED_USER_PASSWORD;
+    if (!userPlainPassword) {
+      throw new Error('Set SEED_USER_PASSWORD in backend/.env before seeding (see .env.example)');
+    }
+    const userPassword = await bcrypt.hash(userPlainPassword, 10);
     await client.query(`
       INSERT INTO users (email, password, full_name, phone, role, status, created_by)
       VALUES 
@@ -142,12 +150,10 @@ const seed = async () => {
     
     await client.query('COMMIT');
     console.log('✅ Database seeding completed successfully!');
-    console.log('\n📝 Default Admin Credentials:');
-    console.log('   Email: admin@lushlaundry.com');
-    console.log('   Password: Admin123!');
-    console.log('\n📝 Default User Credentials:');
-    console.log('   Email: user@lushlaundry.com');
-    console.log('   Password: User123!\n');
+    console.log('\n📝 Seeded login emails (passwords from your .env SEED_* vars):');
+    console.log(`   Admin: ${process.env.SEED_ADMIN_EMAIL || 'admin@lushlaundry.com'}`);
+    console.log('   Staff sample users use SEED_USER_PASSWORD from .env');
+    console.log('   Never commit real passwords — keep them only in .env\n');
     
   } catch (error) {
     await client.query('ROLLBACK');

@@ -32,31 +32,26 @@ async function showLoginCredentials() {
     
     for (const user of result.rows) {
       let roleIcon = '';
-      let password = '';
       
       switch (user.role) {
         case 'ADMIN':
           roleIcon = '👑';
-          password = 'Admin123!';
           break;
         case 'MANAGER':
           roleIcon = '📊';
-          password = 'manager123';
           break;
         case 'DESKTOP_AGENT':
           roleIcon = '💼';
-          password = 'User123!';
           break;
         case 'USER':
           roleIcon = '👤';
-          password = 'User123!';
           break;
       }
       
       console.log(`${roleIcon} ${user.role}`);
       console.log(`   Name:     ${user.full_name}`);
       console.log(`   Email:    ${user.email}`);
-      console.log(`   Password: ${password}`);
+      console.log(`   Password: (from SEED_* / create scripts in .env — not stored in source)`);
       console.log(`   Status:   ${user.status}`);
       console.log('');
     }

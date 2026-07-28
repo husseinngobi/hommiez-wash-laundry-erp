@@ -20,7 +20,7 @@ const pool = new Pool({
   user: 'postgres',
   host: 'localhost',
   database: 'lush_laundry',
-  password: '551129',
+  password: process.env.DB_PASSWORD,
   port: 5432
 });
 

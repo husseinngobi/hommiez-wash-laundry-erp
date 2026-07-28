@@ -83,7 +83,7 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
         business_tin: settingsRes.data.business_tin || '',
         fiscal_device_number: settingsRes.data.fiscal_device_number || '',
         business_address: settingsRes.data.business_address || 'Kampala, Uganda',
-        business_phone: settingsRes.data.business_phone || '+256700000000',
+        business_phone: settingsRes.data.business_phone || '',
         business_email: settingsRes.data.business_email || 'info@lushlaundry.com',
         vat_rate: settingsRes.data.vat_rate || '18.00',
         invoice_footer_text: settingsRes.data.invoice_footer_text || 'Thank you for your business!',

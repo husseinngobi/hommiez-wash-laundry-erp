@@ -42,7 +42,17 @@ export const config = {
   database: databaseConfig,
   
   jwt: {
-    secret: process.env.JWT_SECRET || 'change-this-secret-key',
+    secret: (() => {
+      const secret = process.env.JWT_SECRET;
+      if (!secret || secret === 'change-this-secret-key') {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('JWT_SECRET must be set to a strong value in production (.env)');
+        }
+        console.warn('⚠️ JWT_SECRET is missing or using the insecure default. Set JWT_SECRET in .env');
+        return secret || 'change-this-secret-key';
+      }
+      return secret;
+    })(),
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
   

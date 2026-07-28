@@ -11,6 +11,7 @@
     "migrate:tenant-foundation": "node -r ts-node/register src/database/run-multi-tenant-foundation-migration.ts",
     "seed": "node -r ts-node/register src/database/seed.ts",
     "prices:sync": "node -r ts-node/register src/database/sync-transcribed-price-list.ts",
+    "prices:seed-covers": "node -r ts-node/register src/database/seed-household-covers.ts",
     "db:reset": "npm run migrate && npm run seed",
     "show:credentials": "node -r ts-node/register src/showCredentials.ts",
     "show:users": "node -r ts-node/register src/showAllUsers.ts",

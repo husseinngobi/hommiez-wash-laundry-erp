@@ -18,6 +18,7 @@ import {
   ShoppingCart,
   Save,
   UserPlus,
+  MessageCircle,
 } from 'lucide-react';
 import {
   Select,
@@ -47,6 +48,10 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  buildOrderConfirmationWhatsAppMessage,
+  openWhatsAppMessenger,
+} from '@/lib/whatsapp';
 
 interface Customer {
   id: number;
@@ -114,6 +119,16 @@ export default function NewOrder() {
   // URA Compliance state
   const [uraComplianceEnabled, setUraComplianceEnabled] = useState(false);
   const [applyVatToOrder, setApplyVatToOrder] = useState(false); // Per-order VAT control
+  const [businessPhone, setBusinessPhone] = useState('');
+
+  // After create: offer WhatsApp Messenger
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const [pendingWhatsApp, setPendingWhatsApp] = useState<{
+    phone: string;
+    customerName: string;
+    orderNumber: string;
+    message: string;
+  } | null>(null);
 
   // Customer state
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -139,6 +154,8 @@ export default function NewOrder() {
   const [amountPaid, setAmountPaid] = useState(0);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  /** Draft text while typing quantity (index → string) so keyboard entry works smoothly */
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({});
 
   // New customer form
   const [newCustomerForm, setNewCustomerForm] = useState({
@@ -184,6 +201,7 @@ export default function NewOrder() {
       });
       const settings = response.data;
       setUraComplianceEnabled(settings.ura_compliance_enabled === 'true' || settings.ura_compliance_enabled === true);
+      setBusinessPhone(settings.business_phone || '');
     } catch (error) {
       console.error('Error fetching URA settings:', error);
       setUraComplianceEnabled(false);
@@ -247,19 +265,25 @@ export default function NewOrder() {
 
     if (existingIndex >= 0) {
       const updated = [...orderItems];
-      updated[existingIndex].quantity += item.unit === 'kg' ? 0.5 : 1;
-      updated[existingIndex].subtotal = Number(updated[existingIndex].quantity) * Number(updated[existingIndex].unit_price);
+      const step = item.unit === 'kg' ? 0.5 : 1;
+      const nextQty = Number(updated[existingIndex].quantity) + step;
+      updated[existingIndex] = {
+        ...updated[existingIndex],
+        quantity: nextQty,
+        subtotal: Math.round(nextQty * Number(updated[existingIndex].unit_price)),
+      };
       setOrderItems(updated);
     } else {
+      const startQty = item.unit === 'kg' ? 1 : 1;
       setOrderItems([
         ...orderItems,
         {
           price_item_id: item.id,
           item_name: item.name,
           service_type: serviceType,
-          quantity: 1,
+          quantity: startQty,
           unit_price: unitPrice,
-          subtotal: unitPrice,
+          subtotal: Math.round(unitPrice * startQty),
           unit: item.unit || 'piece',
         },
       ]);
@@ -271,24 +295,79 @@ export default function NewOrder() {
     });
   };
 
-  // Update quantity
+  // Update quantity (+/− or commit from typed value)
   const updateQuantity = (index: number, newQuantity: number) => {
     const currentItem = orderItems[index];
-    const minimumQuantity = currentItem.unit === 'kg' ? 0.5 : 1;
-    const normalizedQuantity = currentItem.unit === 'kg'
-      ? Math.max(minimumQuantity, Math.round(newQuantity * 2) / 2)
-      : Math.max(minimumQuantity, Math.round(newQuantity));
+    if (!currentItem) return;
 
-    if (normalizedQuantity < minimumQuantity) return;
+    const isKg = currentItem.unit === 'kg';
+    const minimumQuantity = isKg ? 0.1 : 1;
+    let normalizedQuantity = Number(newQuantity);
+
+    if (!Number.isFinite(normalizedQuantity) || normalizedQuantity < minimumQuantity) {
+      normalizedQuantity = minimumQuantity;
+    }
+
+    // Pieces: whole numbers. Kg: keep up to 2 decimals (type any weight; +/− uses 0.5)
+    normalizedQuantity = isKg
+      ? Math.round(normalizedQuantity * 100) / 100
+      : Math.max(1, Math.round(normalizedQuantity));
+
     const updated = [...orderItems];
-    updated[index].quantity = normalizedQuantity;
-    updated[index].subtotal = Number(updated[index].quantity) * Number(updated[index].unit_price);
+    updated[index] = {
+      ...updated[index],
+      quantity: normalizedQuantity,
+      subtotal: Math.round(normalizedQuantity * Number(updated[index].unit_price)),
+    };
     setOrderItems(updated);
+    setQuantityDrafts((prev) => {
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+  };
+
+  const adjustQuantity = (index: number, delta: number) => {
+    const current = orderItems[index];
+    if (!current) return;
+    updateQuantity(index, Number(current.quantity) + delta);
+  };
+
+  const handleQuantityInputChange = (index: number, raw: string) => {
+    // Allow empty / intermediate typing like "2." or "0."
+    setQuantityDrafts((prev) => ({ ...prev, [index]: raw }));
+    if (raw.trim() === '' || raw === '.' || raw.endsWith('.')) return;
+    const parsed = parseFloat(raw);
+    if (!Number.isFinite(parsed)) return;
+    const currentItem = orderItems[index];
+    if (!currentItem) return;
+    const isKg = currentItem.unit === 'kg';
+    const minimumQuantity = isKg ? 0.1 : 1;
+    if (parsed < minimumQuantity) return;
+
+    const quantity = isKg ? Math.round(parsed * 100) / 100 : Math.round(parsed);
+    const updated = [...orderItems];
+    updated[index] = {
+      ...updated[index],
+      quantity,
+      subtotal: Math.round(quantity * Number(updated[index].unit_price)),
+    };
+    setOrderItems(updated);
+  };
+
+  const commitQuantityDraft = (index: number) => {
+    const draft = quantityDrafts[index];
+    const currentItem = orderItems[index];
+    if (!currentItem) return;
+    if (draft === undefined) return;
+    const parsed = parseFloat(draft);
+    updateQuantity(index, Number.isFinite(parsed) ? parsed : currentItem.quantity);
   };
 
   // Remove item
   const removeItem = (index: number) => {
     setOrderItems(orderItems.filter((_, i) => i !== index));
+    setQuantityDrafts({});
     toast({
       title: 'Item Removed',
       description: 'Item removed from order',
@@ -296,19 +375,28 @@ export default function NewOrder() {
   };
 
   // Calculate totals with conditional VAT (URA enabled globally OR per-order toggle)
-  const VAT_RATE = (uraComplianceEnabled || applyVatToOrder) ? 18.00 : 0; // Uganda VAT rate (18%)
-  const itemsSubtotal = orderItems.reduce((sum, item) => sum + Number(item.subtotal), 0);
-  const discountAmount = (itemsSubtotal * transactionDiscount) / 100;
-  const subtotalAfterDiscount = itemsSubtotal - discountAmount - bargainAmount;
-  const taxAmount = (uraComplianceEnabled || applyVatToOrder) ? (subtotalAfterDiscount * VAT_RATE) / 100 : 0;
+  // All money in whole Ugandan Shillings (UGX)
+  const VAT_RATE = (uraComplianceEnabled || applyVatToOrder) ? 18.00 : 0;
+  const itemsSubtotal = Math.round(orderItems.reduce((sum, item) => sum + Number(item.subtotal), 0));
+  const discountAmount = Math.round((itemsSubtotal * transactionDiscount) / 100);
+  const safeBargain = Math.min(Math.max(0, Math.round(bargainAmount)), Math.max(0, itemsSubtotal - discountAmount));
+  const subtotalAfterDiscount = Math.max(0, itemsSubtotal - discountAmount - safeBargain);
+  const taxAmount = (uraComplianceEnabled || applyVatToOrder)
+    ? Math.round((subtotalAfterDiscount * VAT_RATE) / 100)
+    : 0;
   const total = subtotalAfterDiscount + taxAmount;
-  const balance = total - amountPaid;
+  const balance = Math.max(0, total - amountPaid);
   
   // For backward compatibility
   const subtotal = itemsSubtotal;
 
   // Auto-update payment status based on amount paid
   useEffect(() => {
+    if (paymentMethod === 'ON_ACCOUNT') {
+      setPaymentStatus('UNPAID');
+      if (amountPaid !== 0) setAmountPaid(0);
+      return;
+    }
     if (amountPaid === 0) {
       setPaymentStatus('UNPAID');
     } else if (amountPaid >= total) {
@@ -317,7 +405,7 @@ export default function NewOrder() {
     } else {
       setPaymentStatus('PARTIAL');
     }
-  }, [amountPaid, total]);
+  }, [amountPaid, total, paymentMethod]);
 
   // Handle quick add customer
   const handleQuickAddCustomer = async () => {
@@ -364,6 +452,38 @@ export default function NewOrder() {
   };
 
   // Handle create order
+  const resetOrderForm = () => {
+    setSelectedCustomer(null);
+    setOrderItems([]);
+    setQuantityDrafts({});
+    setTransactionDiscount(0);
+    setBargainAmount(0);
+    setApplyVatToOrder(false);
+    setPaymentStatus('UNPAID');
+    setPaymentMethod('CASH');
+    setTransactionRef('');
+    setAmountPaid(0);
+    setNotes('');
+    setItemSearch('');
+  };
+
+  const sendOrderViaWhatsApp = (phone: string, message: string) => {
+    const opened = openWhatsAppMessenger(phone, message);
+    if (opened) {
+      toast({
+        title: 'Opening WhatsApp Messenger',
+        description: 'Review the message, then tap Send on your phone.',
+      });
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'WhatsApp unavailable',
+        description: 'Customer phone number is missing or invalid.',
+      });
+    }
+    return opened;
+  };
+
   const handleCreateOrder = async () => {
     if (!selectedCustomer) {
       toast({
@@ -394,11 +514,11 @@ export default function NewOrder() {
         tax_amount: taxAmount,
         discount_percentage: transactionDiscount,
         discount_amount: discountAmount,
-        bargain_amount: bargainAmount,
+        bargain_amount: safeBargain,
         total_amount: total,
         payment_status: paymentStatus,
         payment_method: paymentMethod === 'MOBILE_MONEY' ? `${paymentMethod}_${mobileProvider}` : paymentMethod,
-        amount_paid: Math.min(amountPaid, total), // Cap at total to prevent overpayment
+        amount_paid: Math.min(amountPaid, total),
         transaction_reference: transactionRef || null,
         notes,
       };
@@ -408,26 +528,59 @@ export default function NewOrder() {
       });
 
       const order = response.data.order;
+      const customerSnapshot = selectedCustomer;
+      const itemsSnapshot = [...orderItems];
 
       toast({
-        title: '🎉 Order Created Successfully!',
-        description: `Order ${order.order_number} has been created for ${selectedCustomer.name}`,
+        title: 'Order Created Successfully',
+        description: `Order ${order.order_number} created for ${customerSnapshot.name}`,
       });
 
-      // TODO: Generate and send receipt (physical/WhatsApp/email)
+      const message = buildOrderConfirmationWhatsAppMessage(
+        {
+          order_number: order.order_number,
+          customer_name: customerSnapshot.name,
+          created_at: order.created_at || new Date().toISOString(),
+          subtotal: Number(order.subtotal ?? subtotalAfterDiscount),
+          discount_percentage: Number(order.discount_percentage ?? transactionDiscount),
+          discount_amount: Number(order.discount_amount ?? discountAmount),
+          bargain_amount: Number(order.bargain_amount ?? bargainAmount),
+          tax_rate: Number(order.tax_rate ?? VAT_RATE),
+          tax_amount: Number(order.tax_amount ?? taxAmount),
+          total_amount: Number(order.total_amount ?? total),
+          amount_paid: Number(order.amount_paid ?? Math.min(amountPaid, total)),
+          balance: Number(order.balance ?? Math.max(0, total - Math.min(amountPaid, total))),
+          payment_status: order.payment_status || paymentStatus,
+          payment_method: order.payment_method || orderData.payment_method,
+        },
+        itemsSnapshot.map((item) => ({
+          item_name: item.item_name,
+          service_type: item.service_type,
+          quantity: item.quantity,
+          total_price: item.subtotal,
+        })),
+        businessPhone || undefined
+      );
 
-      // Reset form
-      setSelectedCustomer(null);
-      setOrderItems([]);
-      setTransactionDiscount(0);
-      setBargainAmount(0);
-      setApplyVatToOrder(false); // Reset VAT toggle
-      setPaymentStatus('UNPAID');
-      setPaymentMethod('CASH');
-      setTransactionRef('');
-      setAmountPaid(0);
-      setNotes('');
-      setItemSearch('');
+      resetOrderForm();
+
+      if (customerSnapshot.phone) {
+        setPendingWhatsApp({
+          phone: customerSnapshot.phone,
+          customerName: customerSnapshot.name,
+          orderNumber: order.order_number,
+          message,
+        });
+        setWhatsappDialogOpen(true);
+        // Open WhatsApp Messenger immediately so staff can send from their phone
+        sendOrderViaWhatsApp(customerSnapshot.phone, message);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'No customer phone',
+          description: 'Order saved, but WhatsApp needs a phone number on the customer profile.',
+        });
+      }
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -582,31 +735,58 @@ export default function NewOrder() {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-6 w-6"
-                          onClick={() => updateQuantity(index, item.quantity - (item.unit === 'kg' ? 0.5 : 1))}
+                          className="h-7 w-7"
+                          type="button"
+                          aria-label="Decrease quantity"
+                          onClick={() => adjustQuantity(index, item.unit === 'kg' ? -0.5 : -1)}
                         >
                           <Minus className="h-3 w-3" />
                         </Button>
                           <Input
                             type="number"
-                            min={item.unit === 'kg' ? 0.5 : 1}
-                            step={item.unit === 'kg' ? 0.5 : 1}
-                            value={item.unit === 'kg' ? item.quantity.toFixed(1) : item.quantity}
-                            onChange={(e) => updateQuantity(index, parseFloat(e.target.value) || (item.unit === 'kg' ? 0.5 : 1))}
-                            className="h-6 w-16 text-center text-sm font-bold px-1"
+                            inputMode="decimal"
+                            min={item.unit === 'kg' ? 0.1 : 1}
+                            step={item.unit === 'kg' ? 0.1 : 1}
+                            value={
+                              quantityDrafts[index] !== undefined
+                                ? quantityDrafts[index]
+                                : item.unit === 'kg'
+                                  ? String(item.quantity)
+                                  : String(item.quantity)
+                            }
+                            onChange={(e) => handleQuantityInputChange(index, e.target.value)}
+                            onFocus={(e) => {
+                              setQuantityDrafts((prev) => ({
+                                ...prev,
+                                [index]: String(item.quantity),
+                              }));
+                              e.target.select();
+                            }}
+                            onBlur={() => commitQuantityDraft(index)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="h-7 w-[4.5rem] text-center text-sm font-bold px-1"
+                            title={item.unit === 'kg' ? 'Type kg weight, or use + / −' : 'Type quantity, or use + / −'}
                           />
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-6 w-6"
-                          onClick={() => updateQuantity(index, item.quantity + (item.unit === 'kg' ? 0.5 : 1))}
+                          className="h-7 w-7"
+                          type="button"
+                          aria-label="Increase quantity"
+                          onClick={() => adjustQuantity(index, item.unit === 'kg' ? 0.5 : 1)}
                         >
                           <Plus className="h-3 w-3" />
                         </Button>
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-6 w-6 text-destructive sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                          className="h-7 w-7 text-destructive sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                          type="button"
+                          aria-label="Remove item"
                           onClick={() => removeItem(index)}
                         >
                           <Trash2 className="h-3 w-3" />
@@ -635,10 +815,10 @@ export default function NewOrder() {
                     <span>-{formatUGX(discountAmount)}</span>
                   </div>
                 )}
-                {bargainAmount > 0 && (
+                {safeBargain > 0 && (
                   <div className="flex justify-between text-orange-600">
                     <span>Bargain</span>
-                    <span>-{formatUGX(bargainAmount)}</span>
+                    <span>-{formatUGX(safeBargain)}</span>
                   </div>
                 )}
                 {(uraComplianceEnabled || applyVatToOrder) && taxAmount > 0 && (
@@ -720,13 +900,27 @@ export default function NewOrder() {
                     }}
                     placeholder="0"
                     className="h-8 text-sm mt-1"
+                    disabled={paymentMethod === 'ON_ACCOUNT'}
                   />
+                  {paymentMethod === 'ON_ACCOUNT' && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">On Account → unpaid</p>
+                  )}
                 </div>
               </div>
 
               {/* Payment method + status row */}
               <div className="grid grid-cols-2 gap-2">
-                <Select value={paymentMethod} onValueChange={(v: 'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'ON_ACCOUNT') => setPaymentMethod(v)}>
+                <Select
+                  value={paymentMethod}
+                  onValueChange={(v: 'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'ON_ACCOUNT') => {
+                    setPaymentMethod(v);
+                    if (v === 'ON_ACCOUNT') {
+                      // Account/credit: client has not paid — force unpaid
+                      setAmountPaid(0);
+                      setPaymentStatus('UNPAID');
+                    }
+                  }}
+                >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
@@ -737,7 +931,11 @@ export default function NewOrder() {
                     <SelectItem value="ON_ACCOUNT">📋 On Account</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select value={paymentStatus} onValueChange={(v: 'PAID' | 'UNPAID' | 'PARTIAL') => setPaymentStatus(v)}>
+                <Select
+                  value={paymentStatus}
+                  onValueChange={(v: 'PAID' | 'UNPAID' | 'PARTIAL') => setPaymentStatus(v)}
+                  disabled={paymentMethod === 'ON_ACCOUNT'}
+                >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
@@ -1048,6 +1246,68 @@ export default function NewOrder() {
             <Button onClick={handleQuickAddCustomer}>
               <UserPlus className="mr-2 h-4 w-4" />
               Add Customer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* WhatsApp Messenger after order create */}
+      <Dialog
+        open={whatsappDialogOpen}
+        onOpenChange={(open) => {
+          setWhatsappDialogOpen(open);
+          if (!open) setPendingWhatsApp(null);
+        }}
+      >
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-green-600" />
+              Send via WhatsApp Messenger
+            </DialogTitle>
+            <DialogDescription>
+              {pendingWhatsApp
+                ? `Order ${pendingWhatsApp.orderNumber} for ${pendingWhatsApp.customerName}. WhatsApp should open with the confirmation message ready — tap Send on your phone.`
+                : 'Send the order confirmation on WhatsApp.'}
+            </DialogDescription>
+          </DialogHeader>
+          {pendingWhatsApp && (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                To: {pendingWhatsApp.customerName} ({pendingWhatsApp.phone})
+              </div>
+              <Label htmlFor="new-order-wa-message">Message (edit before sending)</Label>
+              <textarea
+                id="new-order-wa-message"
+                className="w-full min-h-[160px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                value={pendingWhatsApp.message}
+                onChange={(e) =>
+                  setPendingWhatsApp({ ...pendingWhatsApp, message: e.target.value })
+                }
+              />
+            </div>
+          )}
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => {
+                setWhatsappDialogOpen(false);
+                setPendingWhatsApp(null);
+              }}
+            >
+              Done
+            </Button>
+            <Button
+              className="w-full sm:w-auto bg-green-600 hover:bg-green-700"
+              onClick={() => {
+                if (pendingWhatsApp) {
+                  sendOrderViaWhatsApp(pendingWhatsApp.phone, pendingWhatsApp.message);
+                }
+              }}
+            >
+              <MessageCircle className="mr-2 h-4 w-4" />
+              Open WhatsApp Again
             </Button>
           </DialogFooter>
         </DialogContent>

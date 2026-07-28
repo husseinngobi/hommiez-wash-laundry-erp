@@ -4,42 +4,33 @@ import bcrypt from 'bcryptjs';
 async function resetPasswords() {
   try {
     console.log('\n🔄 Resetting staff passwords...\n');
-    
-    // Hash passwords
-    const managerPassword = await bcrypt.hash('Manager123!', 10);
-    const cashierPassword = await bcrypt.hash('Cashier123!', 10);
-    
-    // Update Manager password
+
+    const managerPlain = process.env.SEED_MANAGER_PASSWORD;
+    const cashierPlain = process.env.SEED_CASHIER_PASSWORD || process.env.SEED_AGENT_PASSWORD;
+    if (!managerPlain || !cashierPlain) {
+      throw new Error('Set SEED_MANAGER_PASSWORD and SEED_CASHIER_PASSWORD (or SEED_AGENT_PASSWORD) in .env');
+    }
+
+    const managerPassword = await bcrypt.hash(managerPlain, 10);
+    const cashierPassword = await bcrypt.hash(cashierPlain, 10);
+
     await query(
       `UPDATE users 
        SET password = $1, updated_at = NOW()
        WHERE email = $2 AND auth_provider = 'LOCAL'`,
-      [managerPassword, 'manager@lushlaundry.com']
+      [managerPassword, process.env.SEED_MANAGER_EMAIL || 'manager@lushlaundry.com']
     );
     console.log('✅ Manager password reset');
-    
-    // Update Cashier password
+
     await query(
       `UPDATE users 
        SET password = $1, updated_at = NOW()
        WHERE email = $2 AND auth_provider = 'LOCAL'`,
-      [cashierPassword, 'cashier@lushlaundry.com']
+      [cashierPassword, process.env.SEED_CASHIER_EMAIL || 'cashier@lushlaundry.com']
     );
     console.log('✅ Cashier password reset');
-    
-    console.log('\n' + '='.repeat(60));
-    console.log('📋 UPDATED LOGIN CREDENTIALS');
-    console.log('='.repeat(60));
-    console.log('\n📊 MANAGER ACCOUNT:');
-    console.log('   Email:    manager@lushlaundry.com');
-    console.log('   Password: Manager123!');
-    console.log('\n💼 CASHIER ACCOUNT:');
-    console.log('   Email:    cashier@lushlaundry.com');
-    console.log('   Password: Cashier123!');
-    console.log('\n👑 ADMIN ACCOUNT:');
-    console.log('   Login via Google OAuth (your existing account)');
-    console.log('\n' + '='.repeat(60) + '\n');
-    
+
+    console.log('\nPasswords updated from SEED_* values in .env (not printed).');
     process.exit(0);
   } catch (error: any) {
     console.error('❌ Error:', error.message);

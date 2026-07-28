@@ -1123,19 +1123,26 @@ Don't miss out! ✨`;
               <MessageSquare className="h-5 w-5 text-primary" />
               <div>
                 <h2 className="text-lg font-semibold">Message Automation</h2>
-                <p className="text-sm text-muted-foreground">Configure automatic WhatsApp messages and customer reminders</p>
+                <p className="text-sm text-muted-foreground">
+                  API auto-send (Twilio / Africa&apos;s Talking) when configured. Without an API, use Orders → WhatsApp Messenger to send manually from your business phone or WhatsApp Desktop.
+                </p>
               </div>
             </div>
           </div>
           <div className="p-6 space-y-6">
             {/* WhatsApp Automation */}
             <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase">WhatsApp Auto-Send</h3>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase">WhatsApp Auto-Send (API)</h3>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 p-3 text-sm text-amber-900 dark:text-amber-100">
+                These toggles only work when WhatsApp Business API credentials are set in the server <code className="text-xs">.env</code>.
+                If automation is off or unavailable, staff can still open <strong>Orders → Send Receipt / Notify Ready</strong> and send via WhatsApp Messenger.
+                Your business number is stored as <strong>Business Phone</strong> under URA / business settings and included on messages.
+              </div>
               
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
                   <p className="font-medium">Order Receipt</p>
-                  <p className="text-sm text-muted-foreground">Send WhatsApp message when order is created</p>
+                  <p className="text-sm text-muted-foreground">Auto-send when order is created (API only)</p>
                 </div>
                 <Switch 
                   checked={whatsappAutoSendReceipt}
@@ -1147,7 +1154,7 @@ Don't miss out! ✨`;
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
                   <p className="font-medium">Order Ready</p>
-                  <p className="text-sm text-muted-foreground">Send WhatsApp message when order status changes to READY</p>
+                  <p className="text-sm text-muted-foreground">Auto-send when status becomes READY (API only)</p>
                 </div>
                 <Switch 
                   checked={whatsappAutoSendReady}
@@ -1159,7 +1166,7 @@ Don't miss out! ✨`;
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <div>
                   <p className="font-medium">Order Delivered</p>
-                  <p className="text-sm text-muted-foreground">Send WhatsApp message when order is delivered</p>
+                  <p className="text-sm text-muted-foreground">Auto-send when order is delivered (API only)</p>
                 </div>
                 <Switch 
                   checked={whatsappAutoSendDelivered}
@@ -1492,15 +1499,17 @@ Don't miss out! ✨`;
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="business-phone">Business Phone *</Label>
+                    <Label htmlFor="business-phone">Business Phone / WhatsApp *</Label>
                     <Input
                       id="business-phone"
                       placeholder="+256700000000"
                       value={businessPhone}
                       onChange={(e) => setBusinessPhone(e.target.value)}
-                      disabled={!uraComplianceEnabled}
                       className="mt-2"
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Stored for receipts and WhatsApp messages. Log into WhatsApp Messenger with this business number on the shop phone/PC to send.
+                    </p>
                   </div>
 
                   <div>
@@ -1511,7 +1520,6 @@ Don't miss out! ✨`;
                       placeholder="info@lushlaundry.com"
                       value={businessEmail}
                       onChange={(e) => setBusinessEmail(e.target.value)}
-                      disabled={!uraComplianceEnabled}
                       className="mt-2"
                     />
                   </div>

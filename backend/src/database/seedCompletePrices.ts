@@ -98,6 +98,21 @@ const completePriceData: PriceSeedItem[] = [
   { item_id: 'h24', name: "Mosquito Net", category: 'general', subcategory: 'Bedding', price: 10000, ironing: 5000 },
   { item_id: 'h25', name: "Pillow Cover (Pair)", category: 'general', subcategory: 'Bedding', price: 6000, ironing: 3000 },
 
+  // Furniture covers & sized bed/mosquito nets
+  { item_id: 'h50', name: 'Armrest Covers', category: 'general', subcategory: 'Furniture Covers', price: 2000, ironing: 1000 },
+  { item_id: 'h51', name: 'Back and Seat Covers', category: 'general', subcategory: 'Furniture Covers', price: 2500, ironing: 1250 },
+  { item_id: 'h52', name: 'Mosquito Net (Big)', category: 'general', subcategory: 'Bedding', price: 3500, ironing: 1750 },
+  { item_id: 'h53', name: 'Mosquito Net (Medium)', category: 'general', subcategory: 'Bedding', price: 2500, ironing: 1250 },
+  { item_id: 'h54', name: 'Mosquito Net (Small)', category: 'general', subcategory: 'Bedding', price: 15000, ironing: 7500 },
+  { item_id: 'h55', name: 'Mosquito Net (Smallest)', category: 'general', subcategory: 'Bedding', price: 8000, ironing: 4000 },
+  { item_id: 'h56', name: 'Bed Cover (15,000)', category: 'general', subcategory: 'Bedding', price: 15000, ironing: 7500 },
+  { item_id: 'h57', name: 'Bed Cover (20,000)', category: 'general', subcategory: 'Bedding', price: 20000, ironing: 10000 },
+  { item_id: 'h58', name: 'Bed Cover (25,000)', category: 'general', subcategory: 'Bedding', price: 25000, ironing: 12500 },
+  { item_id: 'h59', name: 'Bed Cover (30,000)', category: 'general', subcategory: 'Bedding', price: 30000, ironing: 15000 },
+  { item_id: 'h60', name: 'Bed Cover (35,000)', category: 'general', subcategory: 'Bedding', price: 35000, ironing: 17500 },
+  { item_id: 'h61', name: 'Bed Cover (40,000)', category: 'general', subcategory: 'Bedding', price: 40000, ironing: 20000 },
+  { item_id: 'h62', name: 'Bed Cover (45,000)', category: 'general', subcategory: 'Bedding', price: 45000, ironing: 22500 },
+
   // ==================== GENERAL - Special Items (6 items) ====================
   { item_id: 'h26', name: "Graduation Gown", category: 'general', subcategory: 'Special', price: 12000, ironing: 6000 },
   { item_id: 'h27', name: "Trampoline", category: 'general', subcategory: 'Special', price: 8000, ironing: 4000 },

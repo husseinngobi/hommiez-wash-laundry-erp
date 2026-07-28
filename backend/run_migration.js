@@ -11,7 +11,7 @@ const pool = new Pool({
   port: process.env.DB_PORT || 5432,
   database: process.env.DB_NAME || 'lush_laundry',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '551129'
+  password: process.env.DB_PASSWORD
 });
 
 const migrations = [

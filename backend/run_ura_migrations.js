@@ -6,7 +6,7 @@ const pool = new Pool({
   port: 5432,
   database: 'lush_laundry',
   user: 'postgres',
-  password: '551129'
+  password: process.env.DB_PASSWORD
 });
 
 async function migrate() {
