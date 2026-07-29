@@ -34,6 +34,7 @@ interface AuthContextType {
   canAccessSettings: boolean;
   canAccessReports: boolean;
   canAccessInventory: boolean;
+  canEditCustomers: boolean;
   canDeleteCustomers: boolean;
   canEditPrices: boolean;
   canCancelOrders: boolean;
@@ -309,6 +310,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     canAccessSettings: user?.role === 'ADMIN' || user?.role === 'MANAGER',
     canAccessReports: user?.role === 'ADMIN' || user?.role === 'MANAGER', // Admin and Manager can access reports
     canAccessInventory: user?.role === 'ADMIN',
+    canEditCustomers: user?.role === 'ADMIN',
     canDeleteCustomers: user?.role === 'ADMIN',
     canEditPrices: user?.role === 'ADMIN',
     canCancelOrders: user?.role === 'ADMIN',

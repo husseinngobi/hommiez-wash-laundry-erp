@@ -36,22 +36,93 @@ export const userValidation = {
   ],
 };
 
+const phoneWithCountryCode = body('phone')
+  .trim()
+  .notEmpty()
+  .withMessage('Phone number is required')
+  .custom((value) => {
+    // Soft check: must look like it has / can resolve to a country code
+    const raw = String(value || '').trim();
+    const digits = raw.replace(/\D/g, '');
+    const hasPlus = raw.startsWith('+');
+    const isUgLocal =
+      (digits.startsWith('0') && digits.length === 10) ||
+      (digits.startsWith('7') && digits.length === 9) ||
+      (digits.startsWith('256') && digits.length === 12);
+    if (hasPlus && digits.length >= 8 && digits.length <= 15) return true;
+    if (isUgLocal) return true;
+    throw new Error('Please include the country code (e.g. +256700123456 for Uganda)');
+  });
+
+/** Soft caps — optional fields never required; empty is allowed */
+export const CUSTOMER_FIELD_LIMITS = {
+  name: 255,
+  location: 200,
+  notes: 500,
+} as const;
+
 export const customerValidation = {
   create: [
-    body('name').trim().notEmpty().withMessage('Customer name is required'),
-    body('phone').trim().notEmpty().withMessage('Phone number is required'),
+    // Names are free-form (any case, letters, symbols) — only require non-empty
+    body('name')
+      .trim()
+      .notEmpty()
+      .withMessage('Customer name is required')
+      .isLength({ max: CUSTOMER_FIELD_LIMITS.name })
+      .withMessage(`Customer name must be at most ${CUSTOMER_FIELD_LIMITS.name} characters`),
+    phoneWithCountryCode,
     body('email').optional({ nullable: true, checkFalsy: true }).isEmail().normalizeEmail(),
-    body('location').optional({ nullable: true, checkFalsy: true }).trim(),
-    body('notes').optional({ nullable: true, checkFalsy: true }).trim(),
+    // Location & notes are optional — blank must never block create/update
+    body('location')
+      .optional({ nullable: true, checkFalsy: true })
+      .trim()
+      .isLength({ max: CUSTOMER_FIELD_LIMITS.location })
+      .withMessage(`Location must be at most ${CUSTOMER_FIELD_LIMITS.location} characters`),
+    body('notes')
+      .optional({ nullable: true, checkFalsy: true })
+      .trim()
+      .isLength({ max: CUSTOMER_FIELD_LIMITS.notes })
+      .withMessage(`Notes must be at most ${CUSTOMER_FIELD_LIMITS.notes} characters`),
   ],
   
   update: [
     param('id').isInt().toInt(),
-    body('name').optional().trim().notEmpty(),
-    body('phone').optional().trim().notEmpty(),
-    body('email').optional().isEmail().normalizeEmail(),
-    body('location').optional().trim(),
-    body('notes').optional().trim(),
+    body('name')
+      .optional({ checkFalsy: true })
+      .trim()
+      .notEmpty()
+      .withMessage('Customer name is required')
+      .isLength({ max: CUSTOMER_FIELD_LIMITS.name })
+      .withMessage(`Customer name must be at most ${CUSTOMER_FIELD_LIMITS.name} characters`),
+    body('phone')
+      .optional({ checkFalsy: true })
+      .trim()
+      .notEmpty()
+      .withMessage('Phone number is required')
+      .custom((value) => {
+        const raw = String(value || '').trim();
+        const digits = raw.replace(/\D/g, '');
+        const hasPlus = raw.startsWith('+');
+        const isUgLocal =
+          (digits.startsWith('0') && digits.length === 10) ||
+          (digits.startsWith('7') && digits.length === 9) ||
+          (digits.startsWith('256') && digits.length === 12);
+        if (hasPlus && digits.length >= 8 && digits.length <= 15) return true;
+        if (isUgLocal) return true;
+        throw new Error('Please include the country code (e.g. +256700123456 for Uganda)');
+      }),
+    // Empty email on edit must not fail isEmail
+    body('email').optional({ nullable: true, checkFalsy: true }).isEmail().normalizeEmail(),
+    body('location')
+      .optional({ nullable: true, checkFalsy: true })
+      .trim()
+      .isLength({ max: CUSTOMER_FIELD_LIMITS.location })
+      .withMessage(`Location must be at most ${CUSTOMER_FIELD_LIMITS.location} characters`),
+    body('notes')
+      .optional({ nullable: true, checkFalsy: true })
+      .trim()
+      .isLength({ max: CUSTOMER_FIELD_LIMITS.notes })
+      .withMessage(`Notes must be at most ${CUSTOMER_FIELD_LIMITS.notes} characters`),
   ],
 };
 

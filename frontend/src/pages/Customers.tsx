@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
 import axios, { AxiosError } from "axios";
@@ -41,6 +41,20 @@ import {
   ChevronLeft, ChevronRight, Users, Building2, MessageSquare, ShoppingBag, ExternalLink, AlertTriangle, AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatCustomerPhone } from "@/lib/phone";
+
+/** Soft caps — keep optional fields free but bounded for storage/UI */
+const CUSTOMER_LIMITS = {
+  name: 255,
+  location: 200,
+  notes: 500,
+} as const;
+
+type PhoneHint =
+  | { kind: 'idle' }
+  | { kind: 'ok'; e164: string }
+  | { kind: 'country'; message: string }
+  | { kind: 'duplicate'; message: string };
 
 interface Customer {
   id: number;
@@ -91,7 +105,7 @@ interface Pagination {
 }
 
 export default function Customers() {
-  const { token, canDeleteCustomers } = useAuth();
+  const { token, canEditCustomers, canDeleteCustomers } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -143,6 +157,8 @@ export default function Customers() {
     sms_opt_in: true,
     customer_type: "INDIVIDUAL" as 'INDIVIDUAL' | 'BUSINESS',
   });
+  const [phoneHint, setPhoneHint] = useState<PhoneHint>({ kind: 'idle' });
+  const phoneCheckRef = useRef(0);
 
   // Handle search from navigation state
   useEffect(() => {
@@ -217,6 +233,65 @@ export default function Customers() {
     }
   }, [location.search, token]);
 
+  // Live phone feedback: country code + duplicate owner
+  useEffect(() => {
+    if (!isAddDialogOpen && !isEditDialogOpen) {
+      setPhoneHint({ kind: 'idle' });
+      return;
+    }
+
+    const raw = formData.phone.trim();
+    if (!raw) {
+      setPhoneHint({ kind: 'idle' });
+      return;
+    }
+
+    const formatted = formatCustomerPhone(raw);
+    if (!formatted.ok) {
+      setPhoneHint({ kind: 'country', message: formatted.message });
+      return;
+    }
+
+    setPhoneHint({ kind: 'ok', e164: formatted.e164 });
+
+    const checkId = ++phoneCheckRef.current;
+    const timer = window.setTimeout(async () => {
+      try {
+        if (!token) return;
+        const params: Record<string, string | number> = { phone: formatted.e164 };
+        if (isEditDialogOpen && selectedCustomer?.id) {
+          params.exclude_id = selectedCustomer.id;
+        }
+        const res = await axios.get(`${API_BASE_URL}/customers/check-duplicate`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params,
+        });
+        if (checkId !== phoneCheckRef.current) return;
+        if (res.data?.duplicates?.phone) {
+          const owner = res.data.duplicates.phone;
+          setPhoneHint({
+            kind: 'duplicate',
+            message:
+              res.data.message ||
+              `This number already belongs to "${owner.name}" (${owner.customer_id}). Use a different phone number.`,
+          });
+        } else {
+          setPhoneHint({ kind: 'ok', e164: formatted.e164 });
+        }
+      } catch {
+        // Keep format-ok hint if check fails
+      }
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    formData.phone,
+    isAddDialogOpen,
+    isEditDialogOpen,
+    selectedCustomer?.id,
+    token,
+  ]);
+
   const fetchStats = useCallback(async () => {
     try {
       if (!token) return;
@@ -282,14 +357,25 @@ export default function Customers() {
     try {
       const token = localStorage.getItem("lush_token");
       
-      if (!formData.name || !formData.phone) {
-        toast.error("Name and phone are required");
+      if (!formData.name?.trim()) {
+        toast.error("Customer name is required");
+        return;
+      }
+
+      const phoneResult = formatCustomerPhone(formData.phone);
+      if (!phoneResult.ok) {
+        toast.error(phoneResult.message);
+        setPhoneHint({ kind: 'country', message: phoneResult.message });
+        return;
+      }
+      if (phoneHint.kind === 'duplicate') {
+        toast.error(phoneHint.message);
         return;
       }
       
       await axios.post(
         `${API_BASE_URL}/customers`,
-        formData,
+        { ...formData, name: formData.name.trim(), phone: phoneResult.e164 },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -299,7 +385,7 @@ export default function Customers() {
       fetchCustomers();
       fetchStats(); // Refresh statistics
     } catch (error) {
-      const axiosError = error as AxiosError<{ error: string; errors?: Array<{ msg: string; param: string }> }>;
+      const axiosError = error as AxiosError<{ error: string; message?: string; errors?: Array<{ msg: string; param: string }> }>;
       console.error("Add customer error:", error);
       
       // Show detailed validation errors if available
@@ -320,13 +406,33 @@ export default function Customers() {
 
   const handleEditCustomer = async () => {
     if (!selectedCustomer) return;
+    if (!canEditCustomers) {
+      toast.error("Only administrators can edit customer details");
+      return;
+    }
     
     try {
       const token = localStorage.getItem("lush_token");
+
+      if (!formData.name?.trim()) {
+        toast.error("Customer name is required");
+        return;
+      }
+
+      const phoneResult = formatCustomerPhone(formData.phone);
+      if (!phoneResult.ok) {
+        toast.error(phoneResult.message);
+        setPhoneHint({ kind: 'country', message: phoneResult.message });
+        return;
+      }
+      if (phoneHint.kind === 'duplicate') {
+        toast.error(phoneHint.message);
+        return;
+      }
       
       await axios.put(
         `${API_BASE_URL}/customers/${selectedCustomer.id}`,
-        formData,
+        { ...formData, name: formData.name.trim(), phone: phoneResult.e164 },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -336,8 +442,12 @@ export default function Customers() {
       fetchCustomers();
       fetchStats(); // Refresh statistics
     } catch (error) {
-      const axiosError = error as AxiosError<{ error: string; message?: string }>;
+      const axiosError = error as AxiosError<{ error: string; message?: string; errors?: Array<{ msg: string }> }>;
       console.error("Update customer error:", error);
+      if (axiosError.response?.data?.errors?.length) {
+        toast.error(axiosError.response.data.errors.map((e) => e.msg).join(', '));
+        return;
+      }
       toast.error(
         axiosError.response?.data?.message ||
         axiosError.response?.data?.error ||
@@ -381,6 +491,7 @@ export default function Customers() {
       customer_type: "INDIVIDUAL",
     });
     setSelectedCustomer(null);
+    setPhoneHint({ kind: 'idle' });
   };
 
   const openEditDialog = (customer: Customer) => {
@@ -636,23 +747,25 @@ export default function Customers() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {canDeleteCustomers && (
-                            <>
+                          {canEditCustomers && (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openEditDialog(customer)}
+                                title="Edit customer (Admin only)"
                               >
                                 <Edit className="h-4 w-4" />
                               </Button>
+                          )}
+                          {canDeleteCustomers && (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openDeleteDialog(customer)}
+                                title="Delete customer (Admin only)"
                               >
                                 <Trash2 className="h-4 w-4 text-red-500" />
                               </Button>
-                            </>
                           )}
                         </div>
                       </TableCell>
@@ -784,8 +897,9 @@ export default function Customers() {
                 <Input
                   id="name"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value.slice(0, CUSTOMER_LIMITS.name) })}
                   placeholder="Enter customer name"
+                  maxLength={CUSTOMER_LIMITS.name}
                 />
               </div>
               <div className="space-y-2">
@@ -796,10 +910,28 @@ export default function Customers() {
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="+256700123456"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Include country code (e.g. +256…). Local 07… numbers are saved as +256…
+                </p>
+                {phoneHint.kind === 'country' && (
+                  <Alert variant="destructive" className="py-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="text-sm">{phoneHint.message}</AlertDescription>
+                  </Alert>
+                )}
+                {phoneHint.kind === 'duplicate' && (
+                  <Alert variant="destructive" className="py-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription className="text-sm">{phoneHint.message}</AlertDescription>
+                  </Alert>
+                )}
+                {phoneHint.kind === 'ok' && (
+                  <p className="text-xs text-green-600">Will save as {phoneHint.e164}</p>
+                )}
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Input
                 id="email"
                 type="email"
@@ -809,13 +941,17 @@ export default function Customers() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="location">Location</Label>
+              <Label htmlFor="location">Location <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Input
                 id="location"
                 value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value.slice(0, CUSTOMER_LIMITS.location) })}
                 placeholder="Katete Zone A, Mbarara"
+                maxLength={CUSTOMER_LIMITS.location}
               />
+              <p className="text-xs text-muted-foreground text-right">
+                {formData.location.length}/{CUSTOMER_LIMITS.location}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="customer_type">Customer Type</Label>
@@ -835,14 +971,18 @@ export default function Customers() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
+              <Label htmlFor="notes">Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Textarea
                 id="notes"
                 value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Additional notes about the customer..."
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value.slice(0, CUSTOMER_LIMITS.notes) })}
+                placeholder="Short notes about the customer (preferences, reminders…)"
                 rows={2}
+                maxLength={CUSTOMER_LIMITS.notes}
               />
+              <p className="text-xs text-muted-foreground text-right">
+                {formData.notes.length}/{CUSTOMER_LIMITS.notes}
+              </p>
             </div>
             <div className="flex items-center space-x-2">
               <Checkbox
@@ -861,7 +1001,13 @@ export default function Customers() {
             <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setIsAddDialogOpen(false); resetForm(); }}>
               Cancel
             </Button>
-            <Button className="w-full sm:w-auto" onClick={handleAddCustomer}>Add Customer</Button>
+            <Button
+              className="w-full sm:w-auto"
+              onClick={handleAddCustomer}
+              disabled={phoneHint.kind === 'country' || phoneHint.kind === 'duplicate'}
+            >
+              Add Customer
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -882,7 +1028,8 @@ export default function Customers() {
                 <Input
                   id="edit-name"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value.slice(0, CUSTOMER_LIMITS.name) })}
+                  maxLength={CUSTOMER_LIMITS.name}
                 />
               </div>
               <div className="space-y-2">
@@ -891,11 +1038,30 @@ export default function Customers() {
                   id="edit-phone"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="+256700123456"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Include country code (e.g. +256…). Local 07… numbers are saved as +256…
+                </p>
+                {phoneHint.kind === 'country' && (
+                  <Alert variant="destructive" className="py-2">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="text-sm">{phoneHint.message}</AlertDescription>
+                  </Alert>
+                )}
+                {phoneHint.kind === 'duplicate' && (
+                  <Alert variant="destructive" className="py-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription className="text-sm">{phoneHint.message}</AlertDescription>
+                  </Alert>
+                )}
+                {phoneHint.kind === 'ok' && (
+                  <p className="text-xs text-green-600">Will save as {phoneHint.e164}</p>
+                )}
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-email">Email</Label>
+              <Label htmlFor="edit-email">Email <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Input
                 id="edit-email"
                 type="email"
@@ -904,12 +1070,16 @@ export default function Customers() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-location">Location</Label>
+              <Label htmlFor="edit-location">Location <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Input
                 id="edit-location"
                 value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value.slice(0, CUSTOMER_LIMITS.location) })}
+                maxLength={CUSTOMER_LIMITS.location}
               />
+              <p className="text-xs text-muted-foreground text-right">
+                {formData.location.length}/{CUSTOMER_LIMITS.location}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-customer_type">Customer Type</Label>
@@ -929,13 +1099,18 @@ export default function Customers() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-notes">Notes</Label>
+              <Label htmlFor="edit-notes">Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <Textarea
                 id="edit-notes"
                 value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value.slice(0, CUSTOMER_LIMITS.notes) })}
+                placeholder="Short notes about the customer (preferences, reminders…)"
                 rows={2}
+                maxLength={CUSTOMER_LIMITS.notes}
               />
+              <p className="text-xs text-muted-foreground text-right">
+                {formData.notes.length}/{CUSTOMER_LIMITS.notes}
+              </p>
             </div>
             <div className="flex items-center space-x-2">
               <Checkbox
@@ -954,7 +1129,13 @@ export default function Customers() {
             <Button variant="outline" className="w-full sm:w-auto" onClick={() => { setIsEditDialogOpen(false); resetForm(); }}>
               Cancel
             </Button>
-            <Button className="w-full sm:w-auto" onClick={handleEditCustomer}>Save Changes</Button>
+            <Button
+              className="w-full sm:w-auto"
+              onClick={handleEditCustomer}
+              disabled={phoneHint.kind === 'country' || phoneHint.kind === 'duplicate'}
+            >
+              Save Changes
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
