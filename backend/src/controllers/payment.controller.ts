@@ -81,8 +81,8 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
         p.payment_method,
         o.payment_status,
         p.transaction_reference,
-        o.total as total_amount,
-        (o.total - o.amount_paid) as balance,
+        COALESCE(o.total_amount, o.total, 0) as total_amount,
+        GREATEST(0, COALESCE(o.total_amount, o.total, 0) - COALESCE(o.amount_paid, 0)) as balance,
         c.name as customer_name,
         c.phone as customer_phone,
         u.full_name as received_by,
@@ -184,7 +184,7 @@ export const getPaymentStatistics = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(p.amount), 0) as total_revenue,
         COALESCE(SUM(CASE WHEN o.payment_status = 'PAID' THEN p.amount ELSE 0 END), 0) as fully_paid,
         COALESCE(SUM(CASE WHEN o.payment_status = 'PARTIAL' THEN p.amount ELSE 0 END), 0) as partial_paid,
-        COALESCE(SUM(o.total - o.amount_paid), 0) as outstanding_balance
+        COALESCE(SUM(GREATEST(0, COALESCE(o.total_amount, o.total, 0) - COALESCE(o.amount_paid, 0))), 0) as outstanding_balance
        FROM payments p
        LEFT JOIN orders o ON p.order_id = o.id
        ${dateFilter}`,
@@ -307,7 +307,7 @@ export const exportPayments = async (req: AuthRequest, res: Response) => {
         p.transaction_reference,
         p.amount as amount_paid,
         o.payment_status,
-        (o.total - o.amount_paid) as balance,
+        GREATEST(0, COALESCE(o.total_amount, o.total, 0) - COALESCE(o.amount_paid, 0)) as balance,
         u.full_name as received_by
        FROM payments p
        LEFT JOIN orders o ON p.order_id = o.id
@@ -393,7 +393,7 @@ export const exportPaymentsPDF = async (req: AuthRequest, res: Response) => {
         p.transaction_reference,
         p.amount as amount_paid,
         o.payment_status,
-        (o.total - o.amount_paid) as balance,
+        GREATEST(0, COALESCE(o.total_amount, o.total, 0) - COALESCE(o.amount_paid, 0)) as balance,
         u.full_name as received_by
        FROM payments p
        LEFT JOIN orders o ON p.order_id = o.id

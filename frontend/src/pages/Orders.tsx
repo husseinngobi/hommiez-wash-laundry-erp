@@ -1818,7 +1818,18 @@ export default function Orders() {
                               {payment.received_by || 'System'}
                             </TableCell>
                             <TableCell className="text-sm px-2 sm:px-4">
-                              {payment.notes || '-'}
+                              <div className="flex items-center gap-2">
+                                <span className="truncate max-w-[120px]">{payment.notes || '-'}</span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs"
+                                  title="Open in Payments"
+                                  onClick={() => navigate(`/payments?orderNumber=${selectedOrder.order_number}`)}
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1865,17 +1876,34 @@ export default function Orders() {
 
               {/* No Payment Transactions Warning */}
               {paymentTransactions.length === 0 && selectedOrder.payment_status !== 'UNPAID' && (
-                <div className="p-4 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <div className="p-4 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg space-y-3">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="h-5 w-5 text-yellow-600" />
                     <p className="font-medium text-yellow-800 dark:text-yellow-200">
                       No Payment Transactions Found
                     </p>
                   </div>
-                  <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                    This order is marked as {selectedOrder.payment_status} with {formatUGX(selectedOrder.amount_paid)} paid, 
-                    but no payment transaction records exist. Use "Add Payment" to create a proper transaction record.
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                    This order is marked as {selectedOrder.payment_status} with {formatUGX(selectedOrder.amount_paid)} paid,
+                    but no payment ledger row exists for accounting. Use <strong>Add Payment</strong> below, or redeploy
+                    so the server auto-backfills missing cash payments.
                   </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-yellow-600 text-yellow-800"
+                    onClick={() => {
+                      const totalAmt = parseFloat(String(selectedOrder.total_amount)) || 0;
+                      const paidAmt = parseFloat(String(selectedOrder.amount_paid)) || 0;
+                      const remaining = Math.max(0, totalAmt - paidAmt);
+                      setAdditionalPayment(remaining > 0 ? remaining : totalAmt);
+                      setPaymentMethod('CASH');
+                      setShowPaymentDialog(true);
+                    }}
+                  >
+                    <CreditCard className="h-4 w-4 mr-2" />
+                    Add Payment Now
+                  </Button>
                 </div>
               )}
 
@@ -1888,8 +1916,8 @@ export default function Orders() {
                     </p>
                   </div>
                   <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-                    Balance: {formatUGX(selectedOrder.balance)} remaining. 
-                    Click "Add Payment" below to record a payment transaction.
+                    Balance: {formatUGX(selectedOrder.balance)} remaining.
+                    Click &quot;Add Payment&quot; below to record a payment transaction.
                   </p>
                 </div>
               )}
@@ -2180,10 +2208,20 @@ export default function Orders() {
 
                 <h3 className="font-semibold text-lg">Order Actions</h3>
                 <div className="flex flex-wrap gap-2">
-                {selectedOrder.payment_status !== 'PAID' && (
+                {(selectedOrder.payment_status !== 'PAID'
+                  || Number(selectedOrder.amount_paid) <= 0
+                  || paymentTransactions.length === 0) && (
                   <Button
                     onClick={() => {
-                      setAdditionalPayment(parseFloat(String(selectedOrder.balance)) || 0);
+                      const remaining = Math.max(
+                        0,
+                        parseFloat(String(selectedOrder.total_amount)) - parseFloat(String(selectedOrder.amount_paid))
+                      );
+                      setAdditionalPayment(
+                        remaining > 0
+                          ? remaining
+                          : parseFloat(String(selectedOrder.total_amount)) || 0
+                      );
                       setShowPaymentDialog(true);
                     }}
                     variant="default"

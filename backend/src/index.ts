@@ -18,6 +18,7 @@ import dns from 'dns';
 import { ensureDirectories } from './utils/ensureDirectories';
 import { tenantContextMiddleware } from './middleware/tenant';
 import { ensureOrderItemServiceTypes } from './database/ensureOrderItemServiceTypes';
+import { backfillMissingPaymentTransactions } from './database/backfillMissingPayments';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -120,6 +121,13 @@ const startServer = async () => {
       await ensureOrderItemServiceTypes();
     } catch (migrationError) {
       console.error('⚠️ order_items service_type migration skipped or failed:', migrationError);
+    }
+
+    // Repair PAID orders that never got a payments ledger row (accounting / Payments page)
+    try {
+      await backfillMissingPaymentTransactions();
+    } catch (backfillError) {
+      console.error('⚠️ payment backfill skipped or failed:', backfillError);
     }
 
     // Ensure upload directories exist

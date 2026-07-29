@@ -915,7 +915,6 @@ export default function NewOrder() {
                   onValueChange={(v: 'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'ON_ACCOUNT') => {
                     setPaymentMethod(v);
                     if (v === 'ON_ACCOUNT') {
-                      // Account/credit: client has not paid — force unpaid
                       setAmountPaid(0);
                       setPaymentStatus('UNPAID');
                     }
@@ -933,14 +932,23 @@ export default function NewOrder() {
                 </Select>
                 <Select
                   value={paymentStatus}
-                  onValueChange={(v: 'PAID' | 'UNPAID' | 'PARTIAL') => setPaymentStatus(v)}
+                  onValueChange={(v: 'PAID' | 'UNPAID' | 'PARTIAL') => {
+                    setPaymentStatus(v);
+                    if (v === 'PAID' && total > 0) {
+                      // Cash paid at counter → fill full amount so a payment ledger row is created
+                      setAmountPaid(total);
+                    }
+                    if (v === 'UNPAID') {
+                      setAmountPaid(0);
+                    }
+                  }}
                   disabled={paymentMethod === 'ON_ACCOUNT'}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PAID">✅ Paid</SelectItem>
+                    <SelectItem value="PAID">✅ Paid (full)</SelectItem>
                     <SelectItem value="UNPAID">⏳ Unpaid</SelectItem>
                     <SelectItem value="PARTIAL">⚠️ Partial</SelectItem>
                   </SelectContent>

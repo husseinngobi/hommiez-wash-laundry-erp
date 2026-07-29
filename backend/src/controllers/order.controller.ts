@@ -376,24 +376,45 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     
     // On Account = credit sale: force unpaid with zero amount paid
     let finalPaymentMethod = payment_method || 'CASH';
-    let finalPaymentStatus = payment_status;
-    let finalAmountPaidValue = amount_paid;
+    let finalAmountPaidValue = Math.max(0, Number(amount_paid) || 0);
+    const requestedStatus = String(payment_status || 'UNPAID').toUpperCase();
 
     if (finalPaymentMethod === 'ON_ACCOUNT') {
-      finalPaymentStatus = 'UNPAID';
       finalAmountPaidValue = 0;
       console.log('💳 On Account selected — payment status forced to UNPAID');
+    } else if (
+      // Staff clicked Cash + Paid but left Amount Paid empty → treat as full payment received
+      requestedStatus === 'PAID' &&
+      finalAmountPaidValue <= 0 &&
+      total_amount > 0
+    ) {
+      finalAmountPaidValue = total_amount;
+      console.log(`💵 PAID with blank amount — auto-filled full payment UGX ${total_amount.toLocaleString()}`);
     }
 
-    // Calculate balance
-    const balance = total_amount - finalAmountPaidValue;
-    
-    // Validate amount_paid doesn't exceed total_amount (prevents negative balance)
+    // Derive payment_status from amounts (source of truth)
     if (finalAmountPaidValue > total_amount) {
       const amountPaidDisplay = finalAmountPaidValue.toLocaleString('en-UG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
       const totalDisplay = total_amount.toLocaleString('en-UG', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
       throw new Error(`Payment amount (UGX ${amountPaidDisplay}) exceeds the order total (UGX ${totalDisplay}). Maximum payment allowed is UGX ${totalDisplay}.`);
     }
+
+    let finalPaymentStatus: 'PAID' | 'PARTIAL' | 'UNPAID';
+    if (finalAmountPaidValue <= 0) {
+      finalPaymentStatus = 'UNPAID';
+      finalAmountPaidValue = 0;
+    } else if (finalAmountPaidValue >= total_amount && total_amount > 0) {
+      finalPaymentStatus = 'PAID';
+      finalAmountPaidValue = total_amount;
+    } else if (total_amount <= 0) {
+      finalPaymentStatus = 'UNPAID';
+      finalAmountPaidValue = 0;
+    } else {
+      finalPaymentStatus = 'PARTIAL';
+    }
+
+    // Calculate balance
+    const balance = Math.max(0, total_amount - finalAmountPaidValue);
     
     // Generate invoice number
     const invoiceMaxResult = await client.query(
@@ -477,8 +498,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       );
     }
     
-    // Create payment transaction if order has payment (PAID or PARTIAL)
-    if (finalAmountPaidValue > 0 && finalPaymentStatus !== 'UNPAID' && finalPaymentMethod && finalPaymentMethod !== 'ON_ACCOUNT') {
+    // Always create a payments ledger row when money was received (links order ↔ Payments ↔ accounting)
+    if (finalAmountPaidValue > 0 && finalPaymentMethod !== 'ON_ACCOUNT') {
       await client.query(
         `INSERT INTO payments (
           order_id,
@@ -500,7 +521,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           req.user!.id
         ]
       );
-      console.log(`💰 Payment transaction created: ${finalPaymentMethod} - UGX ${finalAmountPaidValue.toLocaleString()}`);
+      console.log(`💰 Payment transaction created: ${finalPaymentMethod} - UGX ${finalAmountPaidValue.toLocaleString()} → order ${order_number}`);
     }
     
     await client.query('COMMIT');
@@ -821,10 +842,6 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       updates.push(`status = $${paramCount++}`);
       values.push(order_status);
     }
-    if (payment_status !== undefined) {
-      updates.push(`payment_status = $${paramCount++}`);
-      values.push(payment_status);
-    }
     if (payment_method !== undefined) {
       updates.push(`payment_method = $${paramCount++}`);
       values.push(payment_method);
@@ -833,11 +850,44 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       updates.push(`transaction_reference = $${paramCount++}`);
       values.push(transaction_reference);
     }
-    if (parsedAmountPaid !== undefined) {
+
+    // When amount_paid changes (or payment_status sent alone), derive status from money
+    const nextAmountPaid = parsedAmountPaid !== undefined
+      ? parsedAmountPaid
+      : Number(currentOrder.amount_paid) || 0;
+    const orderTotal = Number(currentOrder.total_amount) || 0;
+
+    if (parsedAmountPaid !== undefined || payment_status !== undefined) {
+      let derivedStatus: 'PAID' | 'PARTIAL' | 'UNPAID';
+      let cappedPaid = Math.max(0, nextAmountPaid);
+
+      if (cappedPaid <= 0) {
+        derivedStatus = 'UNPAID';
+        cappedPaid = 0;
+      } else if (orderTotal > 0 && cappedPaid >= orderTotal) {
+        derivedStatus = 'PAID';
+        cappedPaid = orderTotal;
+      } else if (orderTotal <= 0) {
+        derivedStatus = 'UNPAID';
+        cappedPaid = 0;
+      } else {
+        derivedStatus = 'PARTIAL';
+      }
+
+      // Reject fake PAID with zero paid
+      if (payment_status === 'PAID' && cappedPaid <= 0) {
+        return res.status(400).json({
+          error: 'Cannot mark order as PAID with UGX 0 paid. Use Add Payment to record a payment first.',
+        });
+      }
+
       updates.push(`amount_paid = $${paramCount++}`);
-      values.push(parsedAmountPaid);
-    }
-    if (parsedBalance !== undefined) {
+      values.push(cappedPaid);
+      updates.push(`payment_status = $${paramCount++}`);
+      values.push(derivedStatus);
+      updates.push(`balance = $${paramCount++}`);
+      values.push(Math.max(0, orderTotal - cappedPaid));
+    } else if (parsedBalance !== undefined) {
       updates.push(`balance = $${paramCount++}`);
       values.push(parsedBalance);
     }

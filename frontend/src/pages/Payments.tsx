@@ -50,6 +50,7 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  Printer,
 } from 'lucide-react';
 
 interface Payment {
@@ -338,10 +339,16 @@ const Payments = () => {
   useEffect(() => {
     if (!deepLinkOrderNumber) return;
 
-    // Set search filter to the order number
-    setFilters(prev => ({ ...prev, search: deepLinkOrderNumber }));
-    
-    // Clear URL parameter after applying filter
+    // Clear date range so linked order payment is always visible
+    setSelectedPeriod('CUSTOM');
+    setFilters({
+      from_date: '',
+      to_date: '',
+      payment_method: '',
+      search: deepLinkOrderNumber,
+    });
+    setCurrentPage(1);
+
     const timer = setTimeout(() => {
       setSearchParams({});
     }, 100);
@@ -427,6 +434,41 @@ const Payments = () => {
       UNPAID: 'bg-red-500 hover:bg-red-600',
     };
     return <Badge className={styles[status as keyof typeof styles] || ''}>{status}</Badge>;
+  };
+
+  const openLinkedOrder = (orderNumber?: string) => {
+    if (!orderNumber) return;
+    setShowDetailsDialog(false);
+    navigate('/orders', { state: { searchOrderNumber: orderNumber } });
+  };
+
+  const printPaymentReceipt = (payment: Payment) => {
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>Payment Receipt - ${payment.order_number}</title>
+      <style>
+        body{font-family:Arial,sans-serif;max-width:320px;margin:24px auto;color:#111}
+        h1{font-size:18px;margin:0 0 4px;text-align:center}
+        .sub{text-align:center;color:#555;font-size:12px;margin-bottom:16px}
+        .row{display:flex;justify-content:space-between;margin:6px 0;font-size:13px}
+        .total{border-top:1px dashed #999;margin-top:12px;padding-top:10px;font-weight:700;font-size:15px}
+        .foot{text-align:center;margin-top:18px;font-size:11px;color:#666}
+      </style></head><body>
+      <h1>Lush Dry Cleaners &amp; Laundromat</h1>
+      <div class="sub">Payment Receipt</div>
+      <div class="row"><span>Order</span><strong>${payment.order_number}</strong></div>
+      <div class="row"><span>Customer</span><strong>${payment.customer_name}</strong></div>
+      <div class="row"><span>Date</span><span>${new Date(payment.payment_date).toLocaleString()}</span></div>
+      <div class="row"><span>Method</span><span>${payment.payment_method.replace(/_/g, ' ')}</span></div>
+      ${payment.transaction_reference ? `<div class="row"><span>Reference</span><span>${payment.transaction_reference}</span></div>` : ''}
+      <div class="row"><span>Order total</span><span>${formatUGX(payment.total_amount)}</span></div>
+      <div class="row total"><span>Amount received</span><span>${formatUGX(payment.amount_paid)}</span></div>
+      <div class="row"><span>Balance due</span><span>${formatUGX(payment.balance)}</span></div>
+      <div class="row"><span>Received by</span><span>${payment.received_by || 'Staff'}</span></div>
+      <div class="foot">Thank you for choosing Lush</div>
+      <script>window.onload=function(){window.print();}</script>
+      </body></html>`);
+    win.document.close();
   };
 
 
@@ -717,7 +759,14 @@ const Payments = () => {
                           {new Date(payment.payment_date).toLocaleDateString()}
                         </td>
                         <td className="px-4 py-3 text-sm font-medium dark:text-gray-200">
-                          {payment.order_number}
+                          <button
+                            type="button"
+                            className="text-primary underline-offset-2 hover:underline font-semibold"
+                            onClick={() => openLinkedOrder(payment.order_number)}
+                            title="Open linked order"
+                          >
+                            {payment.order_number}
+                          </button>
                         </td>
                         <td className="px-4 py-3 text-sm dark:text-gray-300">
                           <div>{payment.customer_name}</div>
@@ -737,16 +786,27 @@ const Payments = () => {
                           {payment.transaction_reference || '-'}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setSelectedPayment(payment);
-                              setShowDetailsDialog(true);
-                            }}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              title="Payment details"
+                              onClick={() => {
+                                setSelectedPayment(payment);
+                                setShowDetailsDialog(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              title="Open order"
+                              onClick={() => openLinkedOrder(payment.order_number)}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1060,10 +1120,15 @@ const Payments = () => {
               <Button
                 variant="outline"
                 className="w-full sm:w-auto"
-                onClick={() => {
-                  setShowDetailsDialog(false);
-                  navigate('/orders', { state: { searchOrderNumber: selectedPayment.order_number } });
-                }}
+                onClick={() => printPaymentReceipt(selectedPayment)}
+              >
+                <Printer className="h-4 w-4 mr-2" />
+                Print Receipt
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => openLinkedOrder(selectedPayment.order_number)}
               >
                 <ExternalLink className="h-4 w-4 mr-2" />
                 View Order
