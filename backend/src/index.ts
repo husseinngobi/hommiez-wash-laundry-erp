@@ -17,6 +17,7 @@ import path from 'path';
 import dns from 'dns';
 import { ensureDirectories } from './utils/ensureDirectories';
 import { tenantContextMiddleware } from './middleware/tenant';
+import { ensureOrderItemServiceTypes } from './database/ensureOrderItemServiceTypes';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -114,6 +115,13 @@ app.use(errorHandler);
 // Start server
 const startServer = async () => {
   try {
+    // Ensure DB accepts WASH/IRON/EXPRESS (fixes legacy wash|iron-only constraint)
+    try {
+      await ensureOrderItemServiceTypes();
+    } catch (migrationError) {
+      console.error('⚠️ order_items service_type migration skipped or failed:', migrationError);
+    }
+
     // Ensure upload directories exist
     ensureDirectories();
     

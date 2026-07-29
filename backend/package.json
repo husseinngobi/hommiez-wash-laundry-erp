@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "migrate": "node -r ts-node/register src/database/migrate.ts",
     "migrate:tenant-foundation": "node -r ts-node/register src/database/run-multi-tenant-foundation-migration.ts",
+    "migrate:express-service": "node -r ts-node/register src/database/run-express-service-migration.ts",
     "seed": "node -r ts-node/register src/database/seed.ts",
     "prices:sync": "node -r ts-node/register src/database/sync-transcribed-price-list.ts",
     "prices:seed-covers": "node -r ts-node/register src/database/seed-household-covers.ts",
