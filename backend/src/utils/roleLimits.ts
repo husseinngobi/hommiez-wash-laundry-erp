@@ -37,14 +37,16 @@ export function normalizeCustomerName(name: string): string {
 const COUNTRY_CODE_HINT =
   'Please include the country code (e.g. +256700123456 for Uganda)';
 
+export type CustomerPhoneResult =
+  | { ok: true; e164: string }
+  | { ok: false; message: string };
+
 /**
  * Normalize customer phone to E.164 (+country…).
  * Accepts +256…, 256…, and common Uganda local forms (07… / 7…).
  * Rejects numbers with no recognizable country code.
  */
-export function formatCustomerPhone(
-  phone: string
-): { ok: true; e164: string } | { ok: false; message: string } {
+export function formatCustomerPhone(phone: string): CustomerPhoneResult {
   const raw = String(phone || '').trim();
   if (!raw) {
     return { ok: false, message: 'Phone number is required' };
@@ -76,43 +78,6 @@ export function formatCustomerPhone(
   }
   if (digits.startsWith('7') && digits.length === 9) {
     return { ok: true, e164: `+256${digits}` };
-  }
-
-  return { ok: false, message: COUNTRY_CODE_HINT };
-}
-
-const COUNTRY_CODE_HINT = 'Please add the country code (e.g. +256 for Uganda)';
-
-/**
- * Normalize customer phone to E.164 (+country…).
- * Accepts +256…, 256…, and common Uganda local forms (07… / 7…).
- * Rejects numbers with no usable country code.
- */
-export function toCustomerPhoneE164(input: string): { ok: true; phone: string } | { ok: false; message: string } {
-  const trimmed = String(input || '').trim();
-  if (!trimmed) {
-    return { ok: false, message: 'Phone number is required' };
-  }
-
-  if (trimmed.startsWith('+')) {
-    const digits = trimmed.slice(1).replace(/\D/g, '');
-    if (!/^[1-9]\d{7,14}$/.test(digits)) {
-      return { ok: false, message: COUNTRY_CODE_HINT };
-    }
-    return { ok: true, phone: `+${digits}` };
-  }
-
-  const digits = trimmed.replace(/\D/g, '');
-
-  // Uganda local: 07XXXXXXXX or 7XXXXXXXX
-  if (/^0?7\d{8}$/.test(digits)) {
-    const national = digits.startsWith('0') ? digits.slice(1) : digits;
-    return { ok: true, phone: `+256${national}` };
-  }
-
-  // Uganda without +: 256XXXXXXXXX
-  if (/^256\d{9}$/.test(digits)) {
-    return { ok: true, phone: `+${digits}` };
   }
 
   return { ok: false, message: COUNTRY_CODE_HINT };

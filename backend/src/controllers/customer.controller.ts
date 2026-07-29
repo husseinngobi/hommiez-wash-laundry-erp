@@ -199,7 +199,7 @@ export const createCustomer = async (req: AuthRequest, res: Response) => {
     } = req.body;
 
     const phoneResult = formatCustomerPhone(phone);
-    if (!phoneResult.ok) {
+    if (phoneResult.ok === false) {
       return res.status(400).json({ error: 'INVALID_PHONE', message: phoneResult.message });
     }
     const e164Phone = phoneResult.e164;
@@ -361,7 +361,7 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
     let e164Phone: string | undefined;
     if (phone !== undefined && phone !== null && String(phone).trim() !== '') {
       const phoneResult = formatCustomerPhone(phone);
-      if (!phoneResult.ok) {
+      if (phoneResult.ok === false) {
         return res.status(400).json({ error: 'INVALID_PHONE', message: phoneResult.message });
       }
       e164Phone = phoneResult.e164;
@@ -655,7 +655,7 @@ export const checkDuplicateCustomer = async (req: AuthRequest, res: Response) =>
     // Check phone number (CRITICAL - must be unique)
     if (phone && typeof phone === 'string' && phone.trim() !== '') {
       const phoneResult = formatCustomerPhone(phone);
-      if (!phoneResult.ok) {
+      if (phoneResult.ok === false) {
         phoneMessage = phoneResult.message;
       } else {
         const existingPhone = await findCustomerByPhone(
