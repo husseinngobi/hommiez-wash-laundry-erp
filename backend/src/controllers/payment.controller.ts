@@ -169,33 +169,42 @@ export const getPaymentStatistics = async (req: AuthRequest, res: Response) => {
         payment_status,
         COUNT(*) as count,
         COALESCE(SUM(amount_paid), 0) as total_paid,
-        COALESCE(SUM(total - amount_paid), 0) as total_balance
+        COALESCE(SUM(GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))), 0) as total_balance
        FROM orders
        ${dateFilter.replace('payment_date', 'created_at')}
        GROUP BY payment_status`,
       values
     );
 
-    // Total summary
-    // Total summary - from payments table for transaction count and revenue
+    // Total summary - revenue from payments; outstanding from all open orders
     const summary = await query(
       `SELECT 
         COUNT(*) as total_transactions,
         COALESCE(SUM(p.amount), 0) as total_revenue,
         COALESCE(SUM(CASE WHEN o.payment_status = 'PAID' THEN p.amount ELSE 0 END), 0) as fully_paid,
-        COALESCE(SUM(CASE WHEN o.payment_status = 'PARTIAL' THEN p.amount ELSE 0 END), 0) as partial_paid,
-        COALESCE(SUM(GREATEST(0, COALESCE(o.total_amount, o.total, 0) - COALESCE(o.amount_paid, 0))), 0) as outstanding_balance
+        COALESCE(SUM(CASE WHEN o.payment_status = 'PARTIAL' THEN p.amount ELSE 0 END), 0) as partial_paid
        FROM payments p
        LEFT JOIN orders o ON p.order_id = o.id
        ${dateFilter}`,
       values
     );
 
+    const outstanding = await query(
+      `SELECT COALESCE(SUM(
+         GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
+       ), 0) as outstanding_balance
+       FROM orders
+       WHERE payment_status IN ('UNPAID', 'PARTIAL')`
+    );
+
     res.json({
       paymentsByMethod: paymentsByMethod.rows,
       dailyTrends: dailyTrends.rows,
       paymentStatus: paymentStatus.rows,
-      summary: summary.rows[0],
+      summary: {
+        ...summary.rows[0],
+        outstanding_balance: outstanding.rows[0].outstanding_balance,
+      },
     });
   } catch (error) {
     console.error('Get payment statistics error:', error);

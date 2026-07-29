@@ -82,4 +82,22 @@ export async function backfillMissingPaymentTransactions(): Promise<void> {
   } else {
     console.log('✅ Payment backfill: no missing payment transactions');
   }
+
+  // Keep denormalized balance in sync (UI lists / aging may still read the column)
+  await syncOrderBalances();
+}
+
+/**
+ * Recalculate orders.balance from total_amount − amount_paid when out of sync.
+ */
+export async function syncOrderBalances(): Promise<void> {
+  const result = await query(`
+    UPDATE orders
+    SET balance = GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0)),
+        updated_at = NOW()
+    WHERE COALESCE(balance, -1) <> GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
+  `);
+  if ((result.rowCount || 0) > 0) {
+    console.log(`✅ Synced balance on ${result.rowCount} order(s)`);
+  }
 }

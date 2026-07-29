@@ -101,7 +101,7 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
       `SELECT 
         payment_status,
         COUNT(*) as count,
-        COALESCE(SUM(total), 0) as amount
+        COALESCE(SUM(COALESCE(total_amount, total, 0)), 0) as amount
        FROM orders 
        ${ordersDateFilter}
        GROUP BY payment_status`
@@ -152,7 +152,9 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
     );
 
     const outstandingResult = await query(
-      `SELECT COALESCE(SUM(balance), 0) as outstanding
+      `SELECT COALESCE(SUM(
+         GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
+       ), 0) as outstanding
        FROM orders 
        WHERE payment_status IN ('UNPAID', 'PARTIAL')`
     );
@@ -267,9 +269,9 @@ export const getFinancialReport = async (req: AuthRequest, res: Response) => {
       `SELECT 
         payment_status,
         COUNT(*) as order_count,
-        COALESCE(SUM(total), 0) as total_amount,
+        COALESCE(SUM(COALESCE(total_amount, total, 0)), 0) as total_amount,
         COALESCE(SUM(amount_paid), 0) as amount_paid,
-        COALESCE(SUM(total - amount_paid), 0) as balance
+        COALESCE(SUM(GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))), 0) as balance
        FROM orders 
        WHERE DATE(created_at) BETWEEN $1 AND $2
        GROUP BY payment_status`,
@@ -282,7 +284,7 @@ export const getFinancialReport = async (req: AuthRequest, res: Response) => {
         c.name,
         c.phone,
         COUNT(o.id) as order_count,
-        COALESCE(SUM(o.total), 0) as total_spent
+        COALESCE(SUM(COALESCE(o.total_amount, o.total, 0)), 0) as total_spent
        FROM customers c
        INNER JOIN orders o ON c.id = o.customer_id
        WHERE DATE(o.created_at) BETWEEN $1 AND $2
@@ -325,10 +327,10 @@ export const getProfitLossStatement = async (req: AuthRequest, res: Response) =>
     const revenueResult = await query(
       `SELECT 
         COUNT(*) as total_orders,
-        COALESCE(SUM(total), 0) as gross_revenue,
-        COALESCE(SUM(discount), 0) as total_discounts,
+        COALESCE(SUM(COALESCE(total_amount, total, 0)), 0) as gross_revenue,
+        COALESCE(SUM(COALESCE(discount_amount, 0)), 0) as total_discounts,
         COALESCE(SUM(amount_paid), 0) as cash_received,
-        COALESCE(SUM(total - amount_paid), 0) as accounts_receivable
+        COALESCE(SUM(GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))), 0) as accounts_receivable
        FROM orders 
        WHERE DATE(created_at) BETWEEN $1 AND $2`,
       [from_date, to_date]

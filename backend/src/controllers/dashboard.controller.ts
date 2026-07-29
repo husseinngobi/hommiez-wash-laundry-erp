@@ -213,9 +213,11 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
       [startDate, endDate]
     );
 
-    // Get outstanding balances (unpaid + partial)
+    // Outstanding = total_amount − amount_paid (do not trust balance alone; it can be stuck at 0)
     const outstandingResult = await query(
-      `SELECT COALESCE(SUM(total - amount_paid), 0) as outstanding_balance
+      `SELECT COALESCE(SUM(
+         GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
+       ), 0) as outstanding_balance
        FROM orders 
        WHERE payment_status IN ('UNPAID', 'PARTIAL')`
     );
@@ -314,11 +316,13 @@ export const getPaymentMethodsBreakdown = async (req: AuthRequest, res: Response
  */
 export const getOutstandingBalances = async (req: AuthRequest, res: Response) => {
   try {
+    const outstandingExpr = `GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))`;
+
     // Get unpaid orders
     const unpaidResult = await query(
       `SELECT 
         COUNT(*) as count,
-        COALESCE(SUM(total - amount_paid), 0) as total
+        COALESCE(SUM(${outstandingExpr}), 0) as total
        FROM orders 
        WHERE payment_status = 'UNPAID'`
     );
@@ -327,7 +331,7 @@ export const getOutstandingBalances = async (req: AuthRequest, res: Response) =>
     const partialResult = await query(
       `SELECT 
         COUNT(*) as count,
-        COALESCE(SUM(total - amount_paid), 0) as total
+        COALESCE(SUM(${outstandingExpr}), 0) as total
        FROM orders 
        WHERE payment_status = 'PARTIAL'`
     );
@@ -336,7 +340,7 @@ export const getOutstandingBalances = async (req: AuthRequest, res: Response) =>
     const overdueResult = await query(
       `SELECT 
         COUNT(*) as count,
-        COALESCE(SUM(total - amount_paid), 0) as total
+        COALESCE(SUM(${outstandingExpr}), 0) as total
        FROM orders 
        WHERE payment_status IN ('UNPAID', 'PARTIAL')
        AND created_at < NOW() - INTERVAL '30 days'`

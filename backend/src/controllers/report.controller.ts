@@ -191,7 +191,7 @@ export const getCustomerAnalytics = async (req: AuthRequest, res: Response) => {
         COUNT(*) as customer_count,
         SUM(total_spent) as segment_revenue
       FROM (
-        SELECT c.id, COALESCE(SUM(o.total), 0) as total_spent
+        SELECT c.id, COALESCE(SUM(COALESCE(o.total_amount, o.total, 0)), 0) as total_spent
         FROM customers c
         LEFT JOIN orders o ON c.id = o.customer_id
         GROUP BY c.id
@@ -228,7 +228,7 @@ export const getCustomerAnalytics = async (req: AuthRequest, res: Response) => {
           c.id,
           MIN(o.created_at) as first_order_date,
           COUNT(o.id) as order_count,
-          SUM(o.total) as total_spent
+          SUM(COALESCE(o.total_amount, o.total, 0)) as total_spent
         FROM customers c
         LEFT JOIN orders o ON c.id = o.customer_id
         WHERE o.created_at >= CURRENT_DATE - INTERVAL '30 days'

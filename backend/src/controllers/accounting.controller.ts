@@ -47,14 +47,15 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Revenue (from payments table, accounting for refunds)
+    // Revenue (from payments table — cash actually received)
+    // is_refund may be missing on older DBs; COALESCE treats NULL as not-refund
     const revenueResult = await query(`
       SELECT 
-        COALESCE(SUM(CASE WHEN is_refund = FALSE THEN amount ELSE 0 END), 0) as total_payments,
-        COALESCE(SUM(CASE WHEN is_refund = TRUE THEN ABS(amount) ELSE 0 END), 0) as total_refunds,
+        COALESCE(SUM(CASE WHEN COALESCE(is_refund, FALSE) = FALSE THEN amount ELSE 0 END), 0) as total_payments,
+        COALESCE(SUM(CASE WHEN COALESCE(is_refund, FALSE) = TRUE THEN ABS(amount) ELSE 0 END), 0) as total_refunds,
         COALESCE(SUM(amount), 0) as net_revenue,
-        COUNT(DISTINCT CASE WHEN is_refund = FALSE THEN order_id END) as total_orders,
-        COUNT(CASE WHEN is_refund = TRUE THEN 1 END) as refund_count
+        COUNT(DISTINCT CASE WHEN COALESCE(is_refund, FALSE) = FALSE THEN order_id END) as total_orders,
+        COUNT(CASE WHEN COALESCE(is_refund, FALSE) = TRUE THEN 1 END) as refund_count
       FROM payments p
       JOIN orders o ON p.order_id = o.id
       ${paymentDateFilter}
@@ -71,7 +72,7 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
       JOIN order_items oi ON o.id = oi.order_id
       JOIN price_items pi ON oi.price_item_id = pi.id
       ${paymentDateFilter}
-        AND p.is_refund = FALSE
+        AND COALESCE(p.is_refund, FALSE) = FALSE
       GROUP BY pi.category
       ORDER BY revenue DESC
     `);
@@ -139,6 +140,7 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
     res.json({
       period: period || `${from_date} to ${to_date}`,
       revenue: {
+        total: netRevenue, // UI + exports expect revenue.total
         gross_payments: totalPayments,
         refunds: totalRefunds,
         net_revenue: netRevenue,
@@ -193,7 +195,9 @@ export const getBalanceSheet = async (req: AuthRequest, res: Response) => {
 
     // 2. Accounts Receivable (outstanding customer balances)
     const accountsReceivableResult = await query(`
-      SELECT COALESCE(SUM(total - amount_paid), 0) as accounts_receivable
+      SELECT COALESCE(SUM(
+        GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
+      ), 0) as accounts_receivable
       FROM orders
       WHERE payment_status IN ('UNPAID', 'PARTIAL')
         AND created_at <= $1
@@ -414,7 +418,9 @@ export const getTrialBalance = async (req: AuthRequest, res: Response) => {
 
     // Accounts Receivable (Debit)
     const arResult = await query(`
-      SELECT COALESCE(SUM(total - amount_paid), 0) as balance
+      SELECT COALESCE(SUM(
+        GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
+      ), 0) as balance
       FROM orders
       WHERE payment_status IN ('UNPAID', 'PARTIAL')
         AND created_at <= $1
@@ -479,7 +485,7 @@ export const getAgedReceivables = async (req: AuthRequest, res: Response) => {
         c.phone as customer_phone,
         o.total_amount,
         o.amount_paid,
-        o.balance,
+        GREATEST(0, COALESCE(o.total_amount, o.total, 0) - COALESCE(o.amount_paid, 0)) as balance,
         o.created_at,
         CURRENT_DATE - DATE(o.created_at) as days_outstanding,
         CASE 
@@ -491,6 +497,7 @@ export const getAgedReceivables = async (req: AuthRequest, res: Response) => {
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
       WHERE o.payment_status IN ('UNPAID', 'PARTIAL')
+        AND GREATEST(0, COALESCE(o.total_amount, o.total, 0) - COALESCE(o.amount_paid, 0)) > 0
       ORDER BY o.created_at ASC
     `);
 
@@ -548,7 +555,13 @@ export const getFinancialRatios = async (req: AuthRequest, res: Response) => {
     const salariesResult = await query(`SELECT COALESCE(SUM(net_amount), 0) as salaries FROM salary_payments ${dateFilter.replace('created_at', 'payment_date')} AND payment_status = 'PAID'`);
 
     // Get balance sheet data
-    const assetsResult = await query(`SELECT COALESCE(SUM(amount_paid), 0) + COALESCE((SELECT SUM(balance) FROM orders WHERE payment_status IN ('UNPAID', 'PARTIAL')), 0) as assets FROM orders WHERE payment_status = 'PAID'`);
+    const assetsResult = await query(`
+      SELECT COALESCE(SUM(amount_paid), 0) + COALESCE((
+        SELECT SUM(GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0)))
+        FROM orders WHERE payment_status IN ('UNPAID', 'PARTIAL')
+      ), 0) as assets
+      FROM orders WHERE payment_status = 'PAID'
+    `);
     const liabilitiesResult = await query(`SELECT COALESCE(SUM(amount), 0) as liabilities FROM expenses WHERE approval_status IN ('PENDING', 'APPROVED')`);
 
     const revenue = parseFloat(revenueResult.rows[0].revenue);

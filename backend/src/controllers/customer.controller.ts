@@ -62,7 +62,7 @@ export const getAllCustomers = async (req: AuthRequest, res: Response) => {
     let sql = `
       SELECT c.*, 
         COUNT(DISTINCT o.id) as total_orders,
-        COALESCE(SUM(o.total), 0) as total_spent,
+        COALESCE(SUM(COALESCE(o.total_amount, o.total, 0)), 0) as total_spent,
         MAX(o.created_at) as last_order_date
       FROM customers c
       LEFT JOIN orders o ON c.id = o.customer_id

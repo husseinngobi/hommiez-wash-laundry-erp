@@ -52,6 +52,9 @@ interface IncomeStatement {
   period: string;
   revenue: {
     total: number;
+    net_revenue?: number;
+    gross_payments?: number;
+    refunds?: number;
     order_count: number;
     by_category: RevenueCategory[];
   };
@@ -383,7 +386,7 @@ export default function Accounting() {
 
         const incomeDataRows = [
           [{ content: 'REVENUE', colSpan: 2, styles: { fillColor: [37, 99, 235] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
-          ['Total Revenue', formatAmount(incomeData.revenue.total || 0)],
+          ['Total Revenue', formatAmount(incomeData.revenue.total ?? incomeData.revenue.net_revenue ?? 0)],
           ['Order Count', incomeData.revenue.order_count.toString()],
           [{ content: 'COST OF GOODS SOLD', colSpan: 2, styles: { fillColor: [239, 68, 68] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
           ['Total COGS', formatAmount(incomeData.cost_of_goods_sold || 0)],
@@ -670,7 +673,7 @@ export default function Accounting() {
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold text-green-600">
-                        {formatUGX(incomeStatement.revenue.total)}
+                        {formatUGX(incomeStatement.revenue.total ?? incomeStatement.revenue.net_revenue ?? 0)}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {incomeStatement.revenue.order_count} orders
@@ -745,7 +748,7 @@ export default function Accounting() {
                         ))}
                         <div className="flex justify-between font-bold mt-2 pt-2 border-t">
                           <span>Total Revenue</span>
-                          <span className="text-green-600">{formatUGX(incomeStatement.revenue.total)}</span>
+                          <span className="text-green-600">{formatUGX(incomeStatement.revenue.total ?? incomeStatement.revenue.net_revenue ?? 0)}</span>
                         </div>
 
                         {/* VAT Breakdown (if available) */}
