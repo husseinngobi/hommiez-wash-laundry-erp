@@ -25,6 +25,10 @@ router.put('/vat', canAccessSettings as any, settingsController.updateVATSetting
 router.get('/bargain-limits', canAccessSettings as any, settingsController.getBargainLimits as any);
 router.post('/bargain-limits', canAccessSettings as any, settingsController.updateBargainLimits as any);
 
+// Payment accounts for on-account / partial WhatsApp receipts
+router.get('/payment-accounts', settingsController.getPaymentAccounts as any);
+router.put('/payment-accounts', canAccessSettings as any, settingsController.updatePaymentAccounts as any);
+
 // Update requires admin
 router.put('/business-info', canAccessSettings as any, settingsController.updateBusinessInfo as any);
 router.put('/business-hours', canAccessSettings as any, settingsController.updateBusinessHours as any);

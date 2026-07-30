@@ -1133,6 +1133,44 @@ const Payments = () => {
                 <ExternalLink className="h-4 w-4 mr-2" />
                 View Order
               </Button>
+              {isAdmin && Number(selectedPayment.amount_paid) > 0 && (
+                <Button
+                  variant="destructive"
+                  className="w-full sm:w-auto"
+                  onClick={async () => {
+                    if (!token || !selectedPayment.id) return;
+                    const ok = window.confirm(
+                      `Cancel this payment of ${formatUGX(selectedPayment.amount_paid)}? The order will be recalculated to unpaid/partial/paid.`
+                    );
+                    if (!ok) return;
+                    try {
+                      const res = await axios.post(
+                        `${API_BASE_URL}/payments/${selectedPayment.id}/cancel`,
+                        { reason: 'Admin cancelled from Payments page' },
+                        { headers: { Authorization: `Bearer ${token}` } }
+                      );
+                      toast.success(
+                        `Payment cancelled. Order is now ${res.data.order.payment_status}`
+                      );
+                      setShowDetailsDialog(false);
+                      setSelectedPayment(null);
+                      fetchPayments();
+                      if (isAdmin) fetchStatistics();
+                    } catch (error: unknown) {
+                      const axiosError = error as {
+                        response?: { data?: { error?: string; message?: string } };
+                      };
+                      toast.error(
+                        axiosError.response?.data?.message ||
+                          axiosError.response?.data?.error ||
+                          'Failed to cancel payment'
+                      );
+                    }
+                  }}
+                >
+                  Cancel Payment
+                </Button>
+              )}
               <Button onClick={() => setShowDetailsDialog(false)} className="w-full sm:w-auto">
                 Close
               </Button>

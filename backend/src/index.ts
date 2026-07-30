@@ -19,6 +19,7 @@ import { ensureDirectories } from './utils/ensureDirectories';
 import { tenantContextMiddleware } from './middleware/tenant';
 import { ensureOrderItemServiceTypes } from './database/ensureOrderItemServiceTypes';
 import { backfillMissingPaymentTransactions } from './database/backfillMissingPayments';
+import { ensureInventoryAssetColumns } from './database/ensureInventoryAssetColumns';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -128,6 +129,13 @@ const startServer = async () => {
       await backfillMissingPaymentTransactions();
     } catch (backfillError) {
       console.error('⚠️ payment backfill skipped or failed:', backfillError);
+    }
+
+    // Long-term equipment asset columns
+    try {
+      await ensureInventoryAssetColumns();
+    } catch (assetError) {
+      console.error('⚠️ inventory asset columns skipped or failed:', assetError);
     }
 
     // Ensure upload directories exist

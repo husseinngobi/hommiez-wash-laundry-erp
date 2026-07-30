@@ -49,6 +49,19 @@ export type OrderWhatsAppItem = {
   total_price: number;
 };
 
+/** Business pay-in details shown on unpaid / partial / on-account receipts */
+export type PaymentModeDetails = {
+  centenary_account?: string;
+  mtn_code?: string;
+  airtel_merchant?: string;
+};
+
+export const DEFAULT_PAYMENT_MODES: Required<PaymentModeDetails> = {
+  centenary_account: '3205564146',
+  mtn_code: '30353491',
+  airtel_merchant: '4403961',
+};
+
 function formatShortDate(value?: string): string {
   if (!value) return new Date().toLocaleDateString('en-UG');
   try {
@@ -62,11 +75,48 @@ function formatShortDate(value?: string): string {
   }
 }
 
+function shouldIncludePaymentModes(order: OrderWhatsAppPayload): boolean {
+  const status = String(order.payment_status || '').toUpperCase();
+  const method = String(order.payment_method || '').toUpperCase();
+  if (status === 'PAID' || (order.balance || 0) <= 0) return false;
+  return (
+    status === 'UNPAID' ||
+    status === 'PARTIAL' ||
+    method === 'ON_ACCOUNT' ||
+    (order.balance || 0) > 0
+  );
+}
+
+function buildPaymentModeLines(
+  order: OrderWhatsAppPayload,
+  paymentModes?: PaymentModeDetails | null
+): string[] {
+  if (!shouldIncludePaymentModes(order)) return [];
+
+  const modes = {
+    ...DEFAULT_PAYMENT_MODES,
+    ...(paymentModes || {}),
+  };
+
+  const lines = ['', 'Payment mode:'];
+  if (modes.centenary_account) {
+    lines.push(`Centenary account No: ${modes.centenary_account}`);
+  }
+  if (modes.mtn_code) {
+    lines.push(`Mtn code no: ${modes.mtn_code}`);
+  }
+  if (modes.airtel_merchant) {
+    lines.push(`Airtel merchant no: ${modes.airtel_merchant}`);
+  }
+  return lines;
+}
+
 /** Order confirmation for WhatsApp Messenger (sent right after creating an order) */
 export function buildOrderConfirmationWhatsAppMessage(
   order: OrderWhatsAppPayload,
   items: OrderWhatsAppItem[],
-  businessPhone?: string
+  businessPhone?: string,
+  paymentModes?: PaymentModeDetails | null
 ): string {
   const lines: string[] = [
     `Hello *${order.customer_name}*! 👋`,
@@ -115,6 +165,13 @@ export function buildOrderConfirmationWhatsAppMessage(
     lines.push(`Method: ${method}`);
   }
 
+  // Unpaid / partial / on-account → remind how to pay; paid orders skip this
+  lines.push(...buildPaymentModeLines(order, paymentModes));
+
+  if ((order.balance || 0) <= 0 && String(order.payment_status || '').toUpperCase() === 'PAID') {
+    lines.push('', `Thank you for your payment!`);
+  }
+
   lines.push(
     '',
     `We'll notify you when your laundry is ready for pickup.`,
@@ -134,15 +191,15 @@ export function buildOrderConfirmationWhatsAppMessage(
 export function buildOrderReceiptWhatsAppMessage(
   order: OrderWhatsAppPayload & { order_status?: string },
   items: OrderWhatsAppItem[],
-  businessPhone?: string
+  businessPhone?: string,
+  paymentModes?: PaymentModeDetails | null
 ): string {
   const isReady = (order.order_status || '').toLowerCase() === 'ready';
   const header = isReady
     ? `✅ *Your order is READY for pickup!*`
     : `📋 *Order receipt / update*`;
 
-  const base = buildOrderConfirmationWhatsAppMessage(order, items, businessPhone);
-  // Replace confirmation header block with receipt-oriented header for follow-ups
+  const base = buildOrderConfirmationWhatsAppMessage(order, items, businessPhone, paymentModes);
   return base
     .replace('📋 *ORDER CONFIRMATION*', header)
     .replace(

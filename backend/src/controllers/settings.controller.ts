@@ -301,3 +301,63 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Failed to update bargain limits' });
   }
 };
+
+const DEFAULT_PAYMENT_ACCOUNTS = {
+  centenary_account: '3205564146',
+  mtn_code: '30353491',
+  airtel_merchant: '4403961',
+};
+
+/** Pay-in details for on-account / unpaid / partial WhatsApp receipts */
+export const getPaymentAccounts = async (_req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'payment_accounts'`
+    );
+    if (result.rows.length === 0) {
+      return res.json(DEFAULT_PAYMENT_ACCOUNTS);
+    }
+    const stored = result.rows[0].setting_value || {};
+    res.json({ ...DEFAULT_PAYMENT_ACCOUNTS, ...stored });
+  } catch (error) {
+    console.error('Get payment accounts error:', error);
+    res.status(500).json({ error: 'Failed to fetch payment accounts' });
+  }
+};
+
+export const updatePaymentAccounts = async (req: AuthRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only administrators can update payment accounts' });
+    }
+
+    const {
+      centenary_account = DEFAULT_PAYMENT_ACCOUNTS.centenary_account,
+      mtn_code = DEFAULT_PAYMENT_ACCOUNTS.mtn_code,
+      airtel_merchant = DEFAULT_PAYMENT_ACCOUNTS.airtel_merchant,
+    } = req.body;
+
+    const value = {
+      centenary_account: String(centenary_account || '').trim(),
+      mtn_code: String(mtn_code || '').trim(),
+      airtel_merchant: String(airtel_merchant || '').trim(),
+    };
+
+    const result = await query(
+      `INSERT INTO business_settings (setting_key, setting_value, updated_at)
+       VALUES ('payment_accounts', $1, NOW())
+       ON CONFLICT (setting_key)
+       DO UPDATE SET setting_value = $1, updated_at = NOW()
+       RETURNING setting_value`,
+      [JSON.stringify(value)]
+    );
+
+    res.json({
+      message: 'Payment accounts updated',
+      accounts: result.rows[0].setting_value,
+    });
+  } catch (error) {
+    console.error('Update payment accounts error:', error);
+    res.status(500).json({ error: 'Failed to update payment accounts' });
+  }
+};

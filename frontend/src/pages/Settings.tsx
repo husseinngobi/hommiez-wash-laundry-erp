@@ -1,7 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
-import { Settings as SettingsIcon, Building, Users, Bell, Shield, Palette, Database, AlertTriangle, AlertCircle, Trash2, Clock, Megaphone, Tag, Send, Calendar, Percent, Download, Mail, History, FileJson, Users2, Package, Truck, MessageSquare } from 'lucide-react';
+import { Settings as SettingsIcon, Building, Users, Bell, Shield, Palette, Database, AlertTriangle, AlertCircle, Trash2, Clock, Megaphone, Tag, Send, Calendar, Percent, Download, Mail, History, FileJson, Users2, Package, Truck, MessageSquare, CreditCard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -118,6 +118,12 @@ export default function Settings() {
   const [managerBargainLimit, setManagerBargainLimit] = useState(10000);
   const [adminBargainLimit, setAdminBargainLimit] = useState(50000);
   const [savingBargainLimits, setSavingBargainLimits] = useState(false);
+
+  // Payment accounts for on-account / partial WhatsApp receipts
+  const [centenaryAccount, setCentenaryAccount] = useState('3205564146');
+  const [mtnCode, setMtnCode] = useState('30353491');
+  const [airtelMerchant, setAirtelMerchant] = useState('4403961');
+  const [savingPaymentAccounts, setSavingPaymentAccounts] = useState(false);
 
   // Promotions state
   const [promotions, setPromotions] = useState<Promotion[]>([]);
@@ -311,8 +317,45 @@ export default function Settings() {
     fetchURASettings();
     if (isAdmin) {
       fetchBargainLimits();
+      axios
+        .get(`${API_BASE_URL}/settings/payment-accounts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        .then((res) => {
+          setCentenaryAccount(res.data.centenary_account || '3205564146');
+          setMtnCode(res.data.mtn_code || '30353491');
+          setAirtelMerchant(res.data.airtel_merchant || '4403961');
+        })
+        .catch(() => undefined);
     }
-  }, [fetchURASettings, fetchBargainLimits, isAdmin]);
+  }, [fetchURASettings, fetchBargainLimits, isAdmin, token]);
+
+  const savePaymentAccounts = async () => {
+    try {
+      setSavingPaymentAccounts(true);
+      await axios.put(
+        `${API_BASE_URL}/settings/payment-accounts`,
+        {
+          centenary_account: centenaryAccount,
+          mtn_code: mtnCode,
+          airtel_merchant: airtelMerchant,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({
+        title: 'Payment accounts saved',
+        description: 'These details appear on unpaid / partial / on-account WhatsApp receipts.',
+      });
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to save payment accounts',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingPaymentAccounts(false);
+    }
+  };
 
   const saveURASettings = async () => {
     try {
@@ -1580,6 +1623,57 @@ Don't miss out! ✨`;
               className="bg-secondary hover:bg-secondary/90 text-secondary-foreground w-full sm:w-auto"
             >
               {savingURASettings ? 'Saving...' : 'Save URA Settings'}
+            </Button>
+          </div>
+        </div>
+        )}
+
+        {/* Payment accounts for WhatsApp on-account / partial receipts - Admin Only */}
+        {isAdmin && (
+        <div className="bg-card rounded-xl border border-border shadow-sm">
+          <div className="p-6 border-b border-border">
+            <div className="flex items-center gap-3">
+              <CreditCard className="h-5 w-5 text-primary" />
+              <div>
+                <h2 className="text-lg font-semibold">Payment Mode Details</h2>
+                <p className="text-sm text-muted-foreground">
+                  Shown on unpaid, partial, and on-account WhatsApp receipts (not on fully paid orders)
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="centenary-account">Centenary account No</Label>
+                <Input
+                  id="centenary-account"
+                  value={centenaryAccount}
+                  onChange={(e) => setCentenaryAccount(e.target.value)}
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label htmlFor="mtn-code">MTN code no</Label>
+                <Input
+                  id="mtn-code"
+                  value={mtnCode}
+                  onChange={(e) => setMtnCode(e.target.value)}
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label htmlFor="airtel-merchant">Airtel merchant no</Label>
+                <Input
+                  id="airtel-merchant"
+                  value={airtelMerchant}
+                  onChange={(e) => setAirtelMerchant(e.target.value)}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+            <Button onClick={savePaymentAccounts} disabled={savingPaymentAccounts}>
+              {savingPaymentAccounts ? 'Saving…' : 'Save payment modes'}
             </Button>
           </div>
         </div>

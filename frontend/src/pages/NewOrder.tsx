@@ -51,6 +51,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   buildOrderConfirmationWhatsAppMessage,
   openWhatsAppMessenger,
+  DEFAULT_PAYMENT_MODES,
+  type PaymentModeDetails,
 } from '@/lib/whatsapp';
 
 interface Customer {
@@ -120,6 +122,7 @@ export default function NewOrder() {
   const [uraComplianceEnabled, setUraComplianceEnabled] = useState(false);
   const [applyVatToOrder, setApplyVatToOrder] = useState(false); // Per-order VAT control
   const [businessPhone, setBusinessPhone] = useState('');
+  const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
 
   // After create: offer WhatsApp Messenger
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
@@ -202,6 +205,14 @@ export default function NewOrder() {
       const settings = response.data;
       setUraComplianceEnabled(settings.ura_compliance_enabled === 'true' || settings.ura_compliance_enabled === true);
       setBusinessPhone(settings.business_phone || '');
+      try {
+        const accounts = await axios.get(`${API_BASE_URL}/settings/payment-accounts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setPaymentModes({ ...DEFAULT_PAYMENT_MODES, ...accounts.data });
+      } catch {
+        setPaymentModes(DEFAULT_PAYMENT_MODES);
+      }
     } catch (error) {
       console.error('Error fetching URA settings:', error);
       setUraComplianceEnabled(false);
@@ -559,7 +570,8 @@ export default function NewOrder() {
           quantity: item.quantity,
           total_price: item.subtotal,
         })),
-        businessPhone || undefined
+        businessPhone || undefined,
+        paymentModes
       );
 
       resetOrderForm();

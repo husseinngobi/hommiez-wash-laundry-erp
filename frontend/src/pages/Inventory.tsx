@@ -60,6 +60,11 @@ interface InventoryItem {
   expected_duration_unit?: 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS';
   is_long_term?: boolean;
   low_stock_threshold_percent?: number;
+  asset_value?: number | null;
+  asset_purchase_date?: string | null;
+  asset_serial_number?: string | null;
+  asset_condition?: string | null;
+  asset_location?: string | null;
 }
 
 export default function Inventory() {
@@ -100,6 +105,11 @@ export default function Inventory() {
   const [newItemIsLongTerm, setNewItemIsLongTerm] = useState(false);
   const [newItemMaxStock, setNewItemMaxStock] = useState('');
   const [newItemThresholdPercent, setNewItemThresholdPercent] = useState('20');
+  const [newItemAssetValue, setNewItemAssetValue] = useState('');
+  const [newItemAssetPurchaseDate, setNewItemAssetPurchaseDate] = useState('');
+  const [newItemAssetSerial, setNewItemAssetSerial] = useState('');
+  const [newItemAssetCondition, setNewItemAssetCondition] = useState('GOOD');
+  const [newItemAssetLocation, setNewItemAssetLocation] = useState('');
   const [adding, setAdding] = useState(false);
 
   // Delete dialog state
@@ -191,6 +201,11 @@ export default function Inventory() {
     setNewItemDurationUnit(item.expected_duration_unit || 'MONTHS');
     setNewItemIsLongTerm(item.is_long_term || false);
     setNewItemThresholdPercent(item.low_stock_threshold_percent?.toString() || '20');
+    setNewItemAssetValue((item.asset_value ?? item.unit_cost)?.toString() || '');
+    setNewItemAssetPurchaseDate(item.asset_purchase_date ? String(item.asset_purchase_date).slice(0, 10) : '');
+    setNewItemAssetSerial(item.asset_serial_number || '');
+    setNewItemAssetCondition(item.asset_condition || 'GOOD');
+    setNewItemAssetLocation(item.asset_location || '');
     setShowAddDialog(true);
   };
 
@@ -202,7 +217,25 @@ export default function Inventory() {
   };
 
   const handleAddItem = async () => {
-    if (!newItemName || !newItemCategory || !newItemUnit || !newItemReorder || !newItemCost) {
+    if (!newItemName || !newItemCategory) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Item name and category are required',
+      });
+      return;
+    }
+
+    if (newItemIsLongTerm) {
+      if (!newItemAssetValue) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: 'Asset value (worth) is required for long-term assets',
+        });
+        return;
+      }
+    } else if (!newItemUnit || !newItemReorder || !newItemCost) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -217,17 +250,24 @@ export default function Inventory() {
       const itemData = {
         item_name: newItemName,
         category: newItemCategory,
-        unit: newItemUnit,
-        quantity_in_stock: parseFloat(newItemStock),
-        reorder_level: parseFloat(newItemReorder),
-        unit_cost: parseFloat(newItemCost),
+        unit: newItemIsLongTerm ? (newItemUnit || 'ASSET') : newItemUnit,
+        quantity_in_stock: newItemIsLongTerm ? Math.max(1, parseFloat(newItemStock) || 1) : parseFloat(newItemStock),
+        reorder_level: newItemIsLongTerm ? 0 : parseFloat(newItemReorder),
+        unit_cost: newItemIsLongTerm
+          ? parseFloat(newItemAssetValue)
+          : parseFloat(newItemCost),
         supplier: newItemSupplier,
         notes: newItemNotes,
-        max_stock_quantity: newItemMaxStock ? parseFloat(newItemMaxStock) : null,
-        expected_duration_value: newItemDurationValue ? parseFloat(newItemDurationValue) : null,
-        expected_duration_unit: newItemDurationValue ? newItemDurationUnit : null,
+        max_stock_quantity: newItemIsLongTerm ? null : (newItemMaxStock ? parseFloat(newItemMaxStock) : null),
+        expected_duration_value: newItemIsLongTerm ? null : (newItemDurationValue ? parseFloat(newItemDurationValue) : null),
+        expected_duration_unit: newItemIsLongTerm ? null : (newItemDurationValue ? newItemDurationUnit : null),
         is_long_term: newItemIsLongTerm,
-        low_stock_threshold_percent: parseFloat(newItemThresholdPercent),
+        low_stock_threshold_percent: newItemIsLongTerm ? 20 : parseFloat(newItemThresholdPercent),
+        asset_value: newItemIsLongTerm ? parseFloat(newItemAssetValue) : null,
+        asset_purchase_date: newItemIsLongTerm && newItemAssetPurchaseDate ? newItemAssetPurchaseDate : null,
+        asset_serial_number: newItemIsLongTerm ? (newItemAssetSerial || null) : null,
+        asset_condition: newItemIsLongTerm ? newItemAssetCondition : null,
+        asset_location: newItemIsLongTerm ? (newItemAssetLocation || null) : null,
       };
 
       if (isEditing && editingItemId) {
@@ -315,6 +355,11 @@ export default function Inventory() {
     setNewItemDurationUnit('MONTHS');
     setNewItemIsLongTerm(false);
     setNewItemThresholdPercent('20');
+    setNewItemAssetValue('');
+    setNewItemAssetPurchaseDate('');
+    setNewItemAssetSerial('');
+    setNewItemAssetCondition('GOOD');
+    setNewItemAssetLocation('');
   };
 
   const filteredItems = items.filter((item) =>
@@ -737,6 +782,7 @@ export default function Inventory() {
                     <SelectItem value="kg">Kilograms (kg)</SelectItem>
                     <SelectItem value="liters">Liters</SelectItem>
                     <SelectItem value="pieces">Pieces</SelectItem>
+                    <SelectItem value="ASSET">Asset (unit)</SelectItem>
                     <SelectItem value="boxes">Boxes</SelectItem>
                     <SelectItem value="rolls">Rolls</SelectItem>
                     <SelectItem value="units">Units</SelectItem>
@@ -809,15 +855,83 @@ export default function Inventory() {
                   <Checkbox
                     id="is-long-term"
                     checked={newItemIsLongTerm}
-                    onCheckedChange={(checked) => setNewItemIsLongTerm(checked as boolean)}
+                    onCheckedChange={(checked) => {
+                      const on = checked as boolean;
+                      setNewItemIsLongTerm(on);
+                      if (on) {
+                        if (!newItemUnit) setNewItemUnit('ASSET');
+                        if (!newItemCategory) setNewItemCategory('EQUIPMENT');
+                        if (!newItemAssetValue && newItemCost) setNewItemAssetValue(newItemCost);
+                      }
+                    }}
                   />
                   <label
                     htmlFor="is-long-term"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                   >
-                    Mark as Long-Term Item (equipment/tools that don't deplete)
+                    Mark as long-term asset (equipment / machines / devices — no smart stock depletion)
                   </label>
                 </div>
+
+                {newItemIsLongTerm && (
+                  <div className="bg-muted/50 p-4 rounded-lg space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Record the asset&apos;s worth and identifying details. Smart stock alerts do not apply.
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Asset value / worth (UGX) *</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          placeholder="e.g., 3500000"
+                          value={newItemAssetValue}
+                          onChange={(e) => setNewItemAssetValue(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Purchase date</Label>
+                        <Input
+                          type="date"
+                          value={newItemAssetPurchaseDate}
+                          onChange={(e) => setNewItemAssetPurchaseDate(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Serial / tag number</Label>
+                        <Input
+                          placeholder="e.g., WM-2024-001"
+                          value={newItemAssetSerial}
+                          onChange={(e) => setNewItemAssetSerial(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Condition</Label>
+                        <Select value={newItemAssetCondition} onValueChange={setNewItemAssetCondition}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="NEW">New</SelectItem>
+                            <SelectItem value="GOOD">Good</SelectItem>
+                            <SelectItem value="FAIR">Fair</SelectItem>
+                            <SelectItem value="NEEDS_REPAIR">Needs repair</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Asset location</Label>
+                      <Input
+                        placeholder="e.g., Main shop floor / Office"
+                        value={newItemAssetLocation}
+                        onChange={(e) => setNewItemAssetLocation(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {!newItemIsLongTerm && (
                   <>

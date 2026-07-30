@@ -19,6 +19,16 @@ router.get('/order/:orderId', paymentController.getPaymentsByOrder as any);
 // Get payment by ID (accessible to all authenticated users)
 router.get('/:id', paymentController.getPaymentById as any);
 
+// Cancel (delete) a mistaken payment ledger row — ADMIN only
+router.post(
+  '/:id/cancel',
+  authorize(UserRole.ADMIN) as any,
+  [
+    body('reason').optional().isString().isLength({ max: 500 }),
+  ],
+  paymentController.cancelPayment as any
+);
+
 // Get payment statistics (Admin only)
 router.get('/statistics/summary', requireAdmin as any, paymentController.getPaymentStatistics as any);
 

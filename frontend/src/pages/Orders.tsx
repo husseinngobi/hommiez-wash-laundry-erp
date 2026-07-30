@@ -49,6 +49,8 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   openWhatsAppMessenger,
   buildOrderReceiptWhatsAppMessage,
+  DEFAULT_PAYMENT_MODES,
+  type PaymentModeDetails,
 } from '@/lib/whatsapp';
 
 interface Order {
@@ -197,7 +199,11 @@ const isOverdue = (order: Order): boolean => {
 };
 
 // WhatsApp helper functions
-const generateOrderReceiptMessage = (order: Order, items: OrderItem[]): string => {
+const generateOrderReceiptMessage = (
+  order: Order,
+  items: OrderItem[],
+  paymentModes?: PaymentModeDetails | null
+): string => {
   return buildOrderReceiptWhatsAppMessage(
     {
       order_number: order.order_number,
@@ -213,6 +219,7 @@ const generateOrderReceiptMessage = (order: Order, items: OrderItem[]): string =
       amount_paid: Number(order.amount_paid),
       balance: Number(order.balance),
       payment_status: order.payment_status,
+      payment_method: order.payment_method,
       order_status: order.order_status,
     },
     items.map((item) => ({
@@ -220,7 +227,9 @@ const generateOrderReceiptMessage = (order: Order, items: OrderItem[]): string =
       service_type: item.service_type,
       quantity: item.quantity,
       total_price: Number(item.total_price),
-    }))
+    })),
+    undefined,
+    paymentModes || DEFAULT_PAYMENT_MODES
   );
 };
 
@@ -533,7 +542,7 @@ const printReceipt = (order: Order, items: OrderItem[]) => {
 };
 
 export default function Orders() {
-  const { token, canCancelOrders, user } = useAuth();
+  const { token, canCancelOrders, user, isAdmin } = useAuth();
   const { toast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
@@ -554,6 +563,10 @@ export default function Orders() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [showRefundDialog, setShowRefundDialog] = useState(false);
+  const [cancelPaymentTarget, setCancelPaymentTarget] = useState<PaymentTransaction | null>(null);
+  const [cancelPaymentReason, setCancelPaymentReason] = useState('');
+  const [cancellingPayment, setCancellingPayment] = useState(false);
+  const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
   const [additionalPayment, setAdditionalPayment] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER'>('CASH');
   const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
@@ -673,7 +686,56 @@ export default function Orders() {
       .get(`${API_BASE_URL}/settings/all`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => setBusinessPhone(res.data.business_phone || ''))
       .catch(() => setBusinessPhone(''));
+    axios
+      .get(`${API_BASE_URL}/settings/payment-accounts`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setPaymentModes({ ...DEFAULT_PAYMENT_MODES, ...res.data }))
+      .catch(() => setPaymentModes(DEFAULT_PAYMENT_MODES));
   }, [token]);
+
+  const handleCancelPayment = async () => {
+    if (!cancelPaymentTarget || !selectedOrder || !token) return;
+    try {
+      setCancellingPayment(true);
+      const res = await axios.post(
+        `${API_BASE_URL}/payments/${cancelPaymentTarget.id}/cancel`,
+        { reason: cancelPaymentReason || 'Admin cancelled mistaken payment entry' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const updated = res.data.order;
+      toast({
+        title: 'Payment cancelled',
+        description: `Order is now ${updated.payment_status}. Balance: ${formatUGX(updated.balance)}`,
+      });
+      setCancelPaymentTarget(null);
+      setCancelPaymentReason('');
+      // Refresh order details + list
+      setSelectedOrder((prev) =>
+        prev
+          ? {
+              ...prev,
+              amount_paid: updated.amount_paid,
+              balance: updated.balance,
+              payment_status: updated.payment_status,
+              payment_method: updated.payment_method,
+            }
+          : prev
+      );
+      const paymentsResponse = await axios.get(`${API_BASE_URL}/payments/order/${selectedOrder.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPaymentTransactions(paymentsResponse.data || []);
+      fetchOrders();
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string; message?: string } } };
+      toast({
+        variant: 'destructive',
+        title: 'Could not cancel payment',
+        description: axiosError.response?.data?.message || axiosError.response?.data?.error || 'Failed',
+      });
+    } finally {
+      setCancellingPayment(false);
+    }
+  };
 
   const buildWhatsAppTemplate = (
     kind: WhatsAppComposeKind,
@@ -682,7 +744,7 @@ export default function Orders() {
   ): string => {
     switch (kind) {
       case 'receipt':
-        return generateOrderReceiptMessage(order, items);
+        return generateOrderReceiptMessage(order, items, paymentModes);
       case 'ready':
         return generateOrderReadyMessage(order);
       case 'reminder':
@@ -1790,6 +1852,7 @@ export default function Orders() {
                           <TableHead className="whitespace-nowrap px-2 sm:px-4">Reference</TableHead>
                           <TableHead className="whitespace-nowrap px-2 sm:px-4">Received By</TableHead>
                           <TableHead className="whitespace-nowrap px-2 sm:px-4">Notes</TableHead>
+                          {isAdmin && <TableHead className="whitespace-nowrap px-2 sm:px-4">Actions</TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1831,6 +1894,22 @@ export default function Orders() {
                                 </Button>
                               </div>
                             </TableCell>
+                            {isAdmin && Number(payment.amount) > 0 && (
+                              <TableCell className="px-2 sm:px-4">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                                  onClick={() => {
+                                    setCancelPaymentTarget(payment);
+                                    setCancelPaymentReason('');
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                              </TableCell>
+                            )}
+                            {isAdmin && Number(payment.amount) <= 0 && <TableCell />}
                           </TableRow>
                         ))}
                         <TableRow className="bg-green-50 dark:bg-green-950 font-bold">
@@ -1838,7 +1917,7 @@ export default function Orders() {
                           <TableCell className="text-green-600 font-bold px-2 sm:px-4 whitespace-nowrap">
                             {formatUGX(paymentTransactions.reduce((sum, p) => sum + Number(p.amount), 0))}
                           </TableCell>
-                          <TableCell colSpan={3}></TableCell>
+                          <TableCell colSpan={isAdmin ? 4 : 3}></TableCell>
                         </TableRow>
                       </TableBody>
                     </Table>
@@ -3090,6 +3169,63 @@ export default function Orders() {
               }} 
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel mistaken payment (Admin only) */}
+      <Dialog
+        open={!!cancelPaymentTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCancelPaymentTarget(null);
+            setCancelPaymentReason('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel payment</DialogTitle>
+            <DialogDescription>
+              Removes this payment from the ledger and recalculates the order
+              (UNPAID / PARTIAL / PAID). Use this for mistaken entries — use Refund
+              when money was actually returned to the client.
+            </DialogDescription>
+          </DialogHeader>
+          {cancelPaymentTarget && (
+            <div className="space-y-3 py-2">
+              <p className="text-sm">
+                Amount: <strong>{formatUGX(cancelPaymentTarget.amount)}</strong> via{' '}
+                {cancelPaymentTarget.payment_method.replace(/_/g, ' ')}
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="cancel-payment-reason">Reason (optional)</Label>
+                <Input
+                  id="cancel-payment-reason"
+                  value={cancelPaymentReason}
+                  onChange={(e) => setCancelPaymentReason(e.target.value)}
+                  placeholder="e.g. Marked paid by mistake — client has not paid"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCancelPaymentTarget(null);
+                setCancelPaymentReason('');
+              }}
+            >
+              Keep payment
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={cancellingPayment}
+              onClick={handleCancelPayment}
+            >
+              {cancellingPayment ? 'Cancelling…' : 'Cancel payment'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

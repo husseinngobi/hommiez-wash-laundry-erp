@@ -26,6 +26,11 @@ export const getAllInventoryItems = async (req: AuthRequest, res: Response) => {
         expected_duration_unit,
         is_long_term,
         low_stock_threshold_percent,
+        asset_value,
+        asset_purchase_date,
+        asset_serial_number,
+        asset_condition,
+        asset_location,
         notes,
         created_at,
         updated_at
@@ -226,19 +231,48 @@ export const createInventoryItem = async (req: AuthRequest, res: Response) => {
       expected_duration_value,
       expected_duration_unit,
       is_long_term = false,
-      low_stock_threshold_percent = 20
+      low_stock_threshold_percent = 20,
+      asset_value,
+      asset_purchase_date,
+      asset_serial_number,
+      asset_condition,
+      asset_location,
     } = req.body;
+
+    const longTerm = Boolean(is_long_term);
+    const resolvedUnit = longTerm ? (unit || 'ASSET') : unit;
+    const resolvedCost = longTerm
+      ? Number(asset_value ?? unit_cost) || 0
+      : Number(unit_cost) || 0;
     
     const result = await query(
       `INSERT INTO inventory_items 
        (item_name, unit, quantity, reorder_level, unit_cost, category, supplier, notes, 
         max_stock_quantity, expected_duration_value, expected_duration_unit, is_long_term, 
-        low_stock_threshold_percent, last_restocked)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+        low_stock_threshold_percent, asset_value, asset_purchase_date, asset_serial_number,
+        asset_condition, asset_location, last_restocked)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
        RETURNING *`,
-      [item_name, unit, quantity, reorder_level, unit_cost, category, supplier, notes,
-       max_stock_quantity, expected_duration_value, expected_duration_unit, is_long_term, 
-       low_stock_threshold_percent]
+      [
+        item_name,
+        resolvedUnit,
+        longTerm ? Math.max(1, Number(quantity) || 1) : quantity,
+        longTerm ? 0 : reorder_level,
+        resolvedCost,
+        category,
+        supplier,
+        notes,
+        longTerm ? null : max_stock_quantity,
+        longTerm ? null : expected_duration_value,
+        longTerm ? null : expected_duration_unit,
+        longTerm,
+        longTerm ? 20 : low_stock_threshold_percent,
+        longTerm ? (asset_value != null ? Number(asset_value) : resolvedCost) : null,
+        longTerm && asset_purchase_date ? asset_purchase_date : null,
+        longTerm ? (asset_serial_number || null) : null,
+        longTerm ? (asset_condition || 'GOOD') : null,
+        longTerm ? (asset_location || null) : null,
+      ]
     );
     
     res.status(201).json({
@@ -268,19 +302,66 @@ export const updateInventoryItem = async (req: AuthRequest, res: Response) => {
       expected_duration_value,
       expected_duration_unit,
       is_long_term,
-      low_stock_alert_days
+      low_stock_threshold_percent,
+      max_stock_quantity,
+      asset_value,
+      asset_purchase_date,
+      asset_serial_number,
+      asset_condition,
+      asset_location,
+      quantity_in_stock,
     } = req.body;
+
+    const longTerm = Boolean(is_long_term);
+    const resolvedUnit = longTerm ? (unit || 'ASSET') : unit;
+    const resolvedCost = longTerm
+      ? Number(asset_value ?? unit_cost) || 0
+      : Number(unit_cost) || 0;
     
     const result = await query(
       `UPDATE inventory_items 
-       SET item_name = $1, unit = $2, reorder_level = $3, 
-           unit_cost = $4, category = $5, supplier = $6, notes = $7,
-           expected_duration_value = $8, expected_duration_unit = $9,
-           is_long_term = $10, low_stock_alert_days = $11, updated_at = NOW()
-       WHERE id = $12
+       SET item_name = $1,
+           unit = $2,
+           reorder_level = $3, 
+           unit_cost = $4,
+           category = $5,
+           supplier = $6,
+           notes = $7,
+           expected_duration_value = $8,
+           expected_duration_unit = $9,
+           is_long_term = $10,
+           low_stock_threshold_percent = $11,
+           max_stock_quantity = $12,
+           asset_value = $13,
+           asset_purchase_date = $14,
+           asset_serial_number = $15,
+           asset_condition = $16,
+           asset_location = $17,
+           quantity = COALESCE($18, quantity),
+           updated_at = NOW()
+       WHERE id = $19
        RETURNING *`,
-      [item_name, unit, reorder_level, unit_cost, category, supplier, notes,
-       expected_duration_value, expected_duration_unit, is_long_term, low_stock_alert_days, id]
+      [
+        item_name,
+        resolvedUnit,
+        longTerm ? 0 : reorder_level,
+        resolvedCost,
+        category,
+        supplier,
+        notes,
+        longTerm ? null : expected_duration_value,
+        longTerm ? null : expected_duration_unit,
+        longTerm,
+        longTerm ? 20 : (low_stock_threshold_percent ?? 20),
+        longTerm ? null : max_stock_quantity,
+        longTerm ? (asset_value != null ? Number(asset_value) : resolvedCost) : null,
+        longTerm && asset_purchase_date ? asset_purchase_date : null,
+        longTerm ? (asset_serial_number || null) : null,
+        longTerm ? (asset_condition || 'GOOD') : null,
+        longTerm ? (asset_location || null) : null,
+        quantity_in_stock != null ? Number(quantity_in_stock) : null,
+        id,
+      ]
     );
     
     if (result.rows.length === 0) {

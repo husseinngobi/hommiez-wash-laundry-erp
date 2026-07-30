@@ -3,6 +3,172 @@ import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import { createSystemNotification } from './notifications.controller';
+import { logDelete } from '../utils/activityLogger';
+
+/**
+ * Recalculate order payment totals from remaining payments ledger rows.
+ */
+async function syncOrderPaymentFromLedger(orderId: number | string) {
+  const orderResult = await query(
+    `SELECT id, order_number, total_amount, payment_method, status
+     FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  if (orderResult.rows.length === 0) {
+    return null;
+  }
+  const order = orderResult.rows[0];
+  const totalAmount = Number(order.total_amount) || 0;
+
+  const sumResult = await query(
+    `SELECT COALESCE(SUM(amount), 0) as net_paid
+     FROM payments
+     WHERE order_id = $1`,
+    [orderId]
+  );
+  const netPaid = Math.max(0, Number(sumResult.rows[0].net_paid) || 0);
+  const balance = Math.max(0, totalAmount - netPaid);
+
+  let paymentStatus: 'PAID' | 'PARTIAL' | 'UNPAID';
+  if (netPaid <= 0) {
+    paymentStatus = 'UNPAID';
+  } else if (totalAmount > 0 && netPaid >= totalAmount) {
+    paymentStatus = 'PAID';
+  } else {
+    paymentStatus = 'PARTIAL';
+  }
+
+  // Zero paid → treat as On Account (credit) until money is received again
+  const paymentMethod =
+    paymentStatus === 'UNPAID'
+      ? 'ON_ACCOUNT'
+      : order.payment_method === 'ON_ACCOUNT'
+        ? 'CASH'
+        : order.payment_method;
+
+  const updated = await query(
+    `UPDATE orders
+     SET amount_paid = $1,
+         balance = $2,
+         payment_status = $3,
+         payment_method = COALESCE($4, payment_method),
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $5
+     RETURNING *`,
+    [
+      paymentStatus === 'UNPAID' ? 0 : Math.min(netPaid, totalAmount || netPaid),
+      balance,
+      paymentStatus,
+      paymentStatus === 'UNPAID' ? 'ON_ACCOUNT' : paymentMethod,
+      orderId,
+    ]
+  );
+
+  return updated.rows[0];
+}
+
+/**
+ * ADMIN only: cancel (delete) a mistaken payment ledger row and resync the order.
+ * Does not create a refund row — use Process Refund when cash was actually returned.
+ */
+export const cancelPayment = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Only administrators can cancel a payment ledger entry',
+      });
+    }
+
+    const { id } = req.params;
+    const { reason } = req.body || {};
+
+    const paymentResult = await query(
+      `SELECT p.*, o.order_number, o.total_amount, o.payment_status as order_payment_status,
+              c.name as customer_name
+       FROM payments p
+       JOIN orders o ON p.order_id = o.id
+       LEFT JOIN customers c ON p.customer_id = c.id
+       WHERE p.id = $1`,
+      [id]
+    );
+
+    if (paymentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const payment = paymentResult.rows[0];
+
+    if (payment.is_refund === true) {
+      return res.status(400).json({
+        error: 'Cannot cancel a refund entry. Refunds stay in the ledger for audit.',
+      });
+    }
+
+    // Block cancel if linked refunds still reference this payment
+    const childRefunds = await query(
+      `SELECT id FROM payments WHERE refunded_payment_id = $1 LIMIT 1`,
+      [id]
+    );
+    if (childRefunds.rows.length > 0) {
+      return res.status(400).json({
+        error: 'This payment has linked refunds. Process accounting via refund tools instead of cancel.',
+      });
+    }
+
+    await query(`DELETE FROM payments WHERE id = $1`, [id]);
+
+    const updatedOrder = await syncOrderPaymentFromLedger(payment.order_id);
+    if (!updatedOrder) {
+      return res.status(500).json({ error: 'Payment deleted but order sync failed' });
+    }
+
+    await logDelete(
+      req.user.id,
+      req.user.email,
+      req.user.full_name,
+      req.user.role,
+      'payment',
+      parseInt(id, 10),
+      {
+        cancelled_amount: payment.amount,
+        payment_method: payment.payment_method,
+        order_id: payment.order_id,
+        order_number: payment.order_number,
+        reason: reason || 'Admin cancelled mistaken payment entry',
+        resulting_payment_status: updatedOrder.payment_status,
+        resulting_amount_paid: updatedOrder.amount_paid,
+        resulting_balance: updatedOrder.balance,
+      },
+      req.ip
+    );
+
+    console.log(
+      `🗑️ Admin ${req.user.email} cancelled payment #${id} (UGX ${Number(payment.amount).toLocaleString()}) on ${payment.order_number} → ${updatedOrder.payment_status}`
+    );
+
+    res.json({
+      message: 'Payment cancelled successfully',
+      cancelled_payment: {
+        id: payment.id,
+        amount: payment.amount,
+        payment_method: payment.payment_method,
+        order_number: payment.order_number,
+      },
+      order: {
+        id: updatedOrder.id,
+        order_number: updatedOrder.order_number,
+        amount_paid: updatedOrder.amount_paid,
+        balance: updatedOrder.balance,
+        payment_status: updatedOrder.payment_status,
+        payment_method: updatedOrder.payment_method,
+      },
+    });
+  } catch (error) {
+    console.error('Cancel payment error:', error);
+    res.status(500).json({ error: 'Failed to cancel payment' });
+  }
+};
 
 /**
  * Get all payments with filtering
