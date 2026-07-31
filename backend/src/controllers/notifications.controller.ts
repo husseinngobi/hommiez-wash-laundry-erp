@@ -12,7 +12,8 @@ export const getNotifications = async (req: AuthRequest, res: Response) => {
               u.full_name as sender_name
        FROM notifications n
        LEFT JOIN users u ON n.sender_id = u.id
-       WHERE n.user_id = $1 AND (n.sender_id != $1 OR n.sender_id IS NULL)
+       WHERE (n.user_id = $1 OR n.user_id IS NULL)
+         AND (n.sender_id != $1 OR n.sender_id IS NULL)
        ORDER BY n.created_at DESC
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset]
@@ -30,9 +31,13 @@ export const getUnreadCount = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
 
     const result = await query(
+      // Must mirror getNotifications exactly, or the badge counts items the
+      // dropdown will never show.
       `SELECT COUNT(*) as count
        FROM notifications
-       WHERE (user_id = $1 OR user_id IS NULL) AND is_read = FALSE`,
+       WHERE (user_id = $1 OR user_id IS NULL)
+         AND (sender_id != $1 OR sender_id IS NULL)
+         AND is_read = FALSE`,
       [userId]
     );
 

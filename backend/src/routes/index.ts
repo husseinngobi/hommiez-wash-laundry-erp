@@ -25,6 +25,7 @@ import accountingRoutes from './accounting.routes';
 import fiscalYearRoutes from './fiscalYear.routes';
 import automationRoutes from './automation.routes';
 import reminderRoutes from './reminder.routes';
+import branchRoutes from './branch.routes';
 
 const router = Router();
 
@@ -36,6 +37,7 @@ router.use('/orders', orderRoutes);
 router.use('/reports', reportRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/branches', branchRoutes);
 router.use('/notifications', newNotificationsRoutes); // New notification system with announcements
 router.use('/promotions', promotionsRoutes);
 router.use('/inventory', inventoryRoutes);

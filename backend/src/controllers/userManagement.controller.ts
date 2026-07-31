@@ -51,60 +51,63 @@ export const getAllUsers = async (req: AuthRequest, res: Response) => {
     const limitNum = parseInt(limit as string) || 10;
     const offset = (pageNum - 1) * limitNum;
     
-    let queryText = `
-      SELECT 
-        u.id, u.email, u.full_name, u.phone, u.role, u.status, 
+    const selectClause = `
+      SELECT
+        u.id, u.email, u.full_name, u.phone, u.role, u.status,
         u.created_at, u.updated_at, u.last_login, u.profile_picture, u.profile_picture_url,
-        c.full_name as created_by_name
+        u.branch_id, b.name as branch_name,
+        c.full_name as created_by_name`;
+    const fromClause = `
       FROM users u
       LEFT JOIN users c ON u.created_by = c.id
+      LEFT JOIN branches b ON b.id = u.branch_id
       WHERE 1=1
     `;
+
+    let whereExtras = '';
     
     const params: any[] = [];
     let paramCount = 1;
     
     if (status) {
-      queryText += ` AND u.status = $${paramCount}`;
+      whereExtras += ` AND u.status = $${paramCount}`;
       params.push(status);
       paramCount++;
     }
-    
+
     if (role) {
-      queryText += ` AND u.role = $${paramCount}`;
+      whereExtras += ` AND u.role = $${paramCount}`;
       params.push(role);
       paramCount++;
     }
-    
+
     if (search) {
-      queryText += ` AND (u.full_name ILIKE $${paramCount} OR u.email ILIKE $${paramCount})`;
+      whereExtras += ` AND (u.full_name ILIKE $${paramCount} OR u.email ILIKE $${paramCount})`;
       params.push(`%${search}%`);
       paramCount++;
     }
 
     if (hasDeletedAt) {
-      queryText += ' AND u.deleted_at IS NULL';
+      whereExtras += ' AND u.deleted_at IS NULL';
     }
 
     if (hiddenSystemAdminEmails.length > 0) {
-      queryText += ` AND (u.email IS NULL OR LOWER(u.email) != ALL($${paramCount}::text[]))`;
+      whereExtras += ` AND (u.email IS NULL OR LOWER(u.email) != ALL($${paramCount}::text[]))`;
       params.push(hiddenSystemAdminEmails);
       paramCount++;
     }
-    
-    // Get total count
-    const countQuery = queryText.replace(
-      'SELECT \n        u.id, u.email, u.full_name, u.phone, u.role, u.status, \n        u.created_at, u.updated_at, u.last_login, u.profile_picture, u.profile_picture_url,\n        c.full_name as created_by_name\n      FROM users u',
-      'SELECT COUNT(*) FROM users u'
-    );
-    const countResult = await query(countQuery, params);
+
+    // Get total count over the same filters
+    const countResult = await query(`SELECT COUNT(*) ${fromClause}${whereExtras}`, params);
     const total = parseInt(countResult.rows[0].count);
-    
+
     // Add pagination
-    queryText += ` ORDER BY u.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
+    const listQuery =
+      `${selectClause}${fromClause}${whereExtras}` +
+      ` ORDER BY u.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
     params.push(limitNum, offset);
-    
-    const result = await query(queryText, params);
+
+    const result = await query(listQuery, params);
     
     res.json({
       success: true,
@@ -546,6 +549,52 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Update user role error:', error);
     res.status(500).json({ error: 'Failed to update user role' });
+  }
+};
+
+// Assign a staff member to a branch (Admin only)
+export const updateUserBranch = async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { branch_id } = req.body;
+
+    const userCheck = await query(
+      'SELECT id, email, full_name, branch_id FROM users WHERE id = $1',
+      [userId]
+    );
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const visibilityBlock = enforceTargetVisibility(req, userCheck.rows[0].email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
+
+    let branchId: number | null = null;
+    if (branch_id !== null && branch_id !== undefined && branch_id !== '') {
+      branchId = Number(branch_id);
+      const branchCheck = await query('SELECT id FROM branches WHERE id = $1', [branchId]);
+      if (branchCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Selected branch does not exist' });
+      }
+    }
+
+    const result = await query(
+      `UPDATE users SET branch_id = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING id, email, full_name, role, status, branch_id`,
+      [branchId, userId]
+    );
+
+    res.json({
+      success: true,
+      message: 'Branch assignment updated',
+      user: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Update user branch error:', error);
+    res.status(500).json({ error: 'Failed to update branch assignment' });
   }
 };
 

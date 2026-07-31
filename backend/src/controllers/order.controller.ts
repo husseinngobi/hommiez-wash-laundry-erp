@@ -11,6 +11,48 @@ import { logCreate, logUpdate, logDelete } from '../utils/activityLogger';
 import { getEffectiveBargainLimit, getMaxDiscountForRole } from '../utils/roleLimits';
 import fs from 'fs';
 
+type SettingsQuerier = { query: (text: string) => Promise<any> };
+
+function parseSettingJson(raw: any): any {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'string') return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * VAT is charged only when URA compliance is switched on in Settings.
+ * `ura_compliance_enabled` is what the Settings page writes; `vat_enabled` is
+ * the older shape and is still honoured so existing installs keep working.
+ */
+export async function resolveVatConfig(
+  db: SettingsQuerier
+): Promise<{ enabled: boolean; rate: number }> {
+  const result = await db.query(
+    `SELECT setting_key, setting_value FROM business_settings
+     WHERE setting_key IN ('ura_compliance_enabled', 'vat_enabled', 'vat_rate')`
+  );
+
+  const settings: Record<string, any> = {};
+  result.rows.forEach((row: any) => {
+    settings[row.setting_key] = parseSettingJson(row.setting_value);
+  });
+
+  const uraFlag = settings.ura_compliance_enabled;
+  const uraEnabled = uraFlag === true || uraFlag === 'true';
+
+  const legacy = settings.vat_enabled;
+  const legacyEnabled = legacy?.enabled === true || legacy === true || legacy === 'true';
+
+  const rate =
+    parseFloat(String(settings.vat_rate ?? legacy?.rate ?? 18)) || 18;
+
+  return { enabled: uraEnabled || legacyEnabled, rate };
+}
+
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
   try {
     const { status, payment_status, customer_id, from_date, to_date, search, page = 1, limit = 15 } = req.query;
@@ -91,10 +133,13 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
         u.full_name as staff_name,
         u.role as user_role,
         u.status as staff_status,
+        o.branch_id,
+        b.name as branch_name,
         (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
       JOIN users u ON o.user_id = u.id
+      LEFT JOIN branches b ON b.id = o.branch_id
       ${whereClause}
       ORDER BY o.created_at DESC
       LIMIT $${paramCount++} OFFSET $${paramCount++}
@@ -132,10 +177,13 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
         c.phone as customer_phone,
         c.email as customer_email,
         c.location as customer_location,
-        u.full_name as staff_name
+        u.full_name as staff_name,
+        o.branch_id,
+        b.name as branch_name
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
       JOIN users u ON o.user_id = u.id
+      LEFT JOIN branches b ON b.id = o.branch_id
       WHERE o.id = $1`,
       [id]
     );
@@ -185,9 +233,33 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       transaction_reference,
       pickup_date, 
       notes,
+      branch_id: requestedBranchId,
       tax_rate: frontendTaxRate,
       tax_amount: frontendTaxAmount
     } = req.body;
+
+    // Branch: staff always book against their own branch; only ADMIN/MANAGER may
+    // choose another one, and it must be an active branch.
+    const canChooseBranch = req.user!.role === 'ADMIN' || req.user!.role === 'MANAGER';
+    let branchId: number | null =
+      canChooseBranch && requestedBranchId
+        ? Number(requestedBranchId)
+        : req.user!.branch_id ?? null;
+
+    if (branchId) {
+      const branchCheck = await client.query(
+        'SELECT id FROM branches WHERE id = $1 AND is_active = TRUE',
+        [branchId]
+      );
+      if (branchCheck.rows.length === 0) {
+        throw new Error('Selected branch is not available');
+      }
+    } else {
+      const defaultBranch = await client.query(
+        'SELECT id FROM branches WHERE is_active = TRUE ORDER BY is_default DESC, id ASC LIMIT 1'
+      );
+      branchId = defaultBranch.rows[0]?.id ?? null;
+    }
     
     // ================================================================
     // SECURITY: ALL FINANCIAL CALCULATIONS DONE ON BACKEND
@@ -196,6 +268,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     
     // 1. Calculate subtotal from order items (verify each item price from database)
     let calculatedSubtotal = 0;
+    let totalItemDiscount = 0;
     const validatedItems: any[] = [];
     
     for (const item of items) {
@@ -259,15 +332,44 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       }
       
       const normalizedQuantity = priceItem.unit === 'kg' ? Math.round(quantity * 2) / 2 : quantity;
-      const itemTotal = Math.round(normalizedQuantity * actualUnitPrice);
+      const grossItemTotal = Math.round(normalizedQuantity * actualUnitPrice);
+
+      // Per-item bargain: capped at the line total and at the role's discount ceiling,
+      // so a line-by-line discount cannot exceed what the staff member may give overall.
+      const requestedItemDiscount = Math.round(Number(item.discount_amount) || 0);
+      if (requestedItemDiscount < 0) {
+        throw new Error(`Item discount cannot be negative for ${priceItem.name}`);
+      }
+
+      const roleDiscountCeiling = Math.round(
+        grossItemTotal * (getMaxDiscountForRole(req.user!.role) / 100)
+      );
+      if (requestedItemDiscount > roleDiscountCeiling) {
+        throw new Error(
+          `Discount on ${priceItem.name} exceeds your limit (max ${getMaxDiscountForRole(req.user!.role)}% = ${roleDiscountCeiling})`
+        );
+      }
+
+      const itemDiscount = Math.min(requestedItemDiscount, grossItemTotal);
+      const itemTotal = grossItemTotal - itemDiscount;
       calculatedSubtotal += itemTotal;
+      totalItemDiscount += itemDiscount;
       
+      // Staff-facing garment description (colour, brand, marks). Trimmed and
+      // capped to match the column; never shown to the customer.
+      const itemNotes =
+        typeof item.notes === 'string' && item.notes.trim()
+          ? item.notes.trim().slice(0, 200)
+          : null;
+
       validatedItems.push({
         price_item_id: item.price_item_id,
         service_type: item.service_type,
         quantity: normalizedQuantity,
         unit_price: actualUnitPrice, // Use actual DB price, not frontend
-        total_price: itemTotal
+        discount_amount: itemDiscount,
+        total_price: itemTotal,
+        notes: itemNotes
       });
     }
     
@@ -319,40 +421,36 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       throw new Error(`Bargain amount (UGX ${bargainDisplay}) cannot exceed order subtotal (UGX ${subtotalDisplay})`);
     }
     
-    // 3. Calculate tax (check if VAT is enabled in settings OR if per-order VAT was applied)
+    // 3. Calculate tax.
+    // VAT is only ever charged when URA compliance is switched on in Settings.
+    // The client's tax values are never trusted — they only signal intent; the
+    // rate and amount are always resolved and recomputed here.
     let tax_amount = 0;
     let tax_rate = 0;
-    
-    // Priority 1: Use frontend values if provided AND non-zero (per-order VAT checkbox was checked)
-    if (frontendTaxRate !== undefined && frontendTaxAmount !== undefined && parseFloat(frontendTaxRate.toString()) > 0) {
-      tax_rate = parseFloat(frontendTaxRate.toString());
-      tax_amount = parseInt(frontendTaxAmount.toString());
-      console.log(`✅ Using per-order VAT: ${tax_rate}% = UGX ${tax_amount}`);
-    } else {
-      // Priority 2: Check global VAT setting (backward compatible)
-      try {
-        const vatSettingResult = await client.query(
-          `SELECT setting_value FROM business_settings WHERE setting_key = 'vat_enabled'`
-        );
-        
-        if (vatSettingResult.rows.length > 0) {
-          const vatSetting = vatSettingResult.rows[0].setting_value;
-          
-          // Only calculate tax if VAT is enabled
-          if (vatSetting.enabled === true) {
-            tax_rate = parseFloat(vatSetting.rate || 18); // Default to 18% Uganda VAT
-            // Tax is calculated on subtotal AFTER discount and bargain (Uganda standard)
-            const amountAfterDiscountAndBargain = calculatedSubtotal - discount_amount - bargainAmountValue;
-            tax_amount = Math.round(amountAfterDiscountAndBargain * (tax_rate / 100));
-            console.log(`✅ Using global VAT setting: ${tax_rate}% = UGX ${tax_amount}`);
-          }
+
+    try {
+      const vatConfig = await resolveVatConfig(client);
+
+      if (vatConfig.enabled) {
+        const clientWantsVat =
+          frontendTaxRate === undefined ||
+          parseFloat(String(frontendTaxRate)) > 0 ||
+          parseInt(String(frontendTaxAmount ?? 0)) > 0;
+
+        if (clientWantsVat) {
+          tax_rate = vatConfig.rate;
+          // Uganda standard: VAT on the amount after discount and bargain
+          const amountAfterDiscountAndBargain =
+            calculatedSubtotal - discount_amount - bargainAmountValue;
+          tax_amount = Math.round(Math.max(0, amountAfterDiscountAndBargain) * (tax_rate / 100));
         }
-      } catch (error) {
-        console.error('VAT setting fetch error:', error);
-        // Default to 0 if setting not found (backward compatible)
-        tax_amount = 0;
-        tax_rate = 0;
+      } else if (parseFloat(String(frontendTaxRate ?? 0)) > 0) {
+        console.warn('⚠️ VAT requested but URA compliance is off — charging no VAT');
       }
+    } catch (error) {
+      console.error('VAT setting fetch error:', error);
+      tax_amount = 0;
+      tax_rate = 0;
     }
     
     // 4. Calculate final total
@@ -446,9 +544,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         status,
         transaction_reference,
         invoice_number,
-        notes
+        notes,
+        branch_id
       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`,
       [
         order_number, 
@@ -468,7 +567,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         'pending', // Initial status (lowercase to match enum: pending, processing, ready, delivered, cancelled)
         transaction_reference || null,
         invoice_number,
-        notes
+        notes,
+        branchId
         // NOTE: pickup_date is NULL initially, only set when status = DELIVERED
       ]
     );
@@ -484,16 +584,20 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           service_type, 
           quantity, 
           unit_price, 
-          total_price
+          discount_amount,
+          total_price,
+          notes
         )
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           orderId, 
           item.price_item_id, 
           item.service_type.toUpperCase(), 
           item.quantity, 
           item.unit_price,  // Backend-verified price from database
-          item.total_price  // Backend-calculated total
+          item.discount_amount || 0,
+          item.total_price,  // Backend-calculated total (net of the item discount)
+          item.notes
         ]
       );
     }
@@ -767,7 +871,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     
     res.status(201).json({
       message: 'Order created successfully',
-      order: createdOrder,
+      order: { ...createdOrder, item_discount_total: totalItemDiscount },
     });
     
   } catch (error: any) {
@@ -801,6 +905,18 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       notes,
       transaction_reference
     } = req.body;
+
+    // Cancelling is an administrator action. This generic update route must not
+    // become a side door around the same rule enforced in updateOrderStatus.
+    if (
+      order_status &&
+      String(order_status).toLowerCase() === 'cancelled' &&
+      req.user!.role !== 'ADMIN'
+    ) {
+      return res.status(403).json({
+        error: 'Only administrators can cancel an order',
+      });
+    }
 
     // Parse numeric values properly (handle both integer and decimal inputs)
     // Database columns: subtotal, discount, tax, total, amount_paid are DECIMAL

@@ -24,6 +24,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -108,6 +118,8 @@ const Payments = () => {
   const [loading, setLoading] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [cancelPaymentTarget, setCancelPaymentTarget] = useState<Payment | null>(null);
+  const [cancellingPayment, setCancellingPayment] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   
@@ -243,6 +255,41 @@ const Payments = () => {
       console.error('Failed to fetch statistics:', error);
     }
   }, [token, isAdmin, filters.from_date, filters.to_date]);
+
+  const handleCancelPayment = async () => {
+    if (!cancelPaymentTarget || !token || cancellingPayment) return;
+
+    try {
+      setCancellingPayment(true);
+      const response = await axios.post(
+        `${API_BASE_URL}/payments/${cancelPaymentTarget.id}/cancel`,
+        { reason: 'Admin cancelled from Payments page' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const newStatus = response.data?.order?.payment_status;
+      toast.success(
+        newStatus
+          ? `Payment cancelled. Order ${cancelPaymentTarget.order_number} is now ${newStatus}.`
+          : 'Payment cancelled.'
+      );
+
+      setCancelPaymentTarget(null);
+      setShowDetailsDialog(false);
+      setSelectedPayment(null);
+      fetchPayments();
+      if (isAdmin) fetchStatistics();
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string; message?: string } } };
+      toast.error(
+        axiosError.response?.data?.message ||
+          axiosError.response?.data?.error ||
+          'Failed to cancel payment'
+      );
+    } finally {
+      setCancellingPayment(false);
+    }
+  };
 
   const fetchPendingPayments = useCallback(async () => {
     try {
@@ -1137,36 +1184,7 @@ const Payments = () => {
                 <Button
                   variant="destructive"
                   className="w-full sm:w-auto"
-                  onClick={async () => {
-                    if (!token || !selectedPayment.id) return;
-                    const ok = window.confirm(
-                      `Cancel this payment of ${formatUGX(selectedPayment.amount_paid)}? The order will be recalculated to unpaid/partial/paid.`
-                    );
-                    if (!ok) return;
-                    try {
-                      const res = await axios.post(
-                        `${API_BASE_URL}/payments/${selectedPayment.id}/cancel`,
-                        { reason: 'Admin cancelled from Payments page' },
-                        { headers: { Authorization: `Bearer ${token}` } }
-                      );
-                      toast.success(
-                        `Payment cancelled. Order is now ${res.data.order.payment_status}`
-                      );
-                      setShowDetailsDialog(false);
-                      setSelectedPayment(null);
-                      fetchPayments();
-                      if (isAdmin) fetchStatistics();
-                    } catch (error: unknown) {
-                      const axiosError = error as {
-                        response?: { data?: { error?: string; message?: string } };
-                      };
-                      toast.error(
-                        axiosError.response?.data?.message ||
-                          axiosError.response?.data?.error ||
-                          'Failed to cancel payment'
-                      );
-                    }
-                  }}
+                  onClick={() => setCancelPaymentTarget(selectedPayment)}
                 >
                   Cancel Payment
                 </Button>
@@ -1178,6 +1196,50 @@ const Payments = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Cancel Payment Confirmation (administrators only) */}
+      <AlertDialog
+        open={!!cancelPaymentTarget}
+        onOpenChange={(open) => {
+          if (!open) setCancelPaymentTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to cancel this payment?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {cancelPaymentTarget && (
+                    <>
+                      This will remove the payment of{' '}
+                      <strong>{formatUGX(cancelPaymentTarget.amount_paid)}</strong> from order{' '}
+                      <strong>{cancelPaymentTarget.order_number}</strong>.
+                    </>
+                  )}
+                </p>
+                <p>
+                  The order balance and payment status will be recalculated automatically
+                  (paid, partial or unpaid). This cannot be undone.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={cancellingPayment}>Keep payment</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={cancellingPayment}
+              onClick={(event) => {
+                event.preventDefault();
+                handleCancelPayment();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {cancellingPayment ? 'Cancelling…' : 'OK, cancel payment'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Assign Payment Dialog */}
       {selectedPendingPayment && token && (

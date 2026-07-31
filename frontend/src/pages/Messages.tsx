@@ -323,13 +323,8 @@ export default function Messages() {
     try {
       if (!token) return;
       
-      // Use the selected method (whatsapp or sms)
-      const endpoint = sendMethod === 'whatsapp' 
-        ? `${API_BASE_URL}/whatsapp/send-bulk`
-        : `${API_BASE_URL}/sms/send-bulk`;
-      
       const response = await axios.post(
-        endpoint,
+        `${API_BASE_URL}/whatsapp/send-bulk`,
         {
           customer_ids: selectedCustomers,
           message: bulkMessage,
@@ -338,8 +333,7 @@ export default function Messages() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const methodName = sendMethod === 'whatsapp' ? 'WhatsApp' : 'SMS';
-      toast.success(`${methodName} messages sent to ${response.data.sent} customers!`);
+      toast.success(`WhatsApp messages sent to ${response.data.sent} customers!`);
       setShowBulkDialog(false);
       setBulkMessage("");
       setCampaignName(""); // Reset campaign name
@@ -1139,15 +1133,14 @@ Don't miss out! ✨`;
                       </div>
                     </Label>
                   </div>
-                  <div className="flex items-center space-x-2 flex-1 rounded-lg border-2 p-4 cursor-pointer hover:bg-accent" 
-                       style={{ borderColor: sendMethod === 'sms' ? 'hsl(var(--primary))' : 'transparent' }}
-                       onClick={() => setSendMethod('sms')}>
-                    <RadioGroupItem value="sms" id="method-sms" />
-                    <Label htmlFor="method-sms" className="flex items-center gap-2 cursor-pointer flex-1">
+                  {/* SMS is not wired to a provider yet — offering it would only fail */}
+                  <div className="flex items-center space-x-2 flex-1 rounded-lg border-2 border-transparent p-4 opacity-50 cursor-not-allowed">
+                    <RadioGroupItem value="sms" id="method-sms" disabled />
+                    <Label htmlFor="method-sms" className="flex items-center gap-2 flex-1">
                       <Smartphone className="h-5 w-5 text-blue-600" />
                       <div>
                         <div className="font-medium">SMS</div>
-                        <div className="text-xs text-muted-foreground">Send via text message</div>
+                        <div className="text-xs text-muted-foreground">Not available yet</div>
                       </div>
                     </Label>
                   </div>

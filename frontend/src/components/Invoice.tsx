@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
+import { COLLECTION_GRACE_DAYS, UNCOLLECTED_DONATION_MONTHS } from '@/lib/whatsapp';
 import axios from 'axios';
 import QRCode from 'qrcode';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,8 @@ interface BusinessSettings {
   ura_compliance_enabled: boolean;
   business_tin: string;
   fiscal_device_number: string;
+  business_name: string;
+  business_location: string;
   business_address: string;
   business_phone: string;
   business_email: string;
@@ -41,6 +44,7 @@ interface OrderDetails {
   payment_status: string;
   fiscal_verification_code: string;
   staff_name: string;
+  branch_name?: string | null;
 }
 
 interface OrderItem {
@@ -82,6 +86,8 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
         ura_compliance_enabled: uraEnabled,
         business_tin: settingsRes.data.business_tin || '',
         fiscal_device_number: settingsRes.data.fiscal_device_number || '',
+        business_name: settingsRes.data.business_name || 'LUSH DRY CLEANERS & LAUNDROMAT',
+        business_location: settingsRes.data.business_location || '',
         business_address: settingsRes.data.business_address || 'Kampala, Uganda',
         business_phone: settingsRes.data.business_phone || '',
         business_email: settingsRes.data.business_email || 'info@lushlaundry.com',
@@ -203,12 +209,13 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
       <div ref={invoiceRef} className="invoice-container border-2 border-black p-6 max-w-4xl mx-auto bg-white font-mono text-sm">
         {/* Header */}
         <div className="text-center border-b-2 border-black pb-4 mb-4">
-          <h1 className="text-2xl font-bold mb-2">LUSH LAUNDRY SERVICES</h1>
+          <h1 className="text-2xl font-bold mb-2">{settings.business_name.toUpperCase()}</h1>
           <div className="text-xs">
             {settings.ura_compliance_enabled && (
               <p>TIN: {settings.business_tin || '[NOT SET - Configure in Settings]'}</p>
             )}
-            <p>{settings.business_address}</p>
+            <p>{[settings.business_address, settings.business_location].filter(Boolean).join(', ')}</p>
+            {order?.branch_name && <p>Branch: {order.branch_name}</p>}
             <p>Tel: {settings.business_phone} | Email: {settings.business_email}</p>
             {settings.ura_compliance_enabled && settings.fiscal_device_number && (
               <p>Fiscal Device No: {settings.fiscal_device_number}</p>
@@ -340,6 +347,17 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
             </p>
           </div>
           
+          <div className="border border-black p-2 my-3 text-left">
+            <p className="font-bold mb-1">COLLECTION POLICY</p>
+            <p>
+              Kindly collect your items within {COLLECTION_GRACE_DAYS} days of being notified
+              that they are ready. We do not have storage facilities for garments, so items
+              held beyond {COLLECTION_GRACE_DAYS} days attract a storage charge and are kept
+              at the owner&apos;s risk. Items left uncollected for over{' '}
+              {UNCOLLECTED_DONATION_MONTHS} months are donated to charity.
+            </p>
+          </div>
+
           <p className="mt-2">Goods sold are not returnable</p>
           <p>For inquiries: {settings.business_phone}</p>
         </div>

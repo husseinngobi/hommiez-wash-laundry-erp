@@ -1,6 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +20,7 @@ import {
   Save,
   UserPlus,
   MessageCircle,
+  StickyNote,
 } from 'lucide-react';
 import {
   Select,
@@ -53,6 +55,7 @@ import {
   openWhatsAppMessenger,
   DEFAULT_PAYMENT_MODES,
   type PaymentModeDetails,
+  type BusinessInfo,
 } from '@/lib/whatsapp';
 
 interface Customer {
@@ -89,15 +92,38 @@ interface OrderItem {
   service_type: 'WASH' | 'IRON' | 'EXPRESS';
   quantity: number;
   unit_price: number;
+  /** Per-item bargain given to this customer on this line */
+  discount_amount?: number;
+  /** Net line total: quantity × unit price − item discount */
   subtotal: number;
   unit?: string;
+  /** Internal garment description (colour, brand, marks). Never on receipts. */
+  notes?: string;
+}
+
+const ITEM_NOTE_MAX = 200;
+
+interface Branch {
+  id: number;
+  name: string;
+  code: string;
+  location?: string | null;
+  is_active: boolean;
+  is_default: boolean;
+}
+
+/** Net line total, never below zero */
+function computeLineSubtotal(quantity: number, unitPrice: number, discount = 0): number {
+  const gross = Math.round(Number(quantity) * Number(unitPrice));
+  return Math.max(0, gross - Math.max(0, Math.round(Number(discount) || 0)));
 }
 
 
+// Administrators are uncapped; the order value is the only ceiling
 const MAX_DISCOUNT_BY_ROLE: Record<string, number> = {
   DESKTOP_AGENT: 10,
   MANAGER: 20,
-  ADMIN: 50,
+  ADMIN: 100,
 };
 
 function getApiErrorMessage(error: unknown, fallback: string): string {
@@ -113,16 +139,25 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+const BRANCH_PREFERENCE_KEY = 'newOrderBranchId';
+
 export default function NewOrder() {
   const { token, user } = useAuth();
   const { toast } = useToast();
   const maxDiscountPercent = MAX_DISCOUNT_BY_ROLE[user?.role ?? 'DESKTOP_AGENT'] ?? 10;
+  const canChooseBranch = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const isAdminUser = user?.role === 'ADMIN';
 
   // URA Compliance state
   const [uraComplianceEnabled, setUraComplianceEnabled] = useState(false);
+  const [vatRate, setVatRate] = useState(18);
   const [applyVatToOrder, setApplyVatToOrder] = useState(false); // Per-order VAT control
   const [businessPhone, setBusinessPhone] = useState('');
+  const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
   const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
+  const [openNoteIndexes, setOpenNoteIndexes] = useState<number[]>([]);
 
   // After create: offer WhatsApp Messenger
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
@@ -188,13 +223,47 @@ export default function NewOrder() {
     try {
       const response = await axios.get(`${API_BASE_URL}/prices`, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { category: categoryFilter !== 'ALL' ? categoryFilter : undefined },
+        params: {
+          category: categoryFilter !== 'ALL' ? categoryFilter : undefined,
+          active: 'true',
+        },
       });
       setPriceItems(response.data.prices || []);
     } catch (error) {
       console.error('Error fetching price items:', error);
     }
   }, [token, categoryFilter]);
+
+  // Branches: staff are locked to their own, admins/managers may choose
+  const fetchBranches = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/branches`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { active: 'true' },
+      });
+      const list: Branch[] = response.data.branches || [];
+      setBranches(list);
+
+      setSelectedBranchId((current) => {
+        if (current) return current;
+        // Admins/managers keep whichever branch they last served from
+        const remembered = canChooseBranch ? localStorage.getItem(BRANCH_PREFERENCE_KEY) : null;
+        const sticky = remembered ? list.find((b) => String(b.id) === remembered) : undefined;
+        const own = user?.branch_id ? list.find((b) => b.id === user.branch_id) : undefined;
+        const fallback = sticky || own || list.find((b) => b.is_default) || list[0];
+        return fallback ? String(fallback.id) : '';
+      });
+    } catch (error) {
+      console.error('Error fetching branches:', error);
+    }
+  }, [token, user?.branch_id, canChooseBranch]);
+
+  const handleBranchChange = (value: string) => {
+    setSelectedBranchId(value);
+    if (canChooseBranch) {
+      localStorage.setItem(BRANCH_PREFERENCE_KEY, value);
+    }
+  };
 
   // Fetch URA compliance setting
   const fetchURASettings = useCallback(async () => {
@@ -204,7 +273,15 @@ export default function NewOrder() {
       });
       const settings = response.data;
       setUraComplianceEnabled(settings.ura_compliance_enabled === 'true' || settings.ura_compliance_enabled === true);
+      setVatRate(parseFloat(String(settings.vat_rate ?? 18)) || 18);
       setBusinessPhone(settings.business_phone || '');
+      setBusinessInfo({
+        name: settings.business_name || 'LUSH DRY CLEANERS & LAUNDROMAT',
+        phone: settings.business_phone || '',
+        email: settings.business_email || '',
+        location: settings.business_location || '',
+        address: settings.business_address || '',
+      });
       try {
         const accounts = await axios.get(`${API_BASE_URL}/settings/payment-accounts`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -238,8 +315,9 @@ export default function NewOrder() {
       fetchPriceItems();
       fetchURASettings();
       fetchUserBargainLimit();
+      fetchBranches();
     }
-  }, [token, fetchCustomers, fetchPriceItems, fetchURASettings, fetchUserBargainLimit]);
+  }, [token, fetchCustomers, fetchPriceItems, fetchURASettings, fetchUserBargainLimit, fetchBranches]);
 
   // Filter price items by search
   const filteredPriceItems = priceItems.filter((item) =>
@@ -281,7 +359,11 @@ export default function NewOrder() {
       updated[existingIndex] = {
         ...updated[existingIndex],
         quantity: nextQty,
-        subtotal: Math.round(nextQty * Number(updated[existingIndex].unit_price)),
+        subtotal: computeLineSubtotal(
+          nextQty,
+          Number(updated[existingIndex].unit_price),
+          updated[existingIndex].discount_amount
+        ),
       };
       setOrderItems(updated);
     } else {
@@ -294,7 +376,8 @@ export default function NewOrder() {
           service_type: serviceType,
           quantity: startQty,
           unit_price: unitPrice,
-          subtotal: Math.round(unitPrice * startQty),
+          discount_amount: 0,
+          subtotal: computeLineSubtotal(startQty, unitPrice, 0),
           unit: item.unit || 'piece',
         },
       ]);
@@ -328,7 +411,11 @@ export default function NewOrder() {
     updated[index] = {
       ...updated[index],
       quantity: normalizedQuantity,
-      subtotal: Math.round(normalizedQuantity * Number(updated[index].unit_price)),
+      subtotal: computeLineSubtotal(
+        normalizedQuantity,
+        Number(updated[index].unit_price),
+        updated[index].discount_amount
+      ),
     };
     setOrderItems(updated);
     setQuantityDrafts((prev) => {
@@ -361,9 +448,53 @@ export default function NewOrder() {
     updated[index] = {
       ...updated[index],
       quantity,
-      subtotal: Math.round(quantity * Number(updated[index].unit_price)),
+      subtotal: computeLineSubtotal(
+        quantity,
+        Number(updated[index].unit_price),
+        updated[index].discount_amount
+      ),
     };
     setOrderItems(updated);
+  };
+
+  /** Per-item bargain, capped at the line's gross value and the role's discount limit */
+  const updateItemDiscount = (index: number, rawValue: string) => {
+    const current = orderItems[index];
+    if (!current) return;
+
+    const gross = Math.round(Number(current.quantity) * Number(current.unit_price));
+    const roleCeiling = Math.round(gross * (maxDiscountPercent / 100));
+    const parsed = Math.max(0, Math.round(Number(rawValue) || 0));
+    const discount = Math.min(parsed, roleCeiling);
+
+    if (parsed > roleCeiling) {
+      toast({
+        variant: 'destructive',
+        title: 'Discount limit reached',
+        description: `Your role allows up to ${maxDiscountPercent}% on a line (${formatUGX(roleCeiling)} here).`,
+      });
+    }
+
+    const updated = [...orderItems];
+    updated[index] = {
+      ...updated[index],
+      discount_amount: discount,
+      subtotal: computeLineSubtotal(current.quantity, current.unit_price, discount),
+    };
+    setOrderItems(updated);
+  };
+
+  /** Staff-only garment description so the item can be found on the rack */
+  const updateItemNote = (index: number, value: string) => {
+    const updated = [...orderItems];
+    updated[index] = { ...updated[index], notes: value.slice(0, ITEM_NOTE_MAX) };
+    setOrderItems(updated);
+  };
+
+  const toggleItemNote = (index: number) => {
+    setOpenNoteIndexes((prev) =>
+      prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index]
+    );
   };
 
   const commitQuantityDraft = (index: number) => {
@@ -379,22 +510,26 @@ export default function NewOrder() {
   const removeItem = (index: number) => {
     setOrderItems(orderItems.filter((_, i) => i !== index));
     setQuantityDrafts({});
+    // Positions shift after a removal, so drop the open-note tracking
+    setOpenNoteIndexes([]);
     toast({
       title: 'Item Removed',
       description: 'Item removed from order',
     });
   };
 
-  // Calculate totals with conditional VAT (URA enabled globally OR per-order toggle)
-  // All money in whole Ugandan Shillings (UGX)
-  const VAT_RATE = (uraComplianceEnabled || applyVatToOrder) ? 18.00 : 0;
+  // Calculate totals. VAT only exists while URA compliance is switched on;
+  // the backend enforces the same rule and recomputes the amount itself.
+  const vatApplies = uraComplianceEnabled && (applyVatToOrder || uraComplianceEnabled);
+  const VAT_RATE = vatApplies ? vatRate : 0;
   const itemsSubtotal = Math.round(orderItems.reduce((sum, item) => sum + Number(item.subtotal), 0));
+  const itemDiscountTotal = Math.round(
+    orderItems.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0)
+  );
   const discountAmount = Math.round((itemsSubtotal * transactionDiscount) / 100);
   const safeBargain = Math.min(Math.max(0, Math.round(bargainAmount)), Math.max(0, itemsSubtotal - discountAmount));
   const subtotalAfterDiscount = Math.max(0, itemsSubtotal - discountAmount - safeBargain);
-  const taxAmount = (uraComplianceEnabled || applyVatToOrder)
-    ? Math.round((subtotalAfterDiscount * VAT_RATE) / 100)
-    : 0;
+  const taxAmount = vatApplies ? Math.round((subtotalAfterDiscount * VAT_RATE) / 100) : 0;
   const total = subtotalAfterDiscount + taxAmount;
   const balance = Math.max(0, total - amountPaid);
   
@@ -532,6 +667,7 @@ export default function NewOrder() {
         amount_paid: Math.min(amountPaid, total),
         transaction_reference: transactionRef || null,
         notes,
+        branch_id: selectedBranchId ? Number(selectedBranchId) : undefined,
       };
 
       const response = await axios.post(`${API_BASE_URL}/orders`, orderData, {
@@ -563,14 +699,21 @@ export default function NewOrder() {
           balance: Number(order.balance ?? Math.max(0, total - Math.min(amountPaid, total))),
           payment_status: order.payment_status || paymentStatus,
           payment_method: order.payment_method || orderData.payment_method,
+          order_status: order.order_status || 'pending',
+          // Only name the branch on receipts when the business actually has more than one
+          branch_name:
+            branches.length > 1
+              ? order.branch_name || branches.find((b) => String(b.id) === selectedBranchId)?.name
+              : undefined,
         },
         itemsSnapshot.map((item) => ({
           item_name: item.item_name,
           service_type: item.service_type,
           quantity: item.quantity,
           total_price: item.subtotal,
+          discount_amount: item.discount_amount,
         })),
-        businessPhone || undefined,
+        businessInfo || (businessPhone ? { phone: businessPhone } : null),
         paymentModes
       );
 
@@ -612,7 +755,7 @@ export default function NewOrder() {
         {/* Top Bar: Customer Selection (compact) */}
         <div className="flex items-center gap-2 md:gap-3 bg-card border rounded-lg px-2 md:px-4 py-2 shrink-0 flex-wrap sm:flex-nowrap">
           <User className="h-4 w-4 text-muted-foreground shrink-0" />
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <Popover open={showCustomerPopover} onOpenChange={setShowCustomerPopover}>
               <PopoverTrigger asChild>
                 <Button
@@ -695,6 +838,27 @@ export default function NewOrder() {
             <UserPlus className="h-4 w-4 sm:mr-1" />
             <span className="hidden sm:inline">New</span>
           </Button>
+          {/* Branch is only surfaced once a second branch exists */}
+          {branches.length > 1 && (
+            canChooseBranch ? (
+              <Select value={selectedBranchId} onValueChange={handleBranchChange}>
+                <SelectTrigger className="h-9 w-full sm:w-[140px] lg:w-[190px] shrink-0">
+                  <SelectValue placeholder="Select branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.id} value={String(branch.id)}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Badge variant="outline" className="shrink-0 max-w-[120px] truncate">
+                {branches.find((b) => String(b.id) === selectedBranchId)?.name || 'Branch'}
+              </Badge>
+            )
+          )}
           {/* URA/VAT indicator */}
           {(uraComplianceEnabled || applyVatToOrder) && (
             <Badge variant="secondary" className="shrink-0 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
@@ -706,8 +870,10 @@ export default function NewOrder() {
         {/* Main POS split: Left = Cart/Payment, Right = Item Catalog */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-3 lg:min-h-0">
           
-          {/* ===== LEFT PANEL: Cart + Payment (2/5 width) ===== */}
-          <div className="lg:col-span-2 flex flex-col gap-3 overflow-y-auto">
+          {/* ===== LEFT PANEL: Cart + Payment (2/5 width) =====
+               On phones the catalog is shown first, so items can be picked
+               before the cart and payment section come into view. */}
+          <div className="order-2 lg:order-1 lg:col-span-2 flex flex-col gap-3 overflow-y-auto">
             
             {/* Cart Items */}
             <div className="bg-card border rounded-lg">
@@ -733,80 +899,160 @@ export default function NewOrder() {
                   </div>
                 ) : (
                   orderItems.map((item, index) => (
-                    <div key={index} className="flex items-center gap-2 p-2 bg-muted/50 rounded-md group hover:bg-muted transition-colors">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{item.item_name}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
-                            {item.service_type}
-                          </Badge>
-                            <span>{formatUGX(item.unit_price)} / {item.unit || 'piece'}</span>
+                    <div key={index} className="space-y-1.5 p-2 bg-muted/50 rounded-md group hover:bg-muted transition-colors">
+                      {/* Name and line total share the full panel width so the
+                          name is never squeezed by the controls below it */}
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{item.item_name}</p>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                              {item.service_type}
+                            </Badge>
+                            <span className="whitespace-nowrap">
+                              {formatUGX(item.unit_price)} / {item.unit || 'piece'}
+                            </span>
+                          </div>
                         </div>
+                        <span className="font-semibold text-sm text-right shrink-0 leading-tight">
+                          {formatUGX(item.subtotal)}
+                          {Number(item.discount_amount) > 0 && (
+                            <span className="block text-[10px] font-normal text-muted-foreground line-through">
+                              {formatUGX(
+                                Math.round(Number(item.quantity) * Number(item.unit_price))
+                              )}
+                            </span>
+                          )}
+                        </span>
                       </div>
-                        <div className="flex items-center gap-1 shrink-0">
+
+                      <div className="flex items-center gap-1">
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7"
+                          className="h-9 w-9 lg:h-7 lg:w-7"
                           type="button"
                           aria-label="Decrease quantity"
                           onClick={() => adjustQuantity(index, item.unit === 'kg' ? -0.5 : -1)}
                         >
-                          <Minus className="h-3 w-3" />
+                          <Minus className="h-4 w-4 lg:h-3 lg:w-3" />
                         </Button>
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            min={item.unit === 'kg' ? 0.1 : 1}
-                            step={item.unit === 'kg' ? 0.1 : 1}
-                            value={
-                              quantityDrafts[index] !== undefined
-                                ? quantityDrafts[index]
-                                : item.unit === 'kg'
-                                  ? String(item.quantity)
-                                  : String(item.quantity)
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={item.unit === 'kg' ? 0.1 : 1}
+                          step={item.unit === 'kg' ? 0.1 : 1}
+                          value={
+                            quantityDrafts[index] !== undefined
+                              ? quantityDrafts[index]
+                              : String(item.quantity)
+                          }
+                          onChange={(e) => handleQuantityInputChange(index, e.target.value)}
+                          onFocus={(e) => {
+                            setQuantityDrafts((prev) => ({
+                              ...prev,
+                              [index]: String(item.quantity),
+                            }));
+                            e.target.select();
+                          }}
+                          onBlur={() => commitQuantityDraft(index)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              (e.target as HTMLInputElement).blur();
                             }
-                            onChange={(e) => handleQuantityInputChange(index, e.target.value)}
-                            onFocus={(e) => {
-                              setQuantityDrafts((prev) => ({
-                                ...prev,
-                                [index]: String(item.quantity),
-                              }));
-                              e.target.select();
-                            }}
-                            onBlur={() => commitQuantityDraft(index)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                (e.target as HTMLInputElement).blur();
-                              }
-                            }}
-                            className="h-7 w-[4.5rem] text-center text-sm font-bold px-1"
-                            title={item.unit === 'kg' ? 'Type kg weight, or use + / −' : 'Type quantity, or use + / −'}
-                          />
+                          }}
+                          className="h-9 lg:h-7 w-[4.5rem] text-center text-sm font-bold px-1"
+                          title={item.unit === 'kg' ? 'Type kg weight, or use + / −' : 'Type quantity, or use + / −'}
+                        />
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7"
+                          className="h-9 w-9 lg:h-7 lg:w-7"
                           type="button"
                           aria-label="Increase quantity"
                           onClick={() => adjustQuantity(index, item.unit === 'kg' ? 0.5 : 1)}
                         >
-                          <Plus className="h-3 w-3" />
+                          <Plus className="h-4 w-4 lg:h-3 lg:w-3" />
                         </Button>
+
+                        {/* Push the row actions away from the quantity stepper */}
+                        <div className="flex-1" />
+
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7 text-destructive sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                          className={cn(
+                            'h-9 w-9 lg:h-7 lg:w-7',
+                            item.notes?.trim()
+                              ? 'text-primary'
+                              : 'text-muted-foreground'
+                          )}
+                          type="button"
+                          aria-label={
+                            item.notes?.trim()
+                              ? `Edit description for ${item.item_name}`
+                              : `Add description for ${item.item_name}`
+                          }
+                          title="Describe this item (colour, brand, marks) — staff only"
+                          onClick={() => toggleItemNote(index)}
+                        >
+                          <StickyNote className="h-4 w-4 lg:h-3 lg:w-3" />
+                        </Button>
+                        {/* Stays visible on touch devices, which have no hover */}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-9 w-9 lg:h-7 lg:w-7 text-destructive lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"
                           type="button"
                           aria-label="Remove item"
                           onClick={() => removeItem(index)}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-4 w-4 lg:h-3 lg:w-3" />
                         </Button>
                       </div>
-                      <span className="font-semibold text-sm w-24 text-right shrink-0">
-                        {formatUGX(item.subtotal)}
-                      </span>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <Label
+                          htmlFor={`item-discount-${index}`}
+                          className="text-[11px] text-muted-foreground whitespace-nowrap"
+                        >
+                          Item bargain (UGX)
+                        </Label>
+                        <Input
+                          id={`item-discount-${index}`}
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          step={500}
+                          value={item.discount_amount ? String(item.discount_amount) : ''}
+                          placeholder="0"
+                          onChange={(e) => updateItemDiscount(index, e.target.value)}
+                          className="h-9 lg:h-7 w-28 text-right text-xs"
+                          title={`Max ${maxDiscountPercent}% of this line`}
+                        />
+                      </div>
+
+                      {/* Garment description: opened on demand, or kept open
+                          while it holds text so it is never lost from view */}
+                      {(openNoteIndexes.includes(index) || Boolean(item.notes?.trim())) && (
+                        <div className="space-y-1">
+                          <Input
+                            id={`item-note-${index}`}
+                            value={item.notes || ''}
+                            maxLength={ITEM_NOTE_MAX}
+                            placeholder="e.g. Navy blue Gucci shirt, ink stain on left cuff"
+                            onChange={(e) => updateItemNote(index, e.target.value)}
+                            className="h-10 lg:h-8 text-xs"
+                            autoFocus={openNoteIndexes.includes(index) && !item.notes}
+                          />
+                          <div className="flex items-start justify-between gap-2 text-[10px] text-muted-foreground">
+                            <span className="min-w-0">Staff only — not shown to the customer.</span>
+                            <span className="shrink-0 tabular-nums">
+                              {(item.notes || '').length}/{ITEM_NOTE_MAX}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -817,6 +1063,12 @@ export default function NewOrder() {
             <div className="bg-card border rounded-lg p-3 space-y-2">
               {/* Quick totals */}
               <div className="space-y-1 text-sm">
+                {itemDiscountTotal > 0 && (
+                  <div className="flex justify-between text-primary">
+                    <span>Item bargains</span>
+                    <span>-{formatUGX(itemDiscountTotal)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{formatUGX(itemsSubtotal)}</span>
@@ -845,8 +1097,9 @@ export default function NewOrder() {
                 </div>
               </div>
 
-              {/* Compact controls row */}
-              <div className="grid grid-cols-3 gap-2">
+              {/* Money controls: two across on phones so the "(max …)" hints
+                  stay on one or two lines instead of stacking three deep */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                 <div>
                   <Label className="text-xs text-muted-foreground">
                     Discount % <span className="text-muted-foreground/70">(max {maxDiscountPercent}%)</span>
@@ -869,23 +1122,25 @@ export default function NewOrder() {
                       }
                     }}
                     placeholder="0"
-                    className="h-8 text-sm mt-1"
+                    className="h-10 lg:h-8 text-sm mt-1"
                   />
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">
-                    Bargain {maxBargainAmount > 0 && (
+                    Bargain {isAdminUser ? (
+                      <span className="text-muted-foreground/70">(no limit)</span>
+                    ) : maxBargainAmount > 0 ? (
                       <span className="text-muted-foreground/70">(max {formatUGX(maxBargainAmount)})</span>
-                    )}
+                    ) : null}
                   </Label>
                   <Input
                     type="number"
                     min="0"
-                    max={maxBargainAmount}
+                    max={isAdminUser ? undefined : maxBargainAmount}
                     value={bargainAmount || ''}
                     onChange={(e) => {
                       const value = parseFloat(e.target.value) || 0;
-                      if (value <= maxBargainAmount) {
+                      if (isAdminUser || value <= maxBargainAmount) {
                         setBargainAmount(value);
                       } else {
                         toast({
@@ -896,11 +1151,11 @@ export default function NewOrder() {
                       }
                     }}
                     placeholder="0"
-                    className="h-8 text-sm mt-1"
-                    disabled={maxBargainAmount === 0}
+                    className="h-10 lg:h-8 text-sm mt-1"
+                    disabled={!isAdminUser && maxBargainAmount === 0}
                   />
                 </div>
-                <div>
+                <div className="col-span-2 lg:col-span-1">
                   <Label className="text-xs text-muted-foreground">Amount Paid</Label>
                   <Input
                     type="number"
@@ -911,7 +1166,7 @@ export default function NewOrder() {
                       setAmountPaid(Math.min(value, total));
                     }}
                     placeholder="0"
-                    className="h-8 text-sm mt-1"
+                    className="h-10 lg:h-8 text-sm mt-1"
                     disabled={paymentMethod === 'ON_ACCOUNT'}
                   />
                   {paymentMethod === 'ON_ACCOUNT' && (
@@ -932,7 +1187,7 @@ export default function NewOrder() {
                     }
                   }}
                 >
-                  <SelectTrigger className="h-8 text-sm">
+                  <SelectTrigger className="h-10 lg:h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -956,7 +1211,7 @@ export default function NewOrder() {
                   }}
                   disabled={paymentMethod === 'ON_ACCOUNT'}
                 >
-                  <SelectTrigger className="h-8 text-sm">
+                  <SelectTrigger className="h-10 lg:h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -971,7 +1226,7 @@ export default function NewOrder() {
               {paymentMethod === 'MOBILE_MONEY' && (
                 <div className="grid grid-cols-2 gap-2">
                   <Select value={mobileProvider} onValueChange={(v: 'MTN' | 'AIRTEL') => setMobileProvider(v)}>
-                    <SelectTrigger className="h-8 text-sm">
+                    <SelectTrigger className="h-10 lg:h-8 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -983,7 +1238,7 @@ export default function NewOrder() {
                     value={transactionRef}
                     onChange={(e) => setTransactionRef(e.target.value)}
                     placeholder="Transaction Ref"
-                    className="h-8 text-sm"
+                    className="h-10 lg:h-8 text-sm"
                   />
                 </div>
               )}
@@ -994,29 +1249,43 @@ export default function NewOrder() {
                   value={transactionRef}
                   onChange={(e) => setTransactionRef(e.target.value)}
                   placeholder="Bank Reference #"
-                  className="h-8 text-sm"
+                  className="h-10 lg:h-8 text-sm"
                 />
               )}
 
-              {/* VAT + Notes row */}
+              {/* VAT + Notes row. VAT is unavailable until URA compliance is switched on. */}
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
+                <div
+                  className={cn(
+                    'flex items-center gap-2 shrink-0',
+                    !uraComplianceEnabled && 'opacity-40'
+                  )}
+                  title={
+                    uraComplianceEnabled
+                      ? 'URA compliance is on — VAT is applied automatically'
+                      : 'Switch on URA compliance in Settings to charge VAT'
+                  }
+                >
                   <Checkbox
                     id="vat-toggle"
-                    checked={applyVatToOrder}
+                    checked={uraComplianceEnabled && applyVatToOrder}
                     onCheckedChange={(checked) => setApplyVatToOrder(checked as boolean)}
-                    disabled={uraComplianceEnabled}
+                    disabled={!uraComplianceEnabled}
                   />
-                  <label htmlFor="vat-toggle" className="text-xs cursor-pointer">
-                    VAT 18%
-                    {uraComplianceEnabled && <span className="text-blue-600 ml-1">(Auto)</span>}
+                  <label htmlFor="vat-toggle" className="text-xs cursor-pointer whitespace-nowrap">
+                    VAT {vatRate}%
+                    {uraComplianceEnabled ? (
+                      <span className="text-blue-600 ml-1">(Auto)</span>
+                    ) : (
+                      <span className="ml-1">(URA off)</span>
+                    )}
                   </label>
                 </div>
                 <Input
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Special instructions..."
-                  className="h-8 text-sm flex-1"
+                  className="h-10 lg:h-8 text-sm flex-1 min-w-0"
                 />
               </div>
 
@@ -1051,7 +1320,7 @@ export default function NewOrder() {
           </div>
 
           {/* ===== RIGHT PANEL: Item Catalog (3/5 width) ===== */}
-          <div className="lg:col-span-3 flex flex-col min-h-0 bg-card border rounded-lg">
+          <div className="order-1 lg:order-2 lg:col-span-3 flex flex-col min-h-0 bg-card border rounded-lg">
             
             {/* Category Tabs + Search */}
             <div className="px-3 pt-3 pb-2 border-b space-y-2 shrink-0">
@@ -1063,7 +1332,7 @@ export default function NewOrder() {
                     variant={categoryFilter === cat ? 'default' : 'ghost'}
                     size="sm"
                     onClick={() => setCategoryFilter(cat)}
-                    className={`shrink-0 h-8 text-xs font-medium ${
+                    className={`shrink-0 h-10 lg:h-8 text-xs font-medium ${
                       categoryFilter === cat 
                         ? 'bg-primary text-primary-foreground shadow-sm' 
                         : 'hover:bg-muted'
@@ -1085,13 +1354,14 @@ export default function NewOrder() {
                   placeholder="Search items..."
                   value={itemSearch}
                   onChange={(e) => setItemSearch(e.target.value)}
-                  className="pl-10 h-8 text-sm"
+                  className="pl-10 h-10 lg:h-8 text-sm"
                 />
               </div>
             </div>
 
-            {/* Items Grid (fills remaining space, scrolls internally) */}
-            <div className="flex-1 overflow-y-auto p-3 min-h-0">
+            {/* Items grid. Capped on phones so the cart below stays reachable;
+                on desktop it simply fills the remaining column height. */}
+            <div className="flex-1 overflow-y-auto p-3 min-h-0 max-h-[60vh] lg:max-h-none">
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
                 {filteredPriceItems.map((item) => (
                   <div
@@ -1102,8 +1372,8 @@ export default function NewOrder() {
                     <p className="font-medium text-sm leading-tight truncate" title={item.name}>
                       {item.name}
                     </p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-[10px] text-muted-foreground capitalize">
+                    <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 mt-1">
+                      <span className="text-[11px] lg:text-[10px] text-muted-foreground capitalize">
                         {item.category === 'home_services' ? 'Home' : item.category}
                       </span>
                       <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 capitalize">
@@ -1118,17 +1388,22 @@ export default function NewOrder() {
                     
                     {/* Prices */}
                     <div className="mt-2 space-y-0.5 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Wash</span>
-                        <span className="font-semibold">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground shrink-0">Wash</span>
+                        <span className="font-semibold min-w-0 text-right truncate">
                           {item.has_active_discount ? (
-                            <><span className="line-through text-muted-foreground mr-1">{formatUGX(item.price)}</span>{formatUGX(item.effective_price || item.price)}</>
+                            <>
+                              <span className="line-through text-muted-foreground mr-1 font-normal">
+                                {formatUGX(item.price)}
+                              </span>
+                              {formatUGX(item.effective_price || item.price)}
+                            </>
                           ) : formatUGX(item.price)}
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Iron</span>
-                        <span className="font-semibold">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-muted-foreground shrink-0">Iron</span>
+                        <span className="font-semibold min-w-0 text-right truncate">
                           {Number(item.ironing_price) > 0 ? (
                             item.has_active_discount ? formatUGX(item.effective_ironing_price || item.ironing_price) : formatUGX(item.ironing_price)
                           ) : (
@@ -1144,28 +1419,28 @@ export default function NewOrder() {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="flex-1 h-7 text-[11px] px-1.5 font-medium hover:bg-primary hover:text-primary-foreground"
+                          className="flex-1 h-10 lg:h-7 text-xs lg:text-[11px] px-1.5 font-medium hover:bg-primary hover:text-primary-foreground"
                           onClick={() => addItemToOrder(item, 'WASH')}
                         >
-                          🧺<span className="hidden min-[375px]:inline ml-0.5">Wash</span>
+                          🧺<span className="hidden min-[360px]:inline ml-0.5">Wash</span>
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          className={`flex-1 h-7 text-[11px] px-1.5 font-medium ${Number(item.ironing_price) > 0 ? 'border-blue-300 text-blue-600 hover:bg-blue-500 hover:text-white dark:border-blue-700 dark:text-blue-400' : 'opacity-40 cursor-not-allowed'}`}
+                          className={`flex-1 h-10 lg:h-7 text-xs lg:text-[11px] px-1.5 font-medium ${Number(item.ironing_price) > 0 ? 'border-blue-300 text-blue-600 hover:bg-blue-500 hover:text-white dark:border-blue-700 dark:text-blue-400' : 'opacity-40 cursor-not-allowed'}`}
                           onClick={() => addItemToOrder(item, 'IRON')}
                           disabled={!(Number(item.ironing_price) > 0)}
                         >
-                          🔥<span className="hidden min-[375px]:inline ml-0.5">Iron</span>
+                          🔥<span className="hidden min-[360px]:inline ml-0.5">Iron</span>
                         </Button>
                       </div>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="w-full h-7 text-[11px] px-1.5 font-medium border-orange-300 text-orange-600 hover:bg-orange-500 hover:text-white dark:border-orange-700 dark:text-orange-400"
+                        className="w-full h-10 lg:h-7 text-xs lg:text-[11px] px-1.5 font-medium border-orange-300 text-orange-600 hover:bg-orange-500 hover:text-white dark:border-orange-700 dark:text-orange-400"
                         onClick={() => addItemToOrder(item, 'EXPRESS')}
                       >
-                        ⚡<span className="hidden min-[375px]:inline ml-0.5">Express</span>
+                        ⚡<span className="hidden min-[360px]:inline ml-0.5">Express</span>
                       </Button>
                     </div>
                   </div>

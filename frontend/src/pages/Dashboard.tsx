@@ -13,12 +13,13 @@ import {
   AlertCircle,
   ArrowRight,
   Receipt,
+  Building2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { Link } from 'react-router-dom';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import axios from 'axios';
 
@@ -61,6 +62,47 @@ interface MonthOverMonth {
   currentMonth: { revenue: number; orders: number };
   previousMonth: { revenue: number; orders: number };
   growth: { revenue: number; orders: number };
+}
+
+const DAY_KEYS = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+] as const;
+
+function formatBusinessTime(time: string): string {
+  const [h, m] = (time || '').split(':');
+  const hour = parseInt(h);
+  if (Number.isNaN(hour)) return time;
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  return `${displayHour}:${m} ${ampm}`;
+}
+
+function toMinutes(time: string): number | null {
+  const [h, m] = (time || '').split(':');
+  const hour = parseInt(h);
+  const minute = parseInt(m);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  return hour * 60 + minute;
+}
+
+interface BranchPerformance {
+  branch_id: number;
+  branch_name: string;
+  branch_code: string;
+  is_active: boolean;
+  total_orders: number;
+  total_billed: number;
+  total_collected: number;
+  outstanding: number;
+  delivered_orders: number;
+  unpaid_orders: number;
+  average_order_value: number;
 }
 
 interface RecentOrder {
@@ -118,6 +160,24 @@ export default function Dashboard() {
   const [paymentBreakdown, setPaymentBreakdown] = useState<PaymentMethodBreakdown[]>([]);
   const [outstandingBalances, setOutstandingBalances] = useState<OutstandingBalances | null>(null);
   const [monthGrowth, setMonthGrowth] = useState<MonthOverMonth | null>(null);
+  const [branchPerformance, setBranchPerformance] = useState<BranchPerformance[]>([]);
+
+  const TODAY_KEY = DAY_KEYS[new Date().getDay()];
+
+  // Whether the shop is trading right now, per today's configured hours
+  const openStatus = useMemo(() => {
+    if (!businessHours) return null;
+    const today = businessHours[TODAY_KEY];
+    if (!today || today.closed) return { isOpen: false };
+
+    const open = toMinutes(today.open);
+    const close = toMinutes(today.close);
+    if (open === null || close === null) return null;
+
+    const now = new Date();
+    const minutesNow = now.getHours() * 60 + now.getMinutes();
+    return { isOpen: minutesNow >= open && minutesNow < close };
+  }, [businessHours, TODAY_KEY]);
 
 
   const formatTime = (dateString: string) => {
@@ -201,6 +261,20 @@ export default function Dashboard() {
       setLoading(false);
     }
   }, [token, statsPeriod, isAdmin]);
+
+  // Branch performance is fetched on its own so a failure never blocks the
+  // dashboard, and it stays hidden until a second branch is actually created.
+  useEffect(() => {
+    if (!token || !isAdmin) return;
+    axios
+      .get(`${API_BASE_URL}/branches/performance`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => {
+        setBranchPerformance(res.data.multi_branch ? res.data.branches || [] : []);
+      })
+      .catch(() => setBranchPerformance([]));
+  }, [token, isAdmin, statsPeriod]);
 
   // Initial data fetch and refresh on changes
   useEffect(() => {
@@ -310,6 +384,70 @@ export default function Dashboard() {
           />
         )}
       </div>
+
+      {/* Branch performance — only rendered once a second branch exists */}
+      {isAdmin && branchPerformance.length > 1 && (
+        <div className="mb-8 rounded-xl border border-border bg-card p-4 sm:p-6">
+          <h3 className="font-semibold text-lg flex items-center gap-2 mb-4">
+            <Building2 className="h-5 w-5 text-primary" />
+            Branch Performance
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {branchPerformance.map((branch) => (
+              <div
+                key={branch.branch_id}
+                className="rounded-lg border border-border bg-background p-4"
+              >
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold leading-tight break-words">{branch.branch_name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{branch.branch_code}</p>
+                  </div>
+                  {!branch.is_active && (
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 bg-muted text-muted-foreground">
+                      Inactive
+                    </span>
+                  )}
+                </div>
+                <dl className="space-y-1.5 text-sm">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground shrink-0">Orders</dt>
+                    <dd className="font-medium text-right">{branch.total_orders}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground shrink-0">Billed</dt>
+                    <dd className="font-medium text-right">{formatUGX(branch.total_billed)}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground shrink-0">Collected</dt>
+                    <dd className="font-medium text-right text-green-600">
+                      {formatUGX(branch.total_collected)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground shrink-0">Outstanding</dt>
+                    <dd
+                      className={
+                        branch.outstanding > 0
+                          ? 'font-medium text-right text-yellow-600'
+                          : 'font-medium text-right'
+                      }
+                    >
+                      {formatUGX(branch.outstanding)}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground shrink-0">Avg order</dt>
+                    <dd className="font-medium text-right">
+                      {formatUGX(branch.average_order_value)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Enhanced Financial Summary - ADMIN ONLY */}
       {isAdmin && (
@@ -671,22 +809,31 @@ export default function Dashboard() {
 
           {/* Business Hours */}
           <div className="bg-gradient-brand rounded-xl p-6 text-primary-foreground">
-            <h3 className="font-semibold mb-2">Business Hours</h3>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h3 className="font-semibold">Business Hours</h3>
+              {openStatus && (
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    openStatus.isOpen
+                      ? 'bg-white/25 text-white'
+                      : 'bg-black/25 text-white'
+                  }`}
+                >
+                  {openStatus.isOpen ? 'Open now' : 'Closed now'}
+                </span>
+              )}
+            </div>
             {businessHours ? (
               <div className="space-y-1 text-sm opacity-90">
                 {(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const).map((day) => {
                   const hours = businessHours[day];
-                  if (hours.closed) return null;
-                  const formatTime = (time: string) => {
-                    const [h, m] = time.split(':');
-                    const hour = parseInt(h);
-                    const ampm = hour >= 12 ? 'PM' : 'AM';
-                    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-                    return `${displayHour}:${m} ${ampm}`;
-                  };
+                  const isToday = day === TODAY_KEY;
                   return (
-                    <p key={day}>
-                      <span className="capitalize">{day}</span>: {formatTime(hours.open)} - {formatTime(hours.close)}
+                    <p key={day} className={isToday ? 'font-semibold opacity-100' : undefined}>
+                      <span className="capitalize">{day}</span>:{' '}
+                      {hours.closed
+                        ? 'Closed'
+                        : `${formatBusinessTime(hours.open)} - ${formatBusinessTime(hours.close)}`}
                     </p>
                   );
                 })}

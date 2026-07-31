@@ -102,14 +102,29 @@ export const bulkUpdateSettings = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Invalid settings data' });
     }
 
-    // Update each setting
+    // Update each setting (undefined would stringify to `undefined` and break NOT NULL)
     for (const [key, value] of Object.entries(settings)) {
       await query(
         `INSERT INTO business_settings (setting_key, setting_value, updated_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (setting_key) 
          DO UPDATE SET setting_value = $2, updated_at = NOW()`,
-        [key, JSON.stringify(value)]
+        [key, JSON.stringify(value === undefined ? '' : value)]
+      );
+    }
+
+    // Keep the legacy `vat_enabled` blob in step with the URA switch so the two
+    // never disagree about whether VAT should be charged.
+    if ('ura_compliance_enabled' in settings) {
+      const enabled =
+        settings.ura_compliance_enabled === true || settings.ura_compliance_enabled === 'true';
+      const rate = parseFloat(String(settings.vat_rate ?? 18)) || 18;
+      await query(
+        `INSERT INTO business_settings (setting_key, setting_value, updated_at)
+         VALUES ('vat_enabled', $1, NOW())
+         ON CONFLICT (setting_key)
+         DO UPDATE SET setting_value = $1, updated_at = NOW()`,
+        [JSON.stringify({ enabled, rate })]
       );
     }
 
@@ -119,22 +134,62 @@ export const bulkUpdateSettings = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Failed to update settings' });
   }
 };
+const BUSINESS_INFO_KEYS = [
+  'business_name',
+  'business_phone',
+  'business_email',
+  'business_location',
+  'business_address',
+  'business_tin',
+] as const;
+
+function parseSettingValue(raw: any): string {
+  if (raw === null || raw === undefined) return '';
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'string' ? parsed : String(parsed ?? '');
+    } catch {
+      return raw;
+    }
+  }
+  return String(raw);
+}
+
+/**
+ * Business identity used by receipts, invoices and WhatsApp messages.
+ * Stored as flat setting keys so every consumer reads one source of truth.
+ */
 export const getBusinessInfo = async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      "SELECT setting_value FROM business_settings WHERE setting_key = 'business_info'"
+      `SELECT setting_key, setting_value FROM business_settings
+       WHERE setting_key = ANY($1::text[]) OR setting_key = 'business_info'`,
+      [BUSINESS_INFO_KEYS as unknown as string[]]
     );
-    if (result.rows.length === 0) {
-      return res.json({
-        name: 'Lush Dry Cleaners & Laundromat',
-        phone: '+256 754 723 614',
-        email: 'info@lushdrycleaners.ug',
-        location: 'Kampala, Uganda',
-        address: '',
-        tin: ''
-      });
-    }
-    res.json(result.rows[0].setting_value);
+
+    const flat: Record<string, string> = {};
+    let legacy: Record<string, string> = {};
+
+    result.rows.forEach((row) => {
+      if (row.setting_key === 'business_info') {
+        const value = typeof row.setting_value === 'string'
+          ? (() => { try { return JSON.parse(row.setting_value); } catch { return {}; } })()
+          : row.setting_value || {};
+        legacy = value || {};
+        return;
+      }
+      flat[row.setting_key] = parseSettingValue(row.setting_value);
+    });
+
+    res.json({
+      name: flat.business_name || legacy.name || 'Lush Dry Cleaners & Laundromat',
+      phone: flat.business_phone || legacy.phone || '',
+      email: flat.business_email || legacy.email || '',
+      location: flat.business_location || legacy.location || '',
+      address: flat.business_address || legacy.address || '',
+      tin: flat.business_tin || legacy.tin || '',
+    });
   } catch (error) {
     console.error('Get business info error:', error);
     res.status(500).json({ error: 'Failed to fetch business info' });
@@ -144,15 +199,40 @@ export const getBusinessInfo = async (req: AuthRequest, res: Response) => {
 export const updateBusinessInfo = async (req: AuthRequest, res: Response) => {
   try {
     const { name, phone, email, location, address, tin } = req.body;
-    if (!name || !phone) {
-      return res.status(400).json({ error: 'Business name and phone are required' });
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: 'Business name is required' });
     }
-    const businessInfo = { name, phone, email: email || '', location: location || '', address: address || '', tin: tin || '' };
-    const result = await query(
-      "INSERT INTO business_settings (setting_key, setting_value, updated_at) VALUES ('business_info', $1, NOW()) ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = NOW() RETURNING setting_value",
-      [JSON.stringify(businessInfo)]
-    );
-    res.json(result.rows[0].setting_value);
+
+    const values: Record<string, string> = {
+      business_name: String(name).trim(),
+      business_phone: String(phone || '').trim(),
+      business_email: String(email || '').trim(),
+      business_location: String(location || '').trim(),
+      business_address: String(address || '').trim(),
+    };
+    if (tin !== undefined) {
+      values.business_tin = String(tin).trim();
+    }
+
+    for (const [key, value] of Object.entries(values)) {
+      await query(
+        `INSERT INTO business_settings (setting_key, setting_value, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (setting_key)
+         DO UPDATE SET setting_value = $2, updated_at = NOW()`,
+        [key, JSON.stringify(value)]
+      );
+    }
+
+    res.json({
+      message: 'Business information updated',
+      name: values.business_name,
+      phone: values.business_phone,
+      email: values.business_email,
+      location: values.business_location,
+      address: values.business_address,
+      tin: values.business_tin ?? '',
+    });
   } catch (error) {
     console.error('Update business info error:', error);
     res.status(500).json({ error: 'Failed to update business info' });
@@ -259,41 +339,40 @@ export const getBargainLimits = async (req: AuthRequest, res: Response) => {
 
 export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
   try {
-    const { desktop_agent_limit, manager_limit, admin_limit } = req.body;
+    // Administrators are deliberately not configurable here — they are uncapped
+    const { desktop_agent_limit, manager_limit } = req.body;
 
-    // Validate inputs
-    if (desktop_agent_limit < 0 || manager_limit < 0 || admin_limit < 0) {
+    const desktopAgent = Number(desktop_agent_limit);
+    const manager = Number(manager_limit);
+
+    if (!Number.isFinite(desktopAgent) || !Number.isFinite(manager)) {
+      return res.status(400).json({ error: 'Bargain limits must be numbers' });
+    }
+    if (desktopAgent < 0 || manager < 0) {
       return res.status(400).json({ error: 'Bargain limits cannot be negative' });
     }
 
     // Update all users by role
     await query(
       `UPDATE users SET max_bargain_amount = $1 WHERE role = 'DESKTOP_AGENT'`,
-      [desktop_agent_limit]
+      [desktopAgent]
     );
 
     await query(
       `UPDATE users SET max_bargain_amount = $1 WHERE role = 'MANAGER'`,
-      [manager_limit]
+      [manager]
     );
 
-    await query(
-      `UPDATE users SET max_bargain_amount = $1 WHERE role = 'ADMIN'`,
-      [admin_limit]
+    console.log(
+      `✅ Bargain limits updated by ${req.user?.email} — agent ${desktopAgent}, manager ${manager} (admins uncapped)`
     );
-
-    // Log the change
-    console.log(`✅ Bargain limits updated by ${req.user?.email}`);
-    console.log(`   Desktop Agent: UGX ${desktop_agent_limit.toLocaleString()}`);
-    console.log(`   Manager:       UGX ${manager_limit.toLocaleString()}`);
-    console.log(`   Admin:         UGX ${admin_limit.toLocaleString()}`);
 
     res.json({
       message: 'Bargain limits updated successfully',
       limits: {
-        desktop_agent: desktop_agent_limit,
-        manager: manager_limit,
-        admin: admin_limit,
+        desktop_agent: desktopAgent,
+        manager: manager,
+        admin: null,
       },
     });
   } catch (error) {

@@ -3,7 +3,7 @@ import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
 import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Search, Info, Plus, Edit, Trash2, Save, X, AlertCircle } from 'lucide-react';
+import { Search, Info, Plus, Edit, Trash2, Save, X, AlertCircle, RotateCcw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -62,6 +62,7 @@ interface PriceItem {
   effective_price?: number;
   effective_ironing_price?: number;
   has_active_discount?: boolean;
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +102,7 @@ export default function PriceList() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmStep, setDeleteConfirmStep] = useState<1 | 2>(1);
   const [selectedItem, setSelectedItem] = useState<PriceItem | null>(null);
+  const [saving, setSaving] = useState(false);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -179,8 +181,12 @@ export default function PriceList() {
     setCurrentPage(1);
   }, [activeCategory, searchQuery]);
 
+  const normalizeName = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+
   // Handle add item
   const handleAddItem = async () => {
+    if (saving) return;
+
     if (!formData.name || !formData.price) {
       toast({
         variant: 'destructive',
@@ -190,7 +196,18 @@ export default function PriceList() {
       return;
     }
 
+    const duplicate = items.find((item) => normalizeName(item.name) === normalizeName(formData.name));
+    if (duplicate) {
+      toast({
+        variant: 'destructive',
+        title: 'Item already exists',
+        description: `"${duplicate.name}" is already in the price list. Edit that item instead of adding it again.`,
+      });
+      return;
+    }
+
     try {
+      setSaving(true);
       const washPrice = formData.price;
       const ironingPrice = formData.ironing_price > 0
         ? formData.ironing_price
@@ -241,6 +258,8 @@ export default function PriceList() {
         title: 'Error',
         description: axiosError.response?.data?.error || validationMsg || 'Failed to add price item',
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -266,9 +285,10 @@ export default function PriceList() {
   };
 
   const handleUpdateItem = async () => {
-    if (!selectedItem) return;
+    if (!selectedItem || saving) return;
 
     try {
+      setSaving(true);
       const dataToSend = {
         ...formData,
         express_price: formData.use_auto_express ? null : formData.express_price,
@@ -295,6 +315,8 @@ export default function PriceList() {
         title: 'Error',
         description: axiosError.response?.data?.error || 'Failed to update price item',
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -305,17 +327,18 @@ export default function PriceList() {
   };
 
   const handleDeleteItem = async () => {
-    if (!selectedItem) return;
+    if (!selectedItem || saving) return;
 
     try {
-      await axios.delete(
+      setSaving(true);
+      const response = await axios.delete<{ message?: string; deleted?: boolean }>(
         `${API_BASE_URL}/prices/${selectedItem.id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       toast({
-        title: 'Success',
-        description: 'Price item deleted successfully',
+        title: 'Deleted',
+        description: response.data?.message || `"${selectedItem.name}" was removed from the price list.`,
       });
 
       setDeleteDialogOpen(false);
@@ -323,12 +346,51 @@ export default function PriceList() {
       setSelectedItem(null);
       fetchPriceItems();
     } catch (error) {
+      const axiosError = error as AxiosError<{ error?: string; deactivated?: boolean }>;
+      const wasDeactivated = axiosError.response?.data?.deactivated;
+
+      toast({
+        variant: wasDeactivated ? 'default' : 'destructive',
+        title: wasDeactivated ? 'Item hidden instead of deleted' : 'Error',
+        description: axiosError.response?.data?.error || 'Failed to delete price item',
+      });
+
+      if (wasDeactivated) {
+        setDeleteDialogOpen(false);
+        setDeleteConfirmStep(1);
+        setSelectedItem(null);
+        fetchPriceItems();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleActive = async (item: PriceItem) => {
+    if (saving) return;
+    try {
+      setSaving(true);
+      await axios.put(
+        `${API_BASE_URL}/prices/${item.id}`,
+        { is_active: item.is_active === false },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({
+        title: item.is_active === false ? 'Item reactivated' : 'Item hidden',
+        description: item.is_active === false
+          ? `"${item.name}" is available in new orders again.`
+          : `"${item.name}" no longer appears in new orders.`,
+      });
+      fetchPriceItems();
+    } catch (error) {
       const axiosError = error as AxiosError<{ error: string }>;
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: axiosError.response?.data?.error || 'Failed to delete price item',
+        description: axiosError.response?.data?.error || 'Failed to update item',
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -482,7 +544,18 @@ export default function PriceList() {
               paginatedItems.map((item) => (
               <TableRow key={item.id} className="hover:bg-muted/30 transition-colors">
                 <TableCell className="font-mono text-sm">{item.item_id}</TableCell>
-                <TableCell className="font-medium">{item.name}</TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-2">
+                    <span className={cn(item.is_active === false && 'text-muted-foreground line-through')}>
+                      {item.name}
+                    </span>
+                    {item.is_active === false && (
+                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                        Hidden
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
                   <Badge variant="outline" className={cn(
                     'capitalize',
@@ -556,14 +629,27 @@ export default function PriceList() {
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteClick(item)}
-                        aria-label="Delete price item"
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {item.is_active === false ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={saving}
+                          onClick={() => handleToggleActive(item)}
+                          aria-label="Reactivate price item"
+                        >
+                          <RotateCcw className="h-4 w-4 text-green-600" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={saving}
+                          onClick={() => handleDeleteClick(item)}
+                          aria-label="Delete price item"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <span className="text-xs text-muted-foreground italic">View only</span>
@@ -765,9 +851,9 @@ export default function PriceList() {
             <Button variant="outline" onClick={() => setAddDialogOpen(false)} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button onClick={handleAddItem} className="w-full sm:w-auto">
+            <Button onClick={handleAddItem} disabled={saving} className="w-full sm:w-auto">
               <Save className="mr-2 h-4 w-4" />
-              Add Item
+              {saving ? 'Adding…' : 'Add Item'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -962,9 +1048,9 @@ export default function PriceList() {
             <Button variant="outline" onClick={() => setEditDialogOpen(false)} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button onClick={handleUpdateItem} className="w-full sm:w-auto">
+            <Button onClick={handleUpdateItem} disabled={saving} className="w-full sm:w-auto">
               <Save className="mr-2 h-4 w-4" />
-              Save Changes
+              {saving ? 'Saving…' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -999,9 +1085,9 @@ export default function PriceList() {
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDeleteItem} className="w-full sm:w-auto">
+            <Button variant="destructive" onClick={handleDeleteItem} disabled={saving} className="w-full sm:w-auto">
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete Item
+              {saving ? 'Deleting…' : 'Delete Item'}
             </Button>
           </DialogFooter>
         </DialogContent>

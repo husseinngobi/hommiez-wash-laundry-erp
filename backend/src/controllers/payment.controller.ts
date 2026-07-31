@@ -1031,7 +1031,7 @@ export const processRefund = async (req: AuthRequest, res: Response) => {
     // Notify admin when MANAGER processes refund (for audit trail)
     if (req.user.role === 'MANAGER') {
       try {
-        const adminUsers = await query("SELECT id FROM users WHERE role = 'ADMIN' AND is_active = true");
+        const adminUsers = await query("SELECT id FROM users WHERE role = 'ADMIN' AND status = 'ACTIVE'");
         for (const admin of adminUsers.rows) {
           await createSystemNotification(
             'REFUND_PROCESSED',
@@ -1316,7 +1316,7 @@ export const createRefundRequest = async (req: AuthRequest, res: Response) => {
 
     // Notify all admins about the new refund request
     try {
-      const adminUsers = await query("SELECT id FROM users WHERE role = 'ADMIN' AND is_active = true");
+      const adminUsers = await query("SELECT id FROM users WHERE role = 'ADMIN' AND status = 'ACTIVE'");
       for (const admin of adminUsers.rows) {
         await createSystemNotification(
           'REFUND_REQUEST',

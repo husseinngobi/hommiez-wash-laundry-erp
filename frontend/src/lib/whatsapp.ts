@@ -40,6 +40,9 @@ export type OrderWhatsAppPayload = {
   balance: number;
   payment_status?: string;
   payment_method?: string;
+  order_status?: string;
+  pickup_date?: string;
+  branch_name?: string;
 };
 
 export type OrderWhatsAppItem = {
@@ -47,6 +50,7 @@ export type OrderWhatsAppItem = {
   service_type: string;
   quantity: number;
   total_price: number;
+  discount_amount?: number;
 };
 
 /** Business pay-in details shown on unpaid / partial / on-account receipts */
@@ -62,6 +66,28 @@ export const DEFAULT_PAYMENT_MODES: Required<PaymentModeDetails> = {
   airtel_merchant: '4403961',
 };
 
+/** Business identity from Settings → Business Information */
+export type BusinessInfo = {
+  name?: string;
+  phone?: string;
+  email?: string;
+  location?: string;
+  address?: string;
+  branch_name?: string;
+};
+
+export const DEFAULT_BUSINESS_INFO: BusinessInfo = {
+  name: 'LUSH DRY CLEANERS & LAUNDROMAT',
+};
+
+/** Free days to collect once an item is ready, before storage charges start */
+export const COLLECTION_GRACE_DAYS = 3;
+
+/** Months after which uncollected items are donated */
+export const UNCOLLECTED_DONATION_MONTHS = 3;
+
+export type OrderMessageKind = 'confirmation' | 'receipt' | 'ready' | 'delivered';
+
 function formatShortDate(value?: string): string {
   if (!value) return new Date().toLocaleDateString('en-UG');
   try {
@@ -75,137 +101,305 @@ function formatShortDate(value?: string): string {
   }
 }
 
+function normalizedOrderStatus(order: OrderWhatsAppPayload): string {
+  return String(order.order_status || '').trim().toLowerCase();
+}
+
+function isFullyPaid(order: OrderWhatsAppPayload): boolean {
+  const status = String(order.payment_status || '').toUpperCase();
+  return status === 'PAID' || Number(order.balance || 0) <= 0;
+}
+
 function shouldIncludePaymentModes(order: OrderWhatsAppPayload): boolean {
+  if (isFullyPaid(order)) return false;
   const status = String(order.payment_status || '').toUpperCase();
   const method = String(order.payment_method || '').toUpperCase();
-  if (status === 'PAID' || (order.balance || 0) <= 0) return false;
   return (
     status === 'UNPAID' ||
     status === 'PARTIAL' ||
     method === 'ON_ACCOUNT' ||
-    (order.balance || 0) > 0
+    Number(order.balance || 0) > 0
   );
 }
 
-function buildPaymentModeLines(
-  order: OrderWhatsAppPayload,
-  paymentModes?: PaymentModeDetails | null
-): string[] {
-  if (!shouldIncludePaymentModes(order)) return [];
+function paymentMethodLabel(method?: string): string {
+  if (!method) return '';
+  if (method.toUpperCase() === 'ON_ACCOUNT') return 'On Account';
+  return method.replace(/_/g, ' ');
+}
 
-  const modes = {
-    ...DEFAULT_PAYMENT_MODES,
-    ...(paymentModes || {}),
-  };
+function orderStatusLabel(order: OrderWhatsAppPayload): string {
+  switch (normalizedOrderStatus(order)) {
+    case 'pending':
+      return 'Received';
+    case 'processing':
+      return 'In progress';
+    case 'ready':
+      return 'Ready for pickup';
+    case 'delivered':
+      return 'Delivered';
+    case 'cancelled':
+      return 'Cancelled';
+    default:
+      return '';
+  }
+}
 
-  const lines = ['', 'Payment mode:'];
-  if (modes.centenary_account) {
-    lines.push(`Centenary account No: ${modes.centenary_account}`);
+/**
+ * Resolves which message to produce. A caller may ask for a 'receipt' on an
+ * order that is already ready or delivered — the order status wins so we never
+ * tell a customer their order is ready when it is still being processed.
+ */
+function resolveKind(order: OrderWhatsAppPayload, requested: OrderMessageKind): OrderMessageKind {
+  const status = normalizedOrderStatus(order);
+
+  if (requested === 'ready' || requested === 'delivered') {
+    // Explicit notifications must match reality
+    if (status === 'delivered') return 'delivered';
+    if (status === 'ready') return 'ready';
+    return 'receipt';
   }
-  if (modes.mtn_code) {
-    lines.push(`Mtn code no: ${modes.mtn_code}`);
+
+  if (requested === 'receipt') {
+    if (status === 'delivered') return 'delivered';
+    if (status === 'ready') return 'ready';
   }
-  if (modes.airtel_merchant) {
-    lines.push(`Airtel merchant no: ${modes.airtel_merchant}`);
+
+  return requested;
+}
+
+function headerFor(kind: OrderMessageKind): string {
+  switch (kind) {
+    case 'confirmation':
+      return '*ORDER CONFIRMATION*';
+    case 'ready':
+      return '*YOUR ORDER IS READY FOR PICKUP*';
+    case 'delivered':
+      return '*DELIVERY CONFIRMATION*';
+    default:
+      return '*ORDER RECEIPT*';
   }
+}
+
+function buildItemLines(items: OrderWhatsAppItem[]): string[] {
+  if (!items.length) return [];
+
+  const lines = ['*ITEMS:*'];
+  items.forEach((item, index) => {
+    const discount = Number(item.discount_amount || 0);
+    const suffix = discount > 0 ? ` (incl. -${formatUGX(discount)} discount)` : '';
+    lines.push(
+      `${index + 1}. ${item.item_name} (${item.service_type}) x ${item.quantity} — ${formatUGX(item.total_price)}${suffix}`
+    );
+  });
+  lines.push('');
   return lines;
 }
 
-/** Order confirmation for WhatsApp Messenger (sent right after creating an order) */
-export function buildOrderConfirmationWhatsAppMessage(
+function buildPaymentSummaryLines(
   order: OrderWhatsAppPayload,
-  items: OrderWhatsAppItem[],
-  businessPhone?: string,
-  paymentModes?: PaymentModeDetails | null
-): string {
-  const lines: string[] = [
-    `Hello *${order.customer_name}*! 👋`,
-    '',
-    `🧺 *LUSH DRY CLEANERS & LAUNDROMAT*`,
-    `📋 *ORDER CONFIRMATION*`,
-    '',
-    `Order #: *${order.order_number}*`,
-    `Date: ${formatShortDate(order.created_at)}`,
-    '',
-    `*ITEMS:*`,
-  ];
+  items: OrderWhatsAppItem[] = []
+): string[] {
+  const lines = ['*PAYMENT SUMMARY*'];
 
-  items.forEach((item, index) => {
-    lines.push(
-      `${index + 1}. ${item.item_name} (${item.service_type}) × ${item.quantity} — ${formatUGX(item.total_price)}`
-    );
-  });
+  // Per-item bargains are already netted off each line, so show them as their
+  // own total against the gross value rather than double-counting the subtotal.
+  const itemDiscountTotal = items.reduce(
+    (sum, item) => sum + Number(item.discount_amount || 0),
+    0
+  );
 
-  lines.push('', `*PAYMENT SUMMARY*`);
-  lines.push(`Subtotal: ${formatUGX(order.subtotal)}`);
+  if (itemDiscountTotal > 0) {
+    lines.push(`Subtotal: ${formatUGX(Number(order.subtotal) + itemDiscountTotal)}`);
+    lines.push(`Item bargains: -${formatUGX(itemDiscountTotal)}`);
+  } else {
+    lines.push(`Subtotal: ${formatUGX(order.subtotal)}`);
+  }
 
-  if ((order.discount_percentage || 0) > 0) {
+  if (Number(order.discount_percentage || 0) > 0) {
     lines.push(`Discount (${order.discount_percentage}%): -${formatUGX(order.discount_amount || 0)}`);
   }
-  if ((order.bargain_amount || 0) > 0) {
+  if (Number(order.bargain_amount || 0) > 0) {
     lines.push(`Bargain: -${formatUGX(order.bargain_amount || 0)}`);
   }
-  if ((order.tax_amount || 0) > 0) {
+  if (Number(order.tax_amount || 0) > 0) {
     lines.push(`VAT (${order.tax_rate || 18}%): +${formatUGX(order.tax_amount || 0)}`);
   }
 
   lines.push(`*TOTAL: ${formatUGX(order.total_amount)}*`);
   lines.push(`Amount Paid: ${formatUGX(order.amount_paid)}`);
 
-  if (order.balance > 0) {
+  if (Number(order.balance || 0) > 0) {
     lines.push(`*Balance Due: ${formatUGX(order.balance)}*`);
   } else {
-    lines.push(`Status: ✅ Fully Paid`);
+    lines.push('Status: Fully Paid');
   }
 
-  if (order.payment_method) {
-    const method = order.payment_method === 'ON_ACCOUNT'
-      ? 'On Account'
-      : order.payment_method.replace(/_/g, ' ');
+  const method = paymentMethodLabel(order.payment_method);
+  if (method) {
     lines.push(`Method: ${method}`);
   }
 
-  // Unpaid / partial / on-account → remind how to pay; paid orders skip this
-  lines.push(...buildPaymentModeLines(order, paymentModes));
+  return lines;
+}
 
-  if ((order.balance || 0) <= 0 && String(order.payment_status || '').toUpperCase() === 'PAID') {
-    lines.push('', `Thank you for your payment!`);
+function buildPaymentRequestLines(
+  order: OrderWhatsAppPayload,
+  paymentModes?: PaymentModeDetails | null
+): string[] {
+  if (!shouldIncludePaymentModes(order)) return [];
+
+  const modes = { ...DEFAULT_PAYMENT_MODES, ...(paymentModes || {}) };
+  const lines = ['', '*HOW TO PAY*'];
+
+  if (modes.centenary_account) lines.push(`Centenary account No: ${modes.centenary_account}`);
+  if (modes.mtn_code) lines.push(`MTN code no: ${modes.mtn_code}`);
+  if (modes.airtel_merchant) lines.push(`Airtel merchant no: ${modes.airtel_merchant}`);
+
+  lines.push(`Kindly clear the balance of ${formatUGX(order.balance)}.`);
+  return lines;
+}
+
+export function buildCollectionPolicyLines(): string[] {
+  return [
+    '',
+    '*COLLECTION POLICY*',
+    `Kindly collect your items within ${COLLECTION_GRACE_DAYS} days of this notice.`,
+    'We do not have storage facilities for garments, so items held beyond',
+    `${COLLECTION_GRACE_DAYS} days attract a storage charge and are kept at the owner's risk.`,
+    `Items left uncollected for over ${UNCOLLECTED_DONATION_MONTHS} months are donated to charity.`,
+    'Thank you for your understanding.',
+  ];
+}
+
+function buildBusinessFooterLines(business?: BusinessInfo | null): string[] {
+  const info = { ...DEFAULT_BUSINESS_INFO, ...(business || {}) };
+  const lines: string[] = ['', '—'];
+
+  if (info.name) lines.push(`*${info.name}*`);
+  if (info.branch_name) lines.push(`Branch: ${info.branch_name}`);
+
+  const place = [info.address, info.location].filter(Boolean).join(', ');
+  if (place) lines.push(place);
+  if (info.phone) lines.push(`Tel: ${info.phone}`);
+  if (info.email) lines.push(`Email: ${info.email}`);
+
+  // Nothing beyond the separator means there is no footer worth sending
+  return lines.length > 2 ? lines : [];
+}
+
+/**
+ * Single source of truth for every customer-facing order message on WhatsApp.
+ * Content adapts to the order status (received / ready / delivered) and to the
+ * payment state (paid orders are thanked, unpaid ones are asked to pay).
+ */
+export function buildOrderWhatsAppMessage(
+  order: OrderWhatsAppPayload,
+  items: OrderWhatsAppItem[],
+  options: {
+    kind?: OrderMessageKind;
+    business?: BusinessInfo | null;
+    paymentModes?: PaymentModeDetails | null;
+  } = {}
+): string {
+  const kind = resolveKind(order, options.kind || 'receipt');
+  const business = { ...DEFAULT_BUSINESS_INFO, ...(options.business || {}) };
+  const branchName = order.branch_name || business.branch_name;
+  const paid = isFullyPaid(order);
+
+  const lines: string[] = [
+    `Hello *${order.customer_name}*!`,
+    '',
+    `*${(business.name || DEFAULT_BUSINESS_INFO.name || '').toUpperCase()}*`,
+    headerFor(kind),
+    '',
+    `Order #: *${order.order_number}*`,
+    `Date: ${formatShortDate(order.created_at)}`,
+  ];
+
+  const statusLabel = orderStatusLabel(order);
+  if (statusLabel) lines.push(`Status: ${statusLabel}`);
+  if (branchName) lines.push(`Branch: ${branchName}`);
+
+  lines.push('');
+  lines.push(...buildItemLines(items));
+  lines.push(...buildPaymentSummaryLines(order, items));
+
+  // Unpaid / partial / on-account get pay-in details; paid orders get thanked.
+  lines.push(...buildPaymentRequestLines(order, options.paymentModes));
+
+  lines.push('');
+  switch (kind) {
+    case 'confirmation':
+      lines.push('We have received your items and started work on them.');
+      lines.push("We'll notify you as soon as your order is ready for pickup.");
+      break;
+    case 'ready':
+      lines.push('Your order is ready. You can collect it at your convenience.');
+      lines.push('Please check all items carefully when collecting.');
+      break;
+    case 'delivered':
+      lines.push('This order has been marked as delivered.');
+      lines.push('We hope everything met your expectations.');
+      break;
+    default:
+      lines.push("We'll notify you as soon as your order is ready for pickup.");
+      break;
   }
 
-  lines.push(
-    '',
-    `We'll notify you when your laundry is ready for pickup.`,
-    `Please check all items carefully when collecting.`,
-    '',
-    `Thank you for choosing Lush! ✨`
-  );
-
-  if (businessPhone) {
-    lines.push(`📞 ${businessPhone}`);
+  // The collection terms belong on every receipt, not only ready notices.
+  // Once delivered there is nothing left to collect, so it is omitted there.
+  if (kind !== 'delivered') {
+    lines.push(...buildCollectionPolicyLines());
   }
+
+  lines.push('');
+  if (paid) {
+    lines.push('Thank you for your payment.');
+  } else {
+    lines.push('Kindly settle the outstanding balance at your earliest convenience.');
+  }
+  lines.push('Thank you for choosing Lush!');
+
+  lines.push(...buildBusinessFooterLines({ ...business, branch_name: branchName }));
 
   return lines.join('\n');
 }
 
-/** Receipt / follow-up message (does NOT claim order is ready unless status is ready) */
-export function buildOrderReceiptWhatsAppMessage(
-  order: OrderWhatsAppPayload & { order_status?: string },
+/** Order confirmation for WhatsApp Messenger (sent right after creating an order) */
+export function buildOrderConfirmationWhatsAppMessage(
+  order: OrderWhatsAppPayload,
   items: OrderWhatsAppItem[],
-  businessPhone?: string,
+  business?: BusinessInfo | string | null,
   paymentModes?: PaymentModeDetails | null
 ): string {
-  const isReady = (order.order_status || '').toLowerCase() === 'ready';
-  const header = isReady
-    ? `✅ *Your order is READY for pickup!*`
-    : `📋 *Order receipt / update*`;
+  return buildOrderWhatsAppMessage(order, items, {
+    kind: 'confirmation',
+    business: typeof business === 'string' ? { phone: business } : business,
+    paymentModes,
+  });
+}
 
-  const base = buildOrderConfirmationWhatsAppMessage(order, items, businessPhone, paymentModes);
-  return base
-    .replace('📋 *ORDER CONFIRMATION*', header)
-    .replace(
-      `We'll notify you when your laundry is ready for pickup.`,
-      isReady
-        ? `Please collect at your earliest convenience.`
-        : `We'll notify you when your laundry is ready for pickup.`
-    );
+/** Receipt / follow-up message. Content follows the order's real status. */
+export function buildOrderReceiptWhatsAppMessage(
+  order: OrderWhatsAppPayload,
+  items: OrderWhatsAppItem[],
+  business?: BusinessInfo | string | null,
+  paymentModes?: PaymentModeDetails | null
+): string {
+  return buildOrderWhatsAppMessage(order, items, {
+    kind: 'receipt',
+    business: typeof business === 'string' ? { phone: business } : business,
+    paymentModes,
+  });
+}
+
+/** "Your order is ready" notification. Falls back to a receipt if not ready yet. */
+export function buildOrderReadyWhatsAppMessage(
+  order: OrderWhatsAppPayload,
+  items: OrderWhatsAppItem[],
+  business?: BusinessInfo | null,
+  paymentModes?: PaymentModeDetails | null
+): string {
+  return buildOrderWhatsAppMessage(order, items, { kind: 'ready', business, paymentModes });
 }

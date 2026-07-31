@@ -20,6 +20,9 @@ import { tenantContextMiddleware } from './middleware/tenant';
 import { ensureOrderItemServiceTypes } from './database/ensureOrderItemServiceTypes';
 import { backfillMissingPaymentTransactions } from './database/backfillMissingPayments';
 import { ensureInventoryAssetColumns } from './database/ensureInventoryAssetColumns';
+import { ensureOrderItemDiscountColumn } from './database/ensureOrderItemDiscountColumn';
+import { ensureBranchSupport } from './database/ensureBranchSupport';
+import { ensureNotificationColumns } from './database/ensureNotificationColumns';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -136,6 +139,27 @@ const startServer = async () => {
       await ensureInventoryAssetColumns();
     } catch (assetError) {
       console.error('⚠️ inventory asset columns skipped or failed:', assetError);
+    }
+
+    // Per-item discounts on order lines
+    try {
+      await ensureOrderItemDiscountColumn();
+    } catch (discountError) {
+      console.error('⚠️ order item discount column skipped or failed:', discountError);
+    }
+
+    // Branch-based operations (branches table + users/orders branch_id)
+    try {
+      await ensureBranchSupport();
+    } catch (branchError) {
+      console.error('⚠️ branch support skipped or failed:', branchError);
+    }
+
+    // Notifications table shape (sender_id, link, nullable user_id)
+    try {
+      await ensureNotificationColumns();
+    } catch (notificationError) {
+      console.error('⚠️ notification columns skipped or failed:', notificationError);
     }
 
     // Ensure upload directories exist

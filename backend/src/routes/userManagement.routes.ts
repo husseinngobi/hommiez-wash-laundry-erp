@@ -19,6 +19,7 @@ router.put('/users/:userId/reject', userManagementController.rejectUser as any);
 router.put('/users/:userId/suspend', userManagementController.suspendUser as any);
 router.put('/users/:userId/activate', userManagementController.activateUser as any);
 router.put('/users/:userId/role', userManagementController.updateUserRole as any);
+router.put('/users/:userId/branch', userManagementController.updateUserBranch as any);
 router.delete('/users/:userId', userManagementController.deleteUser as any);
 
 // Activity logs routes

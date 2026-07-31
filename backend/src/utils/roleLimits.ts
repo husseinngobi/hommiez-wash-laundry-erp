@@ -7,13 +7,21 @@ export const DEFAULT_BARGAIN_LIMITS = {
 export const MAX_DISCOUNT_BY_ROLE = {
   DESKTOP_AGENT: 10,
   MANAGER: 20,
-  ADMIN: 50,
+  ADMIN: 100,
 } as const;
 
+/**
+ * Administrators are not capped. Bargains and discounts are still bounded by
+ * the order value itself, which is checked separately.
+ */
 export function getEffectiveBargainLimit(
   role: string,
   storedLimit: number | null | undefined
 ): number {
+  if (role === 'ADMIN') {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
   const limit = Number(storedLimit) || 0;
   if (limit > 0) {
     return limit;

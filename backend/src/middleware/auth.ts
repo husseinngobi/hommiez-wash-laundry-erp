@@ -11,6 +11,7 @@ export interface AuthRequest extends Request {
     full_name: string;
     role: UserRole;
     is_system_admin?: boolean;
+    branch_id?: number | null;
   };
   tenant?: {
     id: number;
@@ -58,7 +59,9 @@ export const authenticate = async (
         email: decoded.email,
         full_name: decoded.full_name,
         role: decoded.role,
-        is_system_admin: decoded.is_system_admin ?? isSystemAdminEmail(decoded.email)
+        is_system_admin: decoded.is_system_admin ?? isSystemAdminEmail(decoded.email),
+        // Tokens issued before branches existed simply have no branch
+        branch_id: decoded.branch_id ?? null
       };
       
       next();

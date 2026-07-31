@@ -1,6 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
+import { cn } from '@/lib/utils';
 import { Package, AlertTriangle, Plus, Search, Trash2, Edit, AlertCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -582,7 +583,7 @@ export default function Inventory() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
-                        {item.reorder_level} {item.unit}
+                        {item.is_long_term ? '—' : `${item.reorder_level} ${item.unit}`}
                       </TableCell>
                       <TableCell className="text-right">
                         {formatUGX(item.unit_cost)}
@@ -745,7 +746,7 @@ export default function Inventory() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Item Name *</Label>
                 <Input
@@ -771,7 +772,37 @@ export default function Inventory() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            {/* Item type decides the whole rest of the form */}
+            <div className="flex items-start space-x-2 rounded-lg border border-border p-3">
+              <Checkbox
+                id="is-long-term"
+                className="mt-0.5 shrink-0"
+                checked={newItemIsLongTerm}
+                onCheckedChange={(checked) => {
+                  const on = checked as boolean;
+                  setNewItemIsLongTerm(on);
+                  if (on) {
+                    if (!newItemUnit) setNewItemUnit('ASSET');
+                    if (!newItemCategory) setNewItemCategory('EQUIPMENT');
+                    if (!newItemAssetValue && newItemCost) setNewItemAssetValue(newItemCost);
+                  }
+                }}
+              />
+              <label htmlFor="is-long-term" className="min-w-0 text-sm leading-snug cursor-pointer">
+                <span className="font-medium">Mark as long-term asset</span>
+                <span className="block text-muted-foreground">
+                  Equipment, machines and devices. Stock levels, reorder alerts and
+                  consumption tracking do not apply — you record the asset&apos;s worth instead.
+                </span>
+              </label>
+            </div>
+
+            <div
+              className={cn(
+                'grid gap-4',
+                newItemIsLongTerm ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-3'
+              )}
+            >
               <div className="space-y-2">
                 <Label>Unit *</Label>
                 <Select value={newItemUnit} onValueChange={setNewItemUnit}>
@@ -790,42 +821,48 @@ export default function Inventory() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Initial Stock</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0"
-                  value={newItemStock}
-                  onChange={(e) => setNewItemStock(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Reorder Level *</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Minimum stock level"
-                  value={newItemReorder}
-                  onChange={(e) => setNewItemReorder(e.target.value)}
-                />
-              </div>
+              {!newItemIsLongTerm && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Initial Stock</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0"
+                      value={newItemStock}
+                      onChange={(e) => setNewItemStock(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Reorder Level *</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Minimum stock level"
+                      value={newItemReorder}
+                      onChange={(e) => setNewItemReorder(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {!newItemIsLongTerm && (
+                <div className="space-y-2">
+                  <Label>Unit Cost (UGX) *</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="Cost per unit"
+                    value={newItemCost}
+                    onChange={(e) => setNewItemCost(e.target.value)}
+                  />
+                </div>
+              )}
               <div className="space-y-2">
-                <Label>Unit Cost (UGX) *</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  placeholder="Cost per unit"
-                  value={newItemCost}
-                  onChange={(e) => setNewItemCost(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Supplier</Label>
+                <Label>{newItemIsLongTerm ? 'Supplier / vendor' : 'Supplier'}</Label>
                 <Input
                   placeholder="e.g., Unilever Uganda"
                   value={newItemSupplier}
@@ -843,42 +880,22 @@ export default function Inventory() {
               />
             </div>
 
-            {/* Duration-Based Stock Tracking */}
+            {/* Asset details, or smart stock tracking — never both */}
             <div className="border-t pt-4 mt-4">
               <div className="flex items-center gap-2 mb-4">
                 <Clock className="h-5 w-5 text-primary" />
-                <h4 className="font-semibold">Smart Stock Tracking</h4>
+                <h4 className="font-semibold">
+                  {newItemIsLongTerm ? 'Asset Details' : 'Smart Stock Tracking'}
+                </h4>
               </div>
               
               <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="is-long-term"
-                    checked={newItemIsLongTerm}
-                    onCheckedChange={(checked) => {
-                      const on = checked as boolean;
-                      setNewItemIsLongTerm(on);
-                      if (on) {
-                        if (!newItemUnit) setNewItemUnit('ASSET');
-                        if (!newItemCategory) setNewItemCategory('EQUIPMENT');
-                        if (!newItemAssetValue && newItemCost) setNewItemAssetValue(newItemCost);
-                      }
-                    }}
-                  />
-                  <label
-                    htmlFor="is-long-term"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                  >
-                    Mark as long-term asset (equipment / machines / devices — no smart stock depletion)
-                  </label>
-                </div>
-
                 {newItemIsLongTerm && (
                   <div className="bg-muted/50 p-4 rounded-lg space-y-4">
                     <p className="text-sm text-muted-foreground">
                       Record the asset&apos;s worth and identifying details. Smart stock alerts do not apply.
                     </p>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Asset value / worth (UGX) *</Label>
                         <Input
@@ -898,7 +915,7 @@ export default function Inventory() {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Serial / tag number</Label>
                         <Input
@@ -940,7 +957,7 @@ export default function Inventory() {
                         Set max stock and expected duration to calculate consumption rate and automatic alerts
                       </p>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Maximum Stock Quantity *</Label>
                           <Input
@@ -971,7 +988,7 @@ export default function Inventory() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Expected Duration (Max Stock Should Last)</Label>
                           <Input

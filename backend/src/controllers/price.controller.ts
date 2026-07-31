@@ -122,8 +122,32 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
       });
     }
     
-    const { name, category, subcategory, unit = 'piece', price, express_price } = req.body;
-    let { item_id, ironing_price } = req.body;
+    const { category, subcategory, unit = 'piece', price, express_price } = req.body;
+    let { item_id, ironing_price, name } = req.body;
+
+    name = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!name) {
+      return res.status(400).json({ error: 'Item name is required' });
+    }
+
+    // Item names must be unique (case/spacing insensitive) so the price list
+    // never ends up with two "Doctor Suit" rows staff cannot tell apart.
+    const duplicate = await query(
+      `SELECT id, name, is_active FROM price_items
+       WHERE LOWER(TRIM(name)) = LOWER($1) LIMIT 1`,
+      [name]
+    );
+    if (duplicate.rows.length > 0) {
+      const existing = duplicate.rows[0];
+      return res.status(409).json({
+        error: existing.is_active
+          ? `"${existing.name}" already exists in the price list. Edit that item instead of adding it again.`
+          : `"${existing.name}" already exists but is deactivated. Reactivate it instead of adding a duplicate.`,
+        code: 'DUPLICATE_ITEM_NAME',
+        existingId: existing.id,
+        existingIsActive: existing.is_active,
+      });
+    }
 
     // Auto-generate item_id when not provided (UI expects this)
     if (!item_id || String(item_id).trim() === '') {
@@ -182,8 +206,20 @@ export const updatePrice = async (req: AuthRequest, res: Response) => {
     let paramCount = 1;
     
     if (name) {
+      const cleanName = String(name).trim().replace(/\s+/g, ' ');
+      const duplicate = await query(
+        `SELECT id, name FROM price_items
+         WHERE LOWER(TRIM(name)) = LOWER($1) AND id <> $2 LIMIT 1`,
+        [cleanName, id]
+      );
+      if (duplicate.rows.length > 0) {
+        return res.status(409).json({
+          error: `Another price list item is already named "${duplicate.rows[0].name}".`,
+          code: 'DUPLICATE_ITEM_NAME',
+        });
+      }
       updates.push(`name = $${paramCount++}`);
-      values.push(name);
+      values.push(cleanName);
     }
     if (category) {
       updates.push(`category = $${paramCount++}`);
@@ -294,8 +330,9 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
         [id]
       );
       
-      return res.json({ 
-        message: `❌ Cannot delete: Used in ${reasons.join(' and ')}. Item DEACTIVATED instead to preserve business records.`,
+      // 409 (not 200) so the UI never reports this as a successful delete.
+      return res.status(409).json({
+        error: `This item is used in ${reasons.join(' and ')}, so it cannot be deleted. It has been hidden from new orders instead, and past records stay intact.`,
         deactivated: true,
         unpaidOrders,
         pendingOrders,
@@ -314,8 +351,16 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Price item not found' });
     }
     
-    res.json({ message: 'Price item deleted successfully' });
-  } catch (error) {
+    res.json({ message: 'Price item deleted successfully', deleted: true });
+  } catch (error: any) {
+    // Another table still references this item (race, or a link we do not pre-check)
+    if (error?.code === '23503') {
+      await query('UPDATE price_items SET is_active = false WHERE id = $1', [req.params.id]).catch(() => undefined);
+      return res.status(409).json({
+        error: 'This item is still linked to existing records, so it cannot be deleted. It has been hidden from new orders instead.',
+        deactivated: true,
+      });
+    }
     console.error('Delete price error:', error);
     res.status(500).json({ error: 'Failed to delete price' });
   }

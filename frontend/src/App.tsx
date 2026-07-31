@@ -113,7 +113,7 @@ const App = () => (
               <Route
                 path="/reports"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute requireManager>
                     <Reports />
                   </ProtectedRoute>
                 }
@@ -121,7 +121,7 @@ const App = () => (
               <Route
                 path="/settings"
                 element={
-                  <ProtectedRoute requireManager>
+                  <ProtectedRoute requireAdmin>
                     <Settings />
                   </ProtectedRoute>
                 }

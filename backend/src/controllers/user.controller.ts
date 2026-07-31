@@ -8,9 +8,11 @@ import { UserRole, UserStatus } from '../models/User';
 export const getAllUsers = async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT id, email, full_name, phone, role, status, created_at, updated_at
-       FROM users
-       ORDER BY created_at DESC`
+      `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.status,
+              u.branch_id, b.name AS branch_name, u.created_at, u.updated_at
+       FROM users u
+       LEFT JOIN branches b ON b.id = u.branch_id
+       ORDER BY u.created_at DESC`
     );
     
     res.json({ users: result.rows });
@@ -25,8 +27,11 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     
     const result = await query(
-      `SELECT id, email, full_name, phone, role, status, created_at, updated_at
-       FROM users WHERE id = $1`,
+      `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.status,
+              u.branch_id, b.name AS branch_name, u.created_at, u.updated_at
+       FROM users u
+       LEFT JOIN branches b ON b.id = u.branch_id
+       WHERE u.id = $1`,
       [id]
     );
     
@@ -49,7 +54,7 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     }
     
     const { id } = req.params;
-    const { email, full_name, phone } = req.body;
+    const { email, full_name, phone, branch_id } = req.body;
     
     // Only admins can update other users; users can update themselves
     if (req.user!.role !== UserRole.ADMIN && req.user!.id !== parseInt(id)) {
@@ -72,6 +77,17 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
       updates.push(`phone = $${paramCount++}`);
       values.push(phone);
     }
+    // Only administrators may move a staff member to another branch
+    if (branch_id !== undefined && req.user!.role === UserRole.ADMIN) {
+      if (branch_id !== null) {
+        const branchCheck = await query('SELECT id FROM branches WHERE id = $1', [branch_id]);
+        if (branchCheck.rows.length === 0) {
+          return res.status(400).json({ error: 'Selected branch does not exist' });
+        }
+      }
+      updates.push(`branch_id = $${paramCount++}`);
+      values.push(branch_id === null ? null : Number(branch_id));
+    }
     
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
@@ -82,7 +98,7 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     const result = await query(
       `UPDATE users SET ${updates.join(', ')}
        WHERE id = $${paramCount}
-       RETURNING id, email, full_name, phone, role, status`,
+       RETURNING id, email, full_name, phone, role, status, branch_id`,
       values
     );
     

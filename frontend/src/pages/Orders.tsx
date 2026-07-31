@@ -38,7 +38,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare } from 'lucide-react';
+import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare, StickyNote } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -49,8 +49,14 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   openWhatsAppMessenger,
   buildOrderReceiptWhatsAppMessage,
+  buildOrderReadyWhatsAppMessage,
+  COLLECTION_GRACE_DAYS,
+  UNCOLLECTED_DONATION_MONTHS,
   DEFAULT_PAYMENT_MODES,
   type PaymentModeDetails,
+  type BusinessInfo,
+  type OrderWhatsAppPayload,
+  type OrderWhatsAppItem,
 } from '@/lib/whatsapp';
 
 interface Order {
@@ -77,6 +83,7 @@ interface Order {
   created_at: string;
   staff_name?: string;
   user_role?: string;
+  branch_name?: string;
 }
 
 interface OrderItem {
@@ -86,6 +93,9 @@ interface OrderItem {
   quantity: number;
   unit_price: number;
   total_price: number;
+  discount_amount?: number;
+  /** Internal garment description — staff only, never printed for customers */
+  notes?: string | null;
 }
 
 interface PaymentTransaction {
@@ -199,84 +209,61 @@ const isOverdue = (order: Order): boolean => {
 };
 
 // WhatsApp helper functions
+const toWhatsAppOrder = (order: Order, includeBranch = false): OrderWhatsAppPayload => ({
+  order_number: order.order_number,
+  customer_name: order.customer_name,
+  created_at: order.created_at,
+  subtotal: Number(order.subtotal),
+  discount_percentage: Number(order.discount_percentage || 0),
+  discount_amount: Number(order.discount_amount || 0),
+  bargain_amount: Number(order.bargain_amount || 0),
+  tax_rate: Number(order.tax_rate || 0),
+  tax_amount: Number(order.tax_amount || 0),
+  total_amount: Number(order.total_amount),
+  amount_paid: Number(order.amount_paid),
+  balance: Number(order.balance),
+  payment_status: order.payment_status,
+  payment_method: order.payment_method,
+  order_status: order.order_status,
+  branch_name: includeBranch ? order.branch_name : undefined,
+});
+
+const toWhatsAppItems = (items: OrderItem[]): OrderWhatsAppItem[] =>
+  items.map((item) => ({
+    item_name: item.item_name,
+    service_type: item.service_type,
+    quantity: item.quantity,
+    total_price: Number(item.total_price),
+    discount_amount: Number(item.discount_amount || 0),
+  }));
+
 const generateOrderReceiptMessage = (
   order: Order,
   items: OrderItem[],
-  paymentModes?: PaymentModeDetails | null
-): string => {
-  return buildOrderReceiptWhatsAppMessage(
-    {
-      order_number: order.order_number,
-      customer_name: order.customer_name,
-      created_at: order.created_at,
-      subtotal: Number(order.subtotal),
-      discount_percentage: Number(order.discount_percentage || 0),
-      discount_amount: Number(order.discount_amount || 0),
-      bargain_amount: Number(order.bargain_amount || 0),
-      tax_rate: Number(order.tax_rate || 0),
-      tax_amount: Number(order.tax_amount || 0),
-      total_amount: Number(order.total_amount),
-      amount_paid: Number(order.amount_paid),
-      balance: Number(order.balance),
-      payment_status: order.payment_status,
-      payment_method: order.payment_method,
-      order_status: order.order_status,
-    },
-    items.map((item) => ({
-      item_name: item.item_name,
-      service_type: item.service_type,
-      quantity: item.quantity,
-      total_price: Number(item.total_price),
-    })),
-    undefined,
+  paymentModes?: PaymentModeDetails | null,
+  business?: BusinessInfo | null,
+  includeBranch = false
+): string =>
+  buildOrderReceiptWhatsAppMessage(
+    toWhatsAppOrder(order, includeBranch),
+    toWhatsAppItems(items),
+    business,
     paymentModes || DEFAULT_PAYMENT_MODES
   );
-};
 
-const generateOrderReadyMessage = (order: Order): string => {
-  let message = `╔═══════════════════════════════╗\n`;
-  message += `║  ✅ ORDER READY FOR PICKUP   ║\n`;
-  message += `╚═══════════════════════════════╝\n\n`;
-  
-  message += `Dear *${order.customer_name}*,\n\n`;
-  message += `🎉 Great news! Your order is ready!\n\n`;
-  
-  message += `┌───────────────────────────────┐\n`;
-  message += `│ PICKUP INFORMATION            │\n`;
-  message += `├───────────────────────────────┤\n`;
-  message += `│ Order #:  *${order.order_number}*${' '.repeat(Math.max(0, 19 - order.order_number.length))}│\n`;
-  message += `│ Status:   ✅ READY           │\n`;
-  message += `├───────────────────────────────┤\n`;
-  message += `│ 📍 Location:                  │\n`;
-  message += `│    Lush Dry Cleaners          │\n`;
-  message += `│    & Laundromat               │\n`;
-  message += `└───────────────────────────────┘\n\n`;
-  
-  message += `┌───────────────────────────────┐\n`;
-  message += `│ PAYMENT DETAILS               │\n`;
-  message += `├───────────────────────────────┤\n`;
-  message += `│ Total Amount:                 │\n`;
-  message += `│      ${formatUGX(order.total_amount).padStart(23)} │\n`;
-  if (order.balance > 0) {
-    message += `├───────────────────────────────┤\n`;
-    message += `│ ⚠️  BALANCE DUE:              │\n`;
-    message += `│      ${formatUGX(order.balance).padStart(23)} │\n`;
-    message += `│                               │\n`;
-    message += `│ Please bring payment when     │\n`;
-    message += `│ collecting your order.        │\n`;
-  } else {
-    message += `├───────────────────────────────┤\n`;
-    message += `│ ✅ Status: FULLY PAID         │\n`;
-  }
-  message += `└───────────────────────────────┘\n\n`;
-  
-  message += `═══════════════════════════════════════\n`;
-  message += `Thank you for choosing Lush!\n`;
-  message += `We look forward to serving you! 🌟\n`;
-  message += `═══════════════════════════════════════`;
-  
-  return message;
-};
+const generateOrderReadyMessage = (
+  order: Order,
+  items: OrderItem[],
+  paymentModes?: PaymentModeDetails | null,
+  business?: BusinessInfo | null,
+  includeBranch = false
+): string =>
+  buildOrderReadyWhatsAppMessage(
+    toWhatsAppOrder(order, includeBranch),
+    toWhatsAppItems(items),
+    business,
+    paymentModes || DEFAULT_PAYMENT_MODES
+  );
 
 // Generate context-aware reminder message for WhatsApp
 const generateReminderMessage = (order: Order, businessPhone?: string): string => {
@@ -308,9 +295,24 @@ const generateReminderMessage = (order: Order, businessPhone?: string): string =
 };
 
 // Print receipt function
-const printReceipt = (order: Order, items: OrderItem[]) => {
+const printReceipt = (
+  order: Order,
+  items: OrderItem[],
+  business?: BusinessInfo | null,
+  includeBranch = false
+) => {
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
+
+  const info = business || {};
+  const branchLine = includeBranch ? order.branch_name : '';
+  // Per-item bargains are netted into each line, so gross them back up here
+  const itemDiscountTotal = items.reduce(
+    (sum, item) => sum + Number(item.discount_amount || 0),
+    0
+  );
+  const receiptBusinessName = (info.name || 'LUSH DRY CLEANERS & LAUNDROMAT').toUpperCase();
+  const receiptPlace = [info.address, info.location].filter(Boolean).join(', ');
   
   const receiptHTML = `
     <!DOCTYPE html>
@@ -420,10 +422,11 @@ const printReceipt = (order: Order, items: OrderItem[]) => {
     </head>
     <body>
       <div class="receipt-header">
-        <h1>🧺 LUSH DRY CLEANERS</h1>
-        <p>& LAUNDROMAT</p>
-        <p>Contact: [Your Phone Number]</p>
-        <p>Email: [Your Email]</p>
+        <h1>${receiptBusinessName}</h1>
+        ${branchLine ? `<p>Branch: ${branchLine}</p>` : ''}
+        ${receiptPlace ? `<p>${receiptPlace}</p>` : ''}
+        ${info.phone ? `<p>Tel: ${info.phone}</p>` : ''}
+        ${info.email ? `<p>Email: ${info.email}</p>` : ''}
       </div>
       
       <div class="section">
@@ -464,8 +467,14 @@ const printReceipt = (order: Order, items: OrderItem[]) => {
       <div class="totals">
         <div class="total-row">
           <span>Subtotal:</span>
-          <span>${formatUGX(order.subtotal)}</span>
+          <span>${formatUGX(Number(order.subtotal) + itemDiscountTotal)}</span>
         </div>
+        ${itemDiscountTotal > 0 ? `
+          <div class="total-row">
+            <span>Item Bargains:</span>
+            <span>-${formatUGX(itemDiscountTotal)}</span>
+          </div>
+        ` : ''}
         ${order.discount_percentage > 0 ? `
           <div class="total-row">
             <span>Discount (${order.discount_percentage}%):</span>
@@ -520,6 +529,16 @@ const printReceipt = (order: Order, items: OrderItem[]) => {
         ${order.order_number}
       </div>
       
+      <div class="section">
+        <div class="section-title">Collection Policy</div>
+        <p style="margin: 2px 0; font-size: 10px; line-height: 1.4;">
+          Kindly collect your items within ${COLLECTION_GRACE_DAYS} days of being notified that they
+          are ready. We do not have storage facilities for garments, so items held beyond
+          ${COLLECTION_GRACE_DAYS} days attract a storage charge and are kept at the owner's risk.
+          Items left uncollected for over ${UNCOLLECTED_DONATION_MONTHS} months are donated to charity.
+        </p>
+      </div>
+
       <div class="footer">
         <p>Thank you for choosing Lush!</p>
         <p>🌟 We value your business! 🌟</p>
@@ -567,6 +586,10 @@ export default function Orders() {
   const [cancelPaymentReason, setCancelPaymentReason] = useState('');
   const [cancellingPayment, setCancellingPayment] = useState(false);
   const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
+  const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
+  const [branchCount, setBranchCount] = useState(0);
+  // Branch details stay hidden while the business runs a single branch
+  const multiBranch = branchCount > 1;
   const [additionalPayment, setAdditionalPayment] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER'>('CASH');
   const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
@@ -684,12 +707,25 @@ export default function Orders() {
     if (!token) return;
     axios
       .get(`${API_BASE_URL}/settings/all`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => setBusinessPhone(res.data.business_phone || ''))
+      .then((res) => {
+        setBusinessPhone(res.data.business_phone || '');
+        setBusinessInfo({
+          name: res.data.business_name || 'LUSH DRY CLEANERS & LAUNDROMAT',
+          phone: res.data.business_phone || '',
+          email: res.data.business_email || '',
+          location: res.data.business_location || '',
+          address: res.data.business_address || '',
+        });
+      })
       .catch(() => setBusinessPhone(''));
     axios
       .get(`${API_BASE_URL}/settings/payment-accounts`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => setPaymentModes({ ...DEFAULT_PAYMENT_MODES, ...res.data }))
       .catch(() => setPaymentModes(DEFAULT_PAYMENT_MODES));
+    axios
+      .get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBranchCount((res.data.branches || []).length))
+      .catch(() => setBranchCount(0));
   }, [token]);
 
   const handleCancelPayment = async () => {
@@ -744,9 +780,9 @@ export default function Orders() {
   ): string => {
     switch (kind) {
       case 'receipt':
-        return generateOrderReceiptMessage(order, items, paymentModes);
+        return generateOrderReceiptMessage(order, items, paymentModes, businessInfo, multiBranch);
       case 'ready':
-        return generateOrderReadyMessage(order);
+        return generateOrderReadyMessage(order, items, paymentModes, businessInfo, multiBranch);
       case 'reminder':
         return generateReminderMessage(order, businessPhone || undefined);
       case 'custom':
@@ -764,7 +800,7 @@ export default function Orders() {
     if (!items) {
       if (selectedOrder?.id === order.id && orderItems.length > 0) {
         items = orderItems;
-      } else if (kind === 'receipt') {
+      } else if (kind === 'receipt' || kind === 'ready') {
         try {
           const response = await axios.get(`${API_BASE_URL}/orders/${order.id}`, {
             headers: { Authorization: `Bearer ${token}` },
@@ -1598,14 +1634,16 @@ export default function Orders() {
                               <MessageCircle className="h-4 w-4 mr-2" />
                               WhatsApp Receipt
                             </DropdownMenuCheckboxItem>
-                            <DropdownMenuCheckboxItem
-                              onClick={() => {
-                                void openWhatsAppCompose(order, 'ready');
-                              }}
-                            >
-                              <MessageCircle className="h-4 w-4 mr-2" />
-                              Notify Ready (WhatsApp)
-                            </DropdownMenuCheckboxItem>
+                            {order.order_status === 'ready' && (
+                              <DropdownMenuCheckboxItem
+                                onClick={() => {
+                                  void openWhatsAppCompose(order, 'ready');
+                                }}
+                              >
+                                <MessageCircle className="h-4 w-4 mr-2" />
+                                Notify Ready (WhatsApp)
+                              </DropdownMenuCheckboxItem>
+                            )}
                             <DropdownMenuCheckboxItem
                               onClick={() => {
                                 setInvoiceOrderId(order.id);
@@ -1784,8 +1822,36 @@ export default function Orders() {
                   <Package className="h-5 w-5" />
                   Order Items ({orderItems.length})
                 </h3>
-                <div className="border rounded-lg overflow-x-auto">
-                  <Table className="min-w-[400px]">
+                {/* Phones get stacked cards; a five-column table would only be
+                    readable by scrolling sideways */}
+                <div className="space-y-2 md:hidden">
+                  {orderItems.map((item) => (
+                    <div key={item.id} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-medium break-words min-w-0">{item.item_name}</span>
+                        <span className="font-semibold whitespace-nowrap shrink-0">
+                          {formatUGX(item.total_price)}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                        <Badge variant="outline" className="uppercase">
+                          {item.service_type}
+                        </Badge>
+                        <span>Qty: {item.quantity}</span>
+                        <span>{formatUGX(item.unit_price)} each</span>
+                      </div>
+                      {item.notes?.trim() && (
+                        <div className="flex items-start gap-1.5 text-xs text-muted-foreground border-t pt-2">
+                          <StickyNote className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                          <span className="break-words">{item.notes}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden md:block border rounded-lg overflow-x-auto">
+                  <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Item</TableHead>
@@ -1798,15 +1864,27 @@ export default function Orders() {
                     <TableBody>
                       {orderItems.map((item) => (
                         <TableRow key={item.id}>
-                          <TableCell className="font-medium px-2 sm:px-4">{item.item_name}</TableCell>
-                          <TableCell className="px-2 sm:px-4">
+                          <TableCell className="font-medium px-2 sm:px-4 align-top">
+                            {/* Bounded so a long description wraps instead of
+                                stretching the column across the table */}
+                            <div className="max-w-[260px]">
+                              <span className="block break-words">{item.item_name}</span>
+                              {item.notes?.trim() && (
+                                <span className="mt-1 flex items-start gap-1 text-xs font-normal text-muted-foreground">
+                                  <StickyNote className="h-3 w-3 mt-0.5 shrink-0" />
+                                  <span className="break-words">{item.notes}</span>
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="px-2 sm:px-4 align-top">
                             <Badge variant="outline" className="uppercase">
                               {item.service_type}
                             </Badge>
                           </TableCell>
-                          <TableCell className="px-2 sm:px-4">{item.quantity}</TableCell>
-                          <TableCell className="px-2 sm:px-4 whitespace-nowrap">{formatUGX(item.unit_price)}</TableCell>
-                          <TableCell className="font-semibold px-2 sm:px-4 whitespace-nowrap">{formatUGX(item.total_price)}</TableCell>
+                          <TableCell className="px-2 sm:px-4 align-top">{item.quantity}</TableCell>
+                          <TableCell className="px-2 sm:px-4 align-top whitespace-nowrap">{formatUGX(item.unit_price)}</TableCell>
+                          <TableCell className="font-semibold px-2 sm:px-4 align-top whitespace-nowrap">{formatUGX(item.total_price)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -2239,14 +2317,16 @@ export default function Orders() {
                     <MessageCircle className="h-4 w-4" />
                     Send Receipt
                   </Button>
-                  <Button
-                    onClick={() => void openWhatsAppCompose(selectedOrder, 'ready', orderItems)}
-                    variant="outline"
-                    className="gap-2 border-green-600 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    Notify Order Ready
-                  </Button>
+                  {selectedOrder.order_status === 'ready' && (
+                    <Button
+                      onClick={() => void openWhatsAppCompose(selectedOrder, 'ready', orderItems)}
+                      variant="outline"
+                      className="gap-2 border-green-600 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      Notify Order Ready
+                    </Button>
+                  )}
                   {!(selectedOrder.order_status === 'delivered' && selectedOrder.payment_status === 'PAID') && (
                     <Button
                       onClick={() => void openWhatsAppCompose(selectedOrder, 'reminder', orderItems)}
@@ -2273,7 +2353,7 @@ export default function Orders() {
                 </h3>
                 <div className="flex flex-wrap gap-2 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
                   <Button
-                    onClick={() => printReceipt(selectedOrder, orderItems)}
+                    onClick={() => printReceipt(selectedOrder, orderItems, businessInfo, multiBranch)}
                     variant="outline"
                     className="gap-2 border-blue-600 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900"
                   >
@@ -2865,7 +2945,10 @@ export default function Orders() {
                   {(
                     [
                       ['receipt', 'Receipt'],
-                      ['ready', 'Order Ready'],
+                      // "Order Ready" only makes sense once the order really is ready
+                      ...(whatsAppComposeOrder?.order_status === 'ready'
+                        ? ([['ready', 'Order Ready']] as Array<[WhatsAppComposeKind, string]>)
+                        : []),
                       ['reminder', 'Reminder'],
                       ['custom', 'Custom'],
                     ] as Array<[WhatsAppComposeKind, string]>
@@ -3184,11 +3267,11 @@ export default function Orders() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Cancel payment</DialogTitle>
+            <DialogTitle>Are you sure you want to cancel this payment?</DialogTitle>
             <DialogDescription>
-              Removes this payment from the ledger and recalculates the order
+              This removes the payment from the ledger and recalculates the order
               (UNPAID / PARTIAL / PAID). Use this for mistaken entries — use Refund
-              when money was actually returned to the client.
+              when money was actually returned to the client. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           {cancelPaymentTarget && (
@@ -3223,7 +3306,7 @@ export default function Orders() {
               disabled={cancellingPayment}
               onClick={handleCancelPayment}
             >
-              {cancellingPayment ? 'Cancelling…' : 'Cancel payment'}
+              {cancellingPayment ? 'Cancelling…' : 'OK, cancel payment'}
             </Button>
           </DialogFooter>
         </DialogContent>

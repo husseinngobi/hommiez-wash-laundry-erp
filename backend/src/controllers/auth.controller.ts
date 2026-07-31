@@ -7,6 +7,7 @@ import { config } from '../config';
 import { AuthRequest } from '../middleware/auth';
 import { UserRole, UserStatus } from '../models/User';
 import { userNotificationService } from '../services/user-notification.service';
+import { createNotification } from '../services/notification.service';
 import { isSystemAdminEmail } from '../utils/systemAdmin';
 import { getEffectiveBargainLimit } from '../utils/roleLimits';
 import { uploadProfileImageToSupabase } from '../services/supabaseStorage.service';
@@ -169,7 +170,7 @@ export const login = async (req: AuthRequest, res: Response) => {
 
     const result = await query(
       `SELECT id, email, password, full_name, phone, role, status, profile_picture, profile_picture_url,
-              failed_login_attempts, account_locked_until, last_failed_login
+              branch_id, failed_login_attempts, account_locked_until, last_failed_login
        FROM users WHERE email = $1`,
       [email]
     );
@@ -276,7 +277,8 @@ export const login = async (req: AuthRequest, res: Response) => {
         role: user.role,
         profile_picture: user.profile_picture,
         profile_picture_url: user.profile_picture_url,
-        is_system_admin: isSystemAdminEmail(user.email)
+        is_system_admin: isSystemAdminEmail(user.email),
+        branch_id: user.branch_id ?? null
       },
       config.jwt.secret,
       { expiresIn: '7d' }  // Fixed expiration time
@@ -291,7 +293,7 @@ export const login = async (req: AuthRequest, res: Response) => {
            last_failed_login = NULL
        WHERE id = $1 
        RETURNING id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
-                 created_at, updated_at, last_login, max_bargain_amount`,
+                 branch_id, created_at, updated_at, last_login, max_bargain_amount`,
       [user.id]
     );
     
@@ -334,9 +336,12 @@ export const login = async (req: AuthRequest, res: Response) => {
 export const getMe = async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
-              created_at, updated_at, last_login, auth_provider, max_bargain_amount 
-       FROM users WHERE id = $1`,
+      `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.status, u.profile_picture,
+              u.profile_picture_url, u.created_at, u.updated_at, u.last_login, u.auth_provider,
+              u.max_bargain_amount, u.branch_id, b.name AS branch_name
+       FROM users u
+       LEFT JOIN branches b ON b.id = u.branch_id
+       WHERE u.id = $1`,
       [req.user!.id]
     );
     
@@ -383,8 +388,15 @@ export const forgotPassword = async (req: AuthRequest, res: Response) => {
       [user.id]
     );
     
-    // TODO: In production, send notification to admins (email/SMS)
-    console.log(`Password reset requested for user: ${user.email}`);
+    // Alert administrators in-app; without this the request sits unseen until
+    // someone happens to open the Password Reset Requests page.
+    await createNotification({
+      type: 'SYSTEM_ALERT',
+      title: 'Password reset requested',
+      message: `${user.full_name || user.email} has requested a password reset.`,
+      notify_admins_only: true,
+      link: '/password-reset-requests',
+    });
     
     res.json({ 
       message: 'If the email exists, a password reset request has been sent to administrators.' 

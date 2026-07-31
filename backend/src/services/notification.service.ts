@@ -28,13 +28,13 @@ export async function createNotification(params: CreateNotificationParams): Prom
     // Determine which users to notify
     if (notify_admins_only) {
       const adminResult = await query(
-        'SELECT id FROM users WHERE role = $1 AND is_active = true',
+        `SELECT id FROM users WHERE role = $1 AND status = 'ACTIVE'`,
         ['ADMIN']
       );
       targetUserIds = adminResult.rows.map((row: any) => row.id);
     } else if (notify_all_users) {
       const allUsersResult = await query(
-        'SELECT id FROM users WHERE is_active = true'
+        `SELECT id FROM users WHERE status = 'ACTIVE'`
       );
       targetUserIds = allUsersResult.rows.map((row: any) => row.id);
     } else if (user_ids && user_ids.length > 0) {
@@ -72,7 +72,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
 export async function getAllAdminIds(): Promise<number[]> {
   try {
     const result = await query(
-      'SELECT id FROM users WHERE role = $1 AND is_active = true',
+      `SELECT id FROM users WHERE role = $1 AND status = 'ACTIVE'`,
       ['ADMIN']
     );
     return result.rows.map((row: any) => row.id);
@@ -88,7 +88,7 @@ export async function getAllAdminIds(): Promise<number[]> {
 export async function getAllUserIds(): Promise<number[]> {
   try {
     const result = await query(
-      'SELECT id FROM users WHERE is_active = true'
+      `SELECT id FROM users WHERE status = 'ACTIVE'`
     );
     return result.rows.map((row: any) => row.id);
   } catch (error) {

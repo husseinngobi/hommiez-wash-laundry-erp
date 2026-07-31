@@ -61,7 +61,7 @@ import {
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 interface User {
   id: number;
@@ -81,6 +81,14 @@ interface User {
   must_change_password?: boolean;
   profile_picture?: string;
   profile_picture_url?: string;
+  branch_id?: number | null;
+  branch_name?: string | null;
+}
+
+interface BranchOption {
+  id: number;
+  name: string;
+  is_active: boolean;
 }
 
 interface LoginHistory {
@@ -160,6 +168,9 @@ const UserManagement = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [suspensionReason, setSuspensionReason] = useState('');
   const [newRole, setNewRole] = useState<string>('');
+  const [branchOptions, setBranchOptions] = useState<BranchOption[]>([]);
+  // Branch assignment only appears once the business runs more than one branch
+  const multiBranch = branchOptions.length > 1;
   const [temporaryPassword, setTemporaryPassword] = useState<string>('');
 
   // Fetch data
@@ -201,6 +212,18 @@ const UserManagement = () => {
       setStatistics(response.data.statistics);
     } catch (error) {
       console.error('Error fetching statistics:', error);
+    }
+  }, [token]);
+
+  const fetchBranchOptions = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/branches`, {
+        params: { active: 'true' },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setBranchOptions(response.data.branches || []);
+    } catch (error) {
+      console.error('Error fetching branches:', error);
     }
   }, [token]);
 
@@ -258,8 +281,9 @@ const UserManagement = () => {
       fetchUsers();
       fetchStatistics();
       fetchActivityLogs();
+      fetchBranchOptions();
     }
-  }, [isAdmin, fetchUsers, fetchStatistics, fetchActivityLogs]);
+  }, [isAdmin, fetchUsers, fetchStatistics, fetchActivityLogs, fetchBranchOptions]);
 
   // Actions
   const handleApproveUser = async () => {
@@ -399,6 +423,34 @@ const UserManagement = () => {
       title: 'Copied!',
       description: 'Temporary password copied to clipboard',
     });
+  };
+
+  const handleUpdateBranch = async (user: User, value: string) => {
+    const branchId = value === 'none' ? null : Number(value);
+    if ((user.branch_id ?? null) === branchId) return;
+
+    try {
+      await axios.put(
+        `${API_BASE_URL}/admin/users/${user.id}/branch`,
+        { branch_id: branchId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast({
+        title: 'Branch updated',
+        description: branchId
+          ? `${user.full_name} now books orders under ${branchOptions.find((b) => b.id === branchId)?.name}.`
+          : `${user.full_name} is no longer assigned to a branch.`,
+      });
+      fetchUsers();
+    } catch (error) {
+      const axiosError = error as AxiosError<{ error?: string }>;
+      toast({
+        title: 'Error',
+        description: axiosError.response?.data?.error || 'Failed to update branch assignment',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleUpdateRole = async () => {
@@ -682,6 +734,7 @@ const UserManagement = () => {
                         <TableHead>User</TableHead>
                         <TableHead>Contact</TableHead>
                         <TableHead>Role</TableHead>
+                        {multiBranch && <TableHead>Branch</TableHead>}
                         <TableHead>Status</TableHead>
                         <TableHead>Created</TableHead>
                         <TableHead>Last Login</TableHead>
@@ -714,6 +767,26 @@ const UserManagement = () => {
                               {user.role}
                             </Badge>
                           </TableCell>
+                          {multiBranch && (
+                            <TableCell>
+                              <Select
+                                value={user.branch_id ? String(user.branch_id) : 'none'}
+                                onValueChange={(value) => handleUpdateBranch(user, value)}
+                              >
+                                <SelectTrigger className="h-8 w-[150px]">
+                                  <SelectValue placeholder="Unassigned" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Unassigned</SelectItem>
+                                  {branchOptions.map((branch) => (
+                                    <SelectItem key={branch.id} value={String(branch.id)}>
+                                      {branch.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                          )}
                           <TableCell>{getStatusBadge(user.status)}</TableCell>
                           <TableCell className="text-sm">
                             {formatDateTime(user.created_at)}

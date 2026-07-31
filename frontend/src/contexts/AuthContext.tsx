@@ -17,6 +17,8 @@ interface User {
   session_timeout_minutes?: number;  // User's session timeout preference (5-30 minutes)
   must_change_password?: boolean;  // Flag to force password change on next login
   auth_provider?: 'LOCAL' | null;
+  branch_id?: number | null;
+  branch_name?: string | null;
   created_at?: string;
   updated_at?: string;
   last_login?: string;
@@ -307,7 +309,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isManager: user?.role === 'MANAGER',
     isCashier: user?.role === 'DESKTOP_AGENT',
     canAccessUserManagement: user?.role === 'ADMIN',
-    canAccessSettings: user?.role === 'ADMIN' || user?.role === 'MANAGER',
+    // Every settings write is ADMIN-only on the server; keep the UI honest
+    canAccessSettings: user?.role === 'ADMIN',
     canAccessReports: user?.role === 'ADMIN' || user?.role === 'MANAGER', // Admin and Manager can access reports
     canAccessInventory: user?.role === 'ADMIN',
     canEditCustomers: user?.role === 'ADMIN',

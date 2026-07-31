@@ -64,7 +64,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
        FROM deliveries 
        ${deliveriesDateFilter}
        ${deliveriesDateFilter ? 'AND' : 'WHERE'} delivery_type = 'PAID'
-       AND delivery_status = 'DELIVERED'`
+       AND delivery_status = 'DELIVERED'
+       AND payment_status = 'PAID'`
     );
 
     const totalRevenue = 

@@ -158,6 +158,7 @@ export default function Customers() {
     customer_type: "INDIVIDUAL" as 'INDIVIDUAL' | 'BUSINESS',
   });
   const [phoneHint, setPhoneHint] = useState<PhoneHint>({ kind: 'idle' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const phoneCheckRef = useRef(0);
 
   // Handle search from navigation state
@@ -354,6 +355,10 @@ export default function Customers() {
   };
 
   const handleAddCustomer = async () => {
+    // Guard against double-clicks creating the customer twice: the second
+    // request would hit the duplicate-phone check and show a false error.
+    if (isSubmitting) return;
+
     try {
       const token = localStorage.getItem("lush_token");
       
@@ -372,7 +377,8 @@ export default function Customers() {
         toast.error(phoneHint.message);
         return;
       }
-      
+
+      setIsSubmitting(true);
       await axios.post(
         `${API_BASE_URL}/customers`,
         { ...formData, name: formData.name.trim(), phone: phoneResult.e164 },
@@ -401,11 +407,13 @@ export default function Customers() {
           "Failed to add customer"
         );
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleEditCustomer = async () => {
-    if (!selectedCustomer) return;
+    if (!selectedCustomer || isSubmitting) return;
     if (!canEditCustomers) {
       toast.error("Only administrators can edit customer details");
       return;
@@ -429,7 +437,8 @@ export default function Customers() {
         toast.error(phoneHint.message);
         return;
       }
-      
+
+      setIsSubmitting(true);
       await axios.put(
         `${API_BASE_URL}/customers/${selectedCustomer.id}`,
         { ...formData, name: formData.name.trim(), phone: phoneResult.e164 },
@@ -453,13 +462,16 @@ export default function Customers() {
         axiosError.response?.data?.error ||
         "Failed to update customer"
       );
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDeleteCustomer = async () => {
-    if (!selectedCustomer) return;
+    if (!selectedCustomer || isSubmitting) return;
     
     try {
+      setIsSubmitting(true);
       const token = localStorage.getItem("lush_token");
       
       await axios.delete(
@@ -477,6 +489,8 @@ export default function Customers() {
       const axiosError = error as AxiosError<{ error: string }>;
       console.error("Delete customer error:", error);
       toast.error(axiosError.response?.data?.error || "Failed to delete customer");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1004,9 +1018,9 @@ export default function Customers() {
             <Button
               className="w-full sm:w-auto"
               onClick={handleAddCustomer}
-              disabled={phoneHint.kind === 'country' || phoneHint.kind === 'duplicate'}
+              disabled={isSubmitting || phoneHint.kind === 'country' || phoneHint.kind === 'duplicate'}
             >
-              Add Customer
+              {isSubmitting ? 'Adding…' : 'Add Customer'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1132,9 +1146,9 @@ export default function Customers() {
             <Button
               className="w-full sm:w-auto"
               onClick={handleEditCustomer}
-              disabled={phoneHint.kind === 'country' || phoneHint.kind === 'duplicate'}
+              disabled={isSubmitting || phoneHint.kind === 'country' || phoneHint.kind === 'duplicate'}
             >
-              Save Changes
+              {isSubmitting ? 'Saving…' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -34,6 +34,18 @@ interface BusinessHoursDay {
   closed: boolean;
 }
 
+interface BranchRecord {
+  id: number;
+  name: string;
+  code: string;
+  phone?: string | null;
+  email?: string | null;
+  location?: string | null;
+  address?: string | null;
+  is_active: boolean;
+  is_default: boolean;
+}
+
 interface BusinessHours {
   monday: BusinessHoursDay;
   tuesday: BusinessHoursDay;
@@ -79,7 +91,7 @@ interface BackupHistoryItem {
 }
 
 export default function Settings() {
-  const { token, user, refreshUser, isAdmin, isCashier } = useAuth();
+  const { token, user, isAdmin, isCashier } = useAuth();
   const { toast } = useToast();
   const isManager = user?.role === 'MANAGER';
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -107,16 +119,26 @@ export default function Settings() {
   const [businessAddress, setBusinessAddress] = useState('');
   const [businessPhone, setBusinessPhone] = useState('');
   const [businessEmail, setBusinessEmail] = useState('');
+
+  // Business identity (shown on every receipt / WhatsApp message)
+  const [businessName, setBusinessName] = useState('');
+  const [businessLocation, setBusinessLocation] = useState('');
+  const [savingBusinessInfo, setSavingBusinessInfo] = useState(false);
+
+  // Branches
+  const [branches, setBranches] = useState<BranchRecord[]>([]);
+  const [savingBranch, setSavingBranch] = useState(false);
+  const [newBranch, setNewBranch] = useState({ name: '', location: '', phone: '', email: '' });
   const [vatRate, setVatRate] = useState('18.00');
   const [enableEfris, setEnableEfris] = useState(false);
   const [invoicePrefix, setInvoicePrefix] = useState('INV');
   const [invoiceFooter, setInvoiceFooter] = useState('');
   const [savingURASettings, setSavingURASettings] = useState(false);
 
-  // Bargain Limits state
-  const [desktopAgentBargainLimit, setDesktopAgentBargainLimit] = useState(5000);
-  const [managerBargainLimit, setManagerBargainLimit] = useState(10000);
-  const [adminBargainLimit, setAdminBargainLimit] = useState(50000);
+  // Bargain limits are held as text so the field can be emptied while typing;
+  // a numeric state would immediately snap a cleared box back to "0".
+  const [desktopAgentBargainLimit, setDesktopAgentBargainLimit] = useState('5000');
+  const [managerBargainLimit, setManagerBargainLimit] = useState('10000');
   const [savingBargainLimits, setSavingBargainLimits] = useState(false);
 
   // Payment accounts for on-account / partial WhatsApp receipts
@@ -284,6 +306,8 @@ export default function Settings() {
       setBusinessAddress(settings.business_address || '');
       setBusinessPhone(settings.business_phone || '');
       setBusinessEmail(settings.business_email || '');
+      setBusinessName(settings.business_name || 'Lush Dry Cleaners & Laundromat');
+      setBusinessLocation(settings.business_location || '');
       setVatRate(settings.vat_rate || '18.00');
       setEnableEfris(settings.enable_efris === 'true' || settings.enable_efris === true);
       setInvoicePrefix(settings.invoice_prefix || 'INV');
@@ -305,9 +329,8 @@ export default function Settings() {
         headers: { Authorization: `Bearer ${token}` },
       });
       
-      setDesktopAgentBargainLimit(response.data.desktop_agent || 5000);
-      setManagerBargainLimit(response.data.manager || 10000);
-      setAdminBargainLimit(response.data.admin || 50000);
+      setDesktopAgentBargainLimit(String(response.data.desktop_agent ?? 5000));
+      setManagerBargainLimit(String(response.data.manager ?? 10000));
     } catch (error) {
       console.error('Failed to load bargain limits:', error);
     }
@@ -316,6 +339,7 @@ export default function Settings() {
   useEffect(() => {
     fetchURASettings();
     if (isAdmin) {
+      fetchBranches();
       fetchBargainLimits();
       axios
         .get(`${API_BASE_URL}/settings/payment-accounts`, {
@@ -328,7 +352,135 @@ export default function Settings() {
         })
         .catch(() => undefined);
     }
-  }, [fetchURASettings, fetchBargainLimits, isAdmin, token]);
+  }, [fetchURASettings, fetchBargainLimits, fetchBranches, isAdmin, token]);
+
+  const fetchBranches = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/branches`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setBranches(response.data.branches || []);
+    } catch (error) {
+      console.error('Failed to load branches:', error);
+    }
+  }, [token]);
+
+  const branchErrorMessage = (error: unknown, fallback: string) => {
+    const axiosError = error as { response?: { data?: { error?: string } } };
+    return axiosError.response?.data?.error || fallback;
+  };
+
+  const createBranch = async () => {
+    if (!newBranch.name.trim()) {
+      toast({
+        title: 'Branch name required',
+        description: 'Give the branch a name staff will recognise.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setSavingBranch(true);
+      await axios.post(`${API_BASE_URL}/branches`, newBranch, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      toast({ title: 'Branch added', description: `${newBranch.name} is now available on new orders.` });
+      setNewBranch({ name: '', location: '', phone: '', email: '' });
+      fetchBranches();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: branchErrorMessage(error, 'Failed to add branch'),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingBranch(false);
+    }
+  };
+
+  const updateBranch = async (id: number, changes: Record<string, unknown>) => {
+    try {
+      setSavingBranch(true);
+      await axios.put(`${API_BASE_URL}/branches/${id}`, changes, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      fetchBranches();
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: branchErrorMessage(error, 'Failed to update branch'),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingBranch(false);
+    }
+  };
+
+  const deleteBranch = async (id: number, name: string) => {
+    if (!window.confirm(`Delete the branch "${name}"? This cannot be undone.`)) return;
+
+    try {
+      setSavingBranch(true);
+      await axios.delete(`${API_BASE_URL}/branches/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      toast({ title: 'Branch deleted', description: `${name} was removed.` });
+      fetchBranches();
+    } catch (error) {
+      toast({
+        title: 'Branch not deleted',
+        description: branchErrorMessage(error, 'Failed to delete branch'),
+        variant: 'destructive',
+      });
+      fetchBranches();
+    } finally {
+      setSavingBranch(false);
+    }
+  };
+
+  const saveBusinessInfo = async () => {
+    if (!businessName.trim()) {
+      toast({
+        title: 'Business name required',
+        description: 'Enter the business name that should appear on receipts.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setSavingBusinessInfo(true);
+      await axios.post(
+        `${API_BASE_URL}/settings/bulk-update`,
+        {
+          settings: {
+            business_name: businessName.trim(),
+            business_phone: businessPhone.trim(),
+            business_email: businessEmail.trim(),
+            business_location: businessLocation.trim(),
+            business_address: businessAddress.trim(),
+          },
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast({
+        title: 'Business information saved',
+        description: 'These details now appear on receipts and WhatsApp messages.',
+      });
+      fetchURASettings();
+    } catch (error) {
+      const axiosError = error as { response?: { data?: { error?: string } } };
+      toast({
+        title: 'Error',
+        description: axiosError.response?.data?.error || 'Failed to save business information',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingBusinessInfo(false);
+    }
+  };
 
   const savePaymentAccounts = async () => {
     try {
@@ -397,22 +549,36 @@ export default function Settings() {
 
   // Save bargain limits for all roles
   const saveBargainLimits = async () => {
+    const desktopAgent = Math.max(0, Math.round(Number(desktopAgentBargainLimit) || 0));
+    const manager = Math.max(0, Math.round(Number(managerBargainLimit) || 0));
+
+    if (manager < desktopAgent) {
+      toast({
+        title: 'Check the limits',
+        description: 'The manager limit should not be lower than the desktop agent limit.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       setSavingBargainLimits(true);
 
       await axios.post(
         `${API_BASE_URL}/settings/bargain-limits`,
         {
-          desktop_agent_limit: desktopAgentBargainLimit,
-          manager_limit: managerBargainLimit,
-          admin_limit: adminBargainLimit,
+          desktop_agent_limit: desktopAgent,
+          manager_limit: manager,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
+      setDesktopAgentBargainLimit(String(desktopAgent));
+      setManagerBargainLimit(String(manager));
+
       toast({
         title: 'Bargain limits updated',
-        description: 'Maximum bargain limits have been saved successfully for all roles.',
+        description: `Desktop agent ${desktopAgent.toLocaleString()} UGX, manager ${manager.toLocaleString()} UGX. Administrators are not capped.`,
       });
     } catch (error) {
       const axiosError = error as AxiosError<{ error: string }>;
@@ -512,60 +678,6 @@ export default function Settings() {
     }
   };
 
-  const saveSessionTimeout = async () => {
-    try {
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-
-      // Call backend API to save session timeout preference
-      const response = await axios.put(
-        `${API_BASE_URL}/auth/session-timeout`,
-        { minutes: sessionTimeout },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      // Update user object in localStorage to persist the change
-      const userStr = localStorage.getItem('lush_user');
-      if (userStr) {
-        const userData = JSON.parse(userStr);
-        userData.session_timeout_minutes = sessionTimeout;
-        localStorage.setItem('lush_user', JSON.stringify(userData));
-        
-        // Force re-render by updating state after localStorage update
-        // This ensures the new value persists even if user navigates away and back
-        setSessionTimeout(sessionTimeout);
-      }
-
-      // Refresh user in AuthContext to update session timeout for inactivity timer
-      refreshUser();
-
-      toast({
-        title: 'Session timeout updated',
-        description: `Session will expire after ${sessionTimeout} minutes of inactivity. The new timeout will take effect immediately on your next activity (mouse move, click, etc.).`,
-        duration: 5000,
-      });
-    } catch (error: unknown) {
-      console.error('❌ Failed to save session timeout:', error);
-      let errorMessage = 'Unknown error';
-      if (axios.isAxiosError(error)) {
-        errorMessage = error.response?.data?.error || error.message;
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      toast({
-        title: 'Error',
-        description: `Failed to update session timeout: ${errorMessage}`,
-        variant: 'destructive',
-      });
-    }
-  };
-
   const fetchOrderStats = async (year: string) => {
     try {
       const response = await axios.get(`${API_BASE_URL}/orders/stats`, {
@@ -587,10 +699,11 @@ export default function Settings() {
     
     try {
       setIsLoading(true);
-      await axios.delete(`${API_BASE_URL}/orders/bulk-delete`, {
-        headers: { Authorization: `Bearer ${token}` },
-        data: { year: selectedYear },
-      });
+      await axios.post(
+        `${API_BASE_URL}/orders/bulk-delete`,
+        { year: selectedYear },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       
       toast({
         title: 'Success',
@@ -1010,27 +1123,196 @@ Don't miss out! ✨`;
             </div>
           </div>
           <div className="p-6 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              These details appear on printed receipts, invoices and WhatsApp messages.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="businessName">Business Name</Label>
-                <Input id="businessName" defaultValue="Lush Dry Cleaners & Laundromat" className="mt-2" />
+                <Label htmlFor="businessName">Business Name *</Label>
+                <Input
+                  id="businessName"
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  placeholder="Lush Dry Cleaners & Laundromat"
+                  className="mt-2"
+                />
               </div>
               <div>
                 <Label htmlFor="phone">Phone Number</Label>
-                <Input id="phone" defaultValue="+256 700 123 456" className="mt-2" />
+                <Input
+                  id="phone"
+                  value={businessPhone}
+                  onChange={(e) => setBusinessPhone(e.target.value)}
+                  placeholder="+256700123456"
+                  className="mt-2"
+                />
               </div>
               <div>
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" defaultValue="info@lushdrycleaners.ug" className="mt-2" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={businessEmail}
+                  onChange={(e) => setBusinessEmail(e.target.value)}
+                  placeholder="info@lushdrycleaners.ug"
+                  className="mt-2"
+                />
               </div>
               <div>
                 <Label htmlFor="location">Location</Label>
-                <Input id="location" defaultValue="Kampala, Uganda" className="mt-2" />
+                <Input
+                  id="location"
+                  value={businessLocation}
+                  onChange={(e) => setBusinessLocation(e.target.value)}
+                  placeholder="Kampala, Uganda"
+                  className="mt-2"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="business-street-address">Street Address</Label>
+                <Input
+                  id="business-street-address"
+                  value={businessAddress}
+                  onChange={(e) => setBusinessAddress(e.target.value)}
+                  placeholder="Plot 123, Kampala Road"
+                  className="mt-2"
+                />
               </div>
             </div>
-            <Button className="bg-secondary hover:bg-secondary/90 text-secondary-foreground">
-              Save Changes
+            <Button
+              onClick={saveBusinessInfo}
+              disabled={savingBusinessInfo}
+              className="bg-secondary hover:bg-secondary/90 text-secondary-foreground"
+            >
+              {savingBusinessInfo ? 'Saving…' : 'Save Changes'}
             </Button>
+          </div>
+        </div>
+        )}
+
+        {/* Branches - Admin Only */}
+        {isAdmin && (
+        <div id="branches" className="bg-card rounded-xl border border-border shadow-sm scroll-mt-6">
+          <div className="p-6 border-b border-border">
+            <div className="flex items-center gap-3">
+              <Building className="h-5 w-5 text-primary" />
+              <div>
+                <h2 className="text-lg font-semibold">Branches</h2>
+                <p className="text-sm text-muted-foreground">
+                  Each order is recorded against a branch. Staff are assigned a branch in User Management.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="p-6 space-y-6">
+            <div className="space-y-3">
+              {branches.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No branches yet. Add your first branch below.</p>
+              ) : (
+                branches.map((branch) => (
+                  <div
+                    key={branch.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-border p-4"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium">{branch.name}</span>
+                        <span className="text-xs text-muted-foreground font-mono">{branch.code}</span>
+                        {branch.is_default && (
+                          <span className="text-xs rounded bg-primary/10 text-primary px-2 py-0.5">Default</span>
+                        )}
+                        {!branch.is_active && (
+                          <span className="text-xs rounded bg-muted text-muted-foreground px-2 py-0.5">Inactive</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {[branch.location, branch.phone].filter(Boolean).join(' · ') || 'No location set'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      {!branch.is_default && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={savingBranch}
+                          onClick={() => updateBranch(branch.id, { is_default: true })}
+                        >
+                          Make default
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={savingBranch}
+                        onClick={() => updateBranch(branch.id, { is_active: !branch.is_active })}
+                      >
+                        {branch.is_active ? 'Deactivate' : 'Activate'}
+                      </Button>
+                      {!branch.is_default && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={savingBranch}
+                          onClick={() => deleteBranch(branch.id, branch.name)}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="rounded-lg border border-dashed border-border p-4 space-y-4">
+              <h3 className="font-medium">Add a branch</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="new-branch-name">Branch Name *</Label>
+                  <Input
+                    id="new-branch-name"
+                    value={newBranch.name}
+                    onChange={(e) => setNewBranch({ ...newBranch, name: e.target.value })}
+                    placeholder="Branch Two — Ntinda"
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="new-branch-location">Location</Label>
+                  <Input
+                    id="new-branch-location"
+                    value={newBranch.location}
+                    onChange={(e) => setNewBranch({ ...newBranch, location: e.target.value })}
+                    placeholder="Ntinda, Kampala"
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="new-branch-phone">Phone</Label>
+                  <Input
+                    id="new-branch-phone"
+                    value={newBranch.phone}
+                    onChange={(e) => setNewBranch({ ...newBranch, phone: e.target.value })}
+                    placeholder="+256700123456"
+                    className="mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="new-branch-email">Email</Label>
+                  <Input
+                    id="new-branch-email"
+                    type="email"
+                    value={newBranch.email}
+                    onChange={(e) => setNewBranch({ ...newBranch, email: e.target.value })}
+                    placeholder="ntinda@lushdrycleaners.ug"
+                    className="mt-2"
+                  />
+                </div>
+              </div>
+              <Button onClick={createBranch} disabled={savingBranch}>
+                {savingBranch ? 'Saving…' : 'Add Branch'}
+              </Button>
+            </div>
           </div>
         </div>
         )}
@@ -1709,10 +1991,13 @@ Don't miss out! ✨`;
                   <Input
                     id="desktop-agent-limit"
                     type="number"
+                    inputMode="numeric"
                     min="0"
                     step="1000"
                     value={desktopAgentBargainLimit}
-                    onChange={(e) => setDesktopAgentBargainLimit(parseInt(e.target.value) || 0)}
+                    onChange={(e) => setDesktopAgentBargainLimit(e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="5000"
                     className="mt-2"
                   />
                   <p className="text-xs text-muted-foreground mt-1">Recommended: 5,000 - 10,000 UGX</p>
@@ -1723,27 +2008,26 @@ Don't miss out! ✨`;
                   <Input
                     id="manager-limit"
                     type="number"
+                    inputMode="numeric"
                     min="0"
                     step="1000"
                     value={managerBargainLimit}
-                    onChange={(e) => setManagerBargainLimit(parseInt(e.target.value) || 0)}
+                    onChange={(e) => setManagerBargainLimit(e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="10000"
                     className="mt-2"
                   />
                   <p className="text-xs text-muted-foreground mt-1">Recommended: 10,000 - 20,000 UGX</p>
                 </div>
 
                 <div>
-                  <Label htmlFor="admin-limit">Administrator Limit</Label>
-                  <Input
-                    id="admin-limit"
-                    type="number"
-                    min="0"
-                    step="1000"
-                    value={adminBargainLimit}
-                    onChange={(e) => setAdminBargainLimit(parseInt(e.target.value) || 0)}
-                    className="mt-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Recommended: 50,000+ UGX</p>
+                  <Label>Administrator Limit</Label>
+                  <div className="mt-2 flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm font-medium">
+                    No limit
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Administrators are never capped, up to the order value.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1813,30 +2097,10 @@ Don't miss out! ✨`;
                 </AlertDescription>
               </Alert>
 
-              <div className="space-y-2">
-                <Label htmlFor="sessionTimeout">Session Timeout Duration</Label>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 max-w-md">
-                  <Select value={sessionTimeout.toString()} onValueChange={(value) => setSessionTimeout(parseInt(value))}>
-                    <SelectTrigger id="sessionTimeout" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="5">5 minutes</SelectItem>
-                      <SelectItem value="10">10 minutes</SelectItem>
-                      <SelectItem value="15">15 minutes (Default)</SelectItem>
-                      <SelectItem value="20">20 minutes</SelectItem>
-                      <SelectItem value="25">25 minutes</SelectItem>
-                      <SelectItem value="30">30 minutes (Maximum)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={saveSessionTimeout} variant="outline" className="w-full sm:w-auto">
-                    Apply
-                  </Button>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Current: {sessionTimeout} minutes of inactivity before automatic logout
-                </p>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                Sessions expire after {sessionTimeout} minutes of inactivity. This is a
+                fixed system-wide security setting.
+              </p>
 
               <div className="bg-muted/50 p-4 rounded-lg space-y-2">
                 <p className="text-sm font-medium">How it works:</p>

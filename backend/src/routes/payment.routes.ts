@@ -39,10 +39,11 @@ router.get(
   paymentController.getRefundSummary as any
 );
 
-// Process refund for an order (Admin/Manager only)
+// Process refund for an order — ADMIN only, because a full refund cancels the
+// order and cancellation is an administrator action. Managers raise a request.
 router.post(
   '/refund/:orderId',
-  authorize(UserRole.ADMIN, UserRole.MANAGER) as any,
+  authorize(UserRole.ADMIN) as any,
   [
     body('refund_amount').isFloat({ min: 0.01 }).withMessage('Refund amount must be greater than zero'),
     body('refund_reason').notEmpty().withMessage('Refund reason is required'),

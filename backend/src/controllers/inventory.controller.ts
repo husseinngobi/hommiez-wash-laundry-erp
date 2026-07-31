@@ -47,7 +47,8 @@ export const getAllInventoryItems = async (req: AuthRequest, res: Response) => {
     }
     
     if (low_stock === 'true') {
-      sql += ` AND quantity <= reorder_level`;
+      // Long-term assets are not consumables — they never run "low"
+      sql += ` AND COALESCE(is_long_term, FALSE) = FALSE AND quantity <= reorder_level`;
     }
     
     sql += ' ORDER BY item_name ASC';

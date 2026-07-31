@@ -410,15 +410,25 @@ export const updateDeliveryStatus = async (req: AuthRequest, res: Response) => {
     
     const currentStatus = current.rows[0].delivery_status;
     const driverId = current.rows[0].driver_id;
+
+    // Cancelling is an administrator action, same rule as cancelling an order
+    if (String(status).toUpperCase() === 'CANCELLED' && req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only administrators can cancel a delivery' });
+    }
     
-    // Validate status transition workflow (SIMPLIFIED: Only 3 statuses)
+    // Validate status transition workflow.
+    // ASSIGNED and IN_TRANSIT must be listed: assigning a rider moves a delivery
+    // into ASSIGNED, and without an entry here it could never be completed.
     const validTransitions: Record<string, string[]> = {
-      'PENDING': ['DELIVERED', 'CANCELLED'],
+      'PENDING': ['ASSIGNED', 'IN_TRANSIT', 'DELIVERED', 'FAILED', 'CANCELLED'],
+      'ASSIGNED': ['PENDING', 'IN_TRANSIT', 'DELIVERED', 'FAILED', 'CANCELLED'],
+      'IN_TRANSIT': ['ASSIGNED', 'DELIVERED', 'FAILED', 'CANCELLED'],
       'DELIVERED': ['PENDING', 'CANCELLED'], // Can revert or cancel if needed
+      'FAILED': ['PENDING', 'ASSIGNED', 'IN_TRANSIT', 'CANCELLED'],
       'CANCELLED': ['PENDING'], // Can restart a cancelled delivery
     };
     
-    if (!validTransitions[currentStatus]?.includes(status)) {
+    if (currentStatus !== status && !validTransitions[currentStatus]?.includes(status)) {
       return res.status(400).json({ 
         error: `Cannot transition from ${currentStatus} to ${status}`,
         currentStatus,
@@ -483,9 +493,14 @@ export const updateDeliveryStatus = async (req: AuthRequest, res: Response) => {
       );
       console.log(`🔄 Order #${orderId} reverted to 'ready' (delivery cancelled)`);
       
-      // If this was a PAID delivery, refund the delivery revenue
+      // A cancelled delivery earns nothing, so clear its revenue rather than
+      // leaving it to inflate the delivery stats
       if (deliveryRevenue > 0) {
-        console.log(`💰 Delivery revenue refunded: USh ${deliveryRevenue.toLocaleString()}`);
+        await query(
+          `UPDATE deliveries SET delivery_revenue = 0, updated_at = NOW() WHERE id = $1`,
+          [id]
+        );
+        console.log(`💰 Delivery revenue reversed: USh ${deliveryRevenue.toLocaleString()}`);
       }
     }
     
@@ -523,7 +538,7 @@ export const getDeliveryStats = async (req: AuthRequest, res: Response) => {
         COUNT(*) FILTER (WHERE delivery_status = 'CANCELLED') as cancelled,
         COUNT(*) FILTER (WHERE delivery_type = 'PAID') as paid_deliveries,
         COUNT(*) FILTER (WHERE delivery_type = 'FREE') as free_deliveries,
-        COALESCE(SUM(delivery_revenue) FILTER (WHERE delivery_type = 'PAID'), 0) as total_delivery_revenue,
+        COALESCE(SUM(delivery_revenue) FILTER (WHERE delivery_type = 'PAID' AND delivery_status <> 'CANCELLED'), 0) as total_delivery_revenue,
         COALESCE(SUM(delivery_revenue) FILTER (WHERE delivery_status = 'DELIVERED' AND delivery_type = 'PAID'), 0) as completed_delivery_revenue
        FROM deliveries
        ${dateFilter}`,

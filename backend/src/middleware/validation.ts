@@ -159,6 +159,10 @@ export const orderValidation = {
     body('items.*.price_item_id').isInt({ min: 1 }),
     body('items.*.service_type').isIn(['WASH', 'IRON', 'EXPRESS']),
     body('items.*.quantity').isFloat({ min: 0.1 }),
+    body('items.*.discount_amount').optional({ nullable: true }).isFloat({ min: 0 })
+      .withMessage('Item discount cannot be negative'),
+    body('items.*.notes').optional({ nullable: true }).isString().isLength({ max: 200 })
+      .withMessage('Item note cannot exceed 200 characters'),
     body('discount').optional().isInt({ min: 0 }),
     body('notes').optional().trim(),
   ],
