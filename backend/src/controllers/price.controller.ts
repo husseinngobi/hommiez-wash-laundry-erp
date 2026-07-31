@@ -301,7 +301,7 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
       SELECT 
         COUNT(DISTINCT o.id) as total_orders,
         COUNT(DISTINCT CASE WHEN o.payment_status IN ('UNPAID', 'PARTIAL') THEN o.id END) as unpaid_orders,
-        COUNT(DISTINCT CASE WHEN LOWER(COALESCE(o.status, o.order_status::text, '')) NOT IN ('delivered', 'cancelled') THEN o.id END) as pending_orders
+        COUNT(DISTINCT CASE WHEN LOWER(COALESCE(o.status::text, o.order_status::text, '')) NOT IN ('delivered', 'cancelled') THEN o.id END) as pending_orders
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE oi.price_item_id = $1
