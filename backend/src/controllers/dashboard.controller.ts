@@ -58,19 +58,25 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
        FROM payments ${paymentsDateFilter}`
     );
 
-    // Delivery revenue for selected period
-    const deliveryRevenueResult = await query(
-      `SELECT COALESCE(SUM(delivery_revenue), 0) as delivery_revenue
-       FROM deliveries 
-       ${deliveriesDateFilter}
-       ${deliveriesDateFilter ? 'AND' : 'WHERE'} delivery_type = 'PAID'
-       AND delivery_status = 'DELIVERED'
-       AND payment_status = 'PAID'`
-    );
+    // Delivery revenue for selected period. Deliveries are a side ledger, so a
+    // problem here must not blank the whole dashboard — fall back to zero.
+    let deliveryRevenue = 0;
+    try {
+      const deliveryRevenueResult = await query(
+        `SELECT COALESCE(SUM(delivery_revenue), 0) as delivery_revenue
+         FROM deliveries 
+         ${deliveriesDateFilter}
+         ${deliveriesDateFilter ? 'AND' : 'WHERE'} delivery_type = 'PAID'
+         AND delivery_status = 'DELIVERED'
+         AND payment_status = 'PAID'`
+      );
+      deliveryRevenue = parseFloat(deliveryRevenueResult.rows[0].delivery_revenue) || 0;
+    } catch (deliveryError) {
+      console.error('⚠️ Delivery revenue unavailable, counting it as 0:', deliveryError);
+    }
 
-    const totalRevenue = 
-      parseFloat(revenueResult.rows[0].order_revenue) + 
-      parseFloat(deliveryRevenueResult.rows[0].delivery_revenue);
+    const totalRevenue =
+      parseFloat(revenueResult.rows[0].order_revenue) + deliveryRevenue;
 
     // Total active customers (always all-time)
     const activeCustomersResult = await query(

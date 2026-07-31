@@ -336,6 +336,17 @@ export default function Settings() {
     }
   }, [token]);
 
+  const fetchBranches = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/branches`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setBranches(response.data.branches || []);
+    } catch (error) {
+      console.error('Failed to load branches:', error);
+    }
+  }, [token]);
+
   useEffect(() => {
     fetchURASettings();
     if (isAdmin) {
@@ -353,17 +364,6 @@ export default function Settings() {
         .catch(() => undefined);
     }
   }, [fetchURASettings, fetchBargainLimits, fetchBranches, isAdmin, token]);
-
-  const fetchBranches = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/branches`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setBranches(response.data.branches || []);
-    } catch (error) {
-      console.error('Failed to load branches:', error);
-    }
-  }, [token]);
 
   const branchErrorMessage = (error: unknown, fallback: string) => {
     const axiosError = error as { response?: { data?: { error?: string } } };

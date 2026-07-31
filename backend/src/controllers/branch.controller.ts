@@ -65,12 +65,12 @@ export const getBranchPerformance = async (req: AuthRequest, res: Response) => {
          COALESCE(SUM(COALESCE(o.total_amount, o.total, 0)), 0) AS total_billed,
          COALESCE(SUM(COALESCE(o.amount_paid, 0)), 0) AS total_collected,
          COALESCE(SUM(GREATEST(0, COALESCE(o.total_amount, o.total, 0) - COALESCE(o.amount_paid, 0))), 0) AS outstanding,
-         COUNT(*) FILTER (WHERE LOWER(COALESCE(o.status, '')) = 'delivered') AS delivered_orders,
-         COUNT(*) FILTER (WHERE o.payment_status IN ('UNPAID', 'PARTIAL')) AS unpaid_orders
+         COUNT(*) FILTER (WHERE LOWER(COALESCE(o.status::text, '')) = 'delivered') AS delivered_orders,
+         COUNT(*) FILTER (WHERE o.payment_status::text IN ('UNPAID', 'PARTIAL')) AS unpaid_orders
        FROM branches b
        LEFT JOIN orders o
          ON o.branch_id = b.id
-        AND LOWER(COALESCE(o.status, '')) <> 'cancelled'
+        AND LOWER(COALESCE(o.status::text, '')) <> 'cancelled'
         ${dateFilter}
        GROUP BY b.id, b.name, b.code, b.is_active
        ORDER BY total_billed DESC, b.name ASC`,

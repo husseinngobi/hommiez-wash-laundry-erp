@@ -23,6 +23,7 @@ import { ensureInventoryAssetColumns } from './database/ensureInventoryAssetColu
 import { ensureOrderItemDiscountColumn } from './database/ensureOrderItemDiscountColumn';
 import { ensureBranchSupport } from './database/ensureBranchSupport';
 import { ensureNotificationColumns } from './database/ensureNotificationColumns';
+import { ensureDeliveryPaymentColumns } from './database/ensureDeliveryPaymentColumns';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -160,6 +161,13 @@ const startServer = async () => {
       await ensureNotificationColumns();
     } catch (notificationError) {
       console.error('⚠️ notification columns skipped or failed:', notificationError);
+    }
+
+    // Delivery payment tracking columns
+    try {
+      await ensureDeliveryPaymentColumns();
+    } catch (deliveryPaymentError) {
+      console.error('⚠️ delivery payment columns skipped or failed:', deliveryPaymentError);
     }
 
     // Ensure upload directories exist

@@ -75,6 +75,22 @@ const WARNING_TIME = 60 * 1000; // Show warning 60 seconds before timeout
 const TOKEN_KEY = 'lush_token';
 const USER_KEY = 'lush_user';
 const SESSION_TIMEOUT_KEY = 'lush_session_timeout'; // Store user's preferred timeout
+const LAST_ACTIVITY_KEY = 'lush_last_activity';
+// Writing on every scroll/click event would thrash localStorage
+const ACTIVITY_WRITE_INTERVAL = 5 * 1000;
+
+/** Expiry claim from the JWT, in milliseconds, or null if it cannot be read */
+function readTokenExpiry(token: string): number | null {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const claims = JSON.parse(json);
+    return typeof claims.exp === 'number' ? claims.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -86,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const navigate = useNavigate();
   const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
   const warningTimer = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityWrite = useRef(0);
 
   // Get session timeout from user object (user preference or default)
   const getSessionTimeout = useCallback(() => {
@@ -103,12 +120,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return DEFAULT_INACTIVITY_TIMEOUT;
   }, []);
 
+  /**
+   * The inactivity timer lives in memory, so it dies with the tab. Persisting the
+   * last activity lets us tell, on the next visit, whether the session went stale
+   * while the app was closed or the phone was asleep.
+   */
+  const markActivity = useCallback((force = false) => {
+    const now = Date.now();
+    if (!force && now - lastActivityWrite.current < ACTIVITY_WRITE_INTERVAL) return;
+    lastActivityWrite.current = now;
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(now));
+  }, []);
+
+  const isSessionStale = useCallback(
+    (storedToken: string) => {
+      const expiry = readTokenExpiry(storedToken);
+      if (expiry !== null && Date.now() >= expiry) return true;
+
+      const lastActivity = Number(localStorage.getItem(LAST_ACTIVITY_KEY));
+      if (!Number.isFinite(lastActivity) || lastActivity <= 0) return false;
+
+      return Date.now() - lastActivity > getSessionTimeout();
+    },
+    [getSessionTimeout]
+  );
+
   // Logout function (defined before resetInactivityTimer to avoid dependency issues)
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
     
     // Clear dashboard period selections on logout
     localStorage.removeItem('dashboardPeriod');
@@ -144,7 +187,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (token) {
       const timeout = getSessionTimeout();
 
-      
+      markActivity();
+
       // Set warning timer (show warning before actual timeout)
       warningTimer.current = setTimeout(() => {
         setShowTimeoutWarning(true);
@@ -160,7 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, 3000); // Give user 3 seconds to see the message before redirecting
       }, timeout);
     }
-  }, [token, logout, showTimeoutWarning, getSessionTimeout]);
+  }, [token, logout, showTimeoutWarning, getSessionTimeout, markActivity]);
 
   // Refresh user from localStorage (called after settings update)
   const refreshUser = useCallback(() => {
@@ -201,6 +245,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const storedUser = localStorage.getItem(USER_KEY);
     
     if (storedToken && storedUser) {
+      // Check staleness before restoring, otherwise a session that expired while
+      // the app was closed would silently resume.
+      if (isSessionStale(storedToken)) {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+        localStorage.removeItem(LAST_ACTIVITY_KEY);
+        setLoading(false);
+        return;
+      }
+
       try {
         const parsedUser = JSON.parse(storedUser);
         setToken(storedToken);
@@ -214,7 +268,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     
     setLoading(false);
-  }, [resetInactivityTimer]);
+  }, [resetInactivityTimer, isSessionStale]);
+
+  // A backgrounded tab keeps its token but stops running timers, so re-check
+  // whenever the user comes back to the app.
+  useEffect(() => {
+    const checkOnReturn = () => {
+      if (document.visibilityState !== 'visible') return;
+      const storedToken = localStorage.getItem(TOKEN_KEY);
+      if (storedToken && isSessionStale(storedToken)) {
+        logout();
+      }
+    };
+
+    document.addEventListener('visibilitychange', checkOnReturn);
+    window.addEventListener('focus', checkOnReturn);
+
+    return () => {
+      document.removeEventListener('visibilitychange', checkOnReturn);
+      window.removeEventListener('focus', checkOnReturn);
+    };
+  }, [isSessionStale, logout]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -248,6 +322,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(data.user);
       localStorage.setItem(TOKEN_KEY, data.token);
       localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      markActivity(true);
       
       // Start inactivity timer
       resetInactivityTimer();
