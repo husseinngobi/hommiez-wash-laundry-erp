@@ -197,7 +197,10 @@ export default function Accounting() {
       );
       setIncomeStatement(response.data);
     } catch (error) {
-      toast.error('Failed to load income statement');
+      const errorResponse = error && typeof error === 'object' && 'response' in error ? (error as {response?: {data?: {error?: string}}}).response : null;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Income statement error:', errorResponse?.data || errorMessage);
+      toast.error(errorResponse?.data?.error || 'Failed to load income statement');
     } finally {
       setLoading(false);
     }
@@ -230,7 +233,10 @@ export default function Accounting() {
       );
       setCashFlow(response.data);
     } catch (error) {
-      toast.error('Failed to load cash flow statement');
+      const errorResponse = error && typeof error === 'object' && 'response' in error ? (error as {response?: {data?: {error?: string}}}).response : null;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Cash flow statement error:', errorResponse?.data || errorMessage);
+      toast.error(errorResponse?.data?.error || 'Failed to load cash flow statement');
     } finally {
       setLoading(false);
     }
