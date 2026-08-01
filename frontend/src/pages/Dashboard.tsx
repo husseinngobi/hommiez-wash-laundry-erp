@@ -166,6 +166,10 @@ function writeDashboardCache(period: string, isAdmin: boolean, cache: DashboardC
 export default function Dashboard() {
   const { token, isAdmin, isCashier, user } = useAuth();
   const initialStatsPeriod = (() => {
+    if (isCashier) {
+      return 'today';
+    }
+
     const saved = localStorage.getItem('dashboardStatsPeriod');
     return (saved as 'today' | 'week' | 'month' | 'year' | 'all') || 'all';
   })();
@@ -188,6 +192,10 @@ export default function Dashboard() {
   
   // Main period selector - controls both stats AND financial performance
   const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'all'>(() => {
+    if (isCashier) {
+      return 'today';
+    }
+
     const saved = localStorage.getItem('dashboardStatsPeriod');
     return (saved as 'today' | 'week' | 'month' | 'year' | 'all') || 'all';
   });
@@ -200,6 +208,7 @@ export default function Dashboard() {
   const [branchPerformance, setBranchPerformance] = useState<BranchPerformance[]>(() => cachedDashboard?.branchPerformance ?? []);
 
   const TODAY_KEY = DAY_KEYS[new Date().getDay()];
+  const dashboardPeriod = isCashier ? 'today' : statsPeriod;
 
   // Whether the shop is trading right now, per today's configured hours
   const openStatus = useMemo(() => {
@@ -237,22 +246,27 @@ export default function Dashboard() {
 
   // Save statsPeriod to localStorage whenever it changes
   useEffect(() => {
+    if (isCashier) {
+      localStorage.removeItem('dashboardStatsPeriod');
+      return;
+    }
+
     localStorage.setItem('dashboardStatsPeriod', statsPeriod);
-  }, [statsPeriod]);
+  }, [statsPeriod, isCashier]);
 
   // Fetch dashboard data (memoized to prevent unnecessary re-renders)
   const fetchDashboardData = useCallback(async () => {
     if (!token) return;
     
     try {
-      const hasCachedData = Boolean(readDashboardCache(statsPeriod, isAdmin));
+      const hasCachedData = Boolean(readDashboardCache(dashboardPeriod, isAdmin));
       if (!hasCachedData) {
         setLoading(true);
       }
       
       // Fetch all data in parallel
       const requests = [
-        axios.get(`${API_BASE_URL}/dashboard/stats?period=${statsPeriod}`, {
+        axios.get(`${API_BASE_URL}/dashboard/stats?period=${dashboardPeriod}`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
         axios.get(`${API_BASE_URL}/dashboard/recent-orders`, {
@@ -267,10 +281,10 @@ export default function Dashboard() {
       // Only fetch financial data for admins
       if (isAdmin) {
         requests.push(
-          axios.get(`${API_BASE_URL}/dashboard/financial-summary?period=${statsPeriod}`, {
+          axios.get(`${API_BASE_URL}/dashboard/financial-summary?period=${dashboardPeriod}`, {
             headers: { Authorization: `Bearer ${token}` }
           }),
-          axios.get(`${API_BASE_URL}/dashboard/payment-methods-breakdown?period=${statsPeriod}`, {
+          axios.get(`${API_BASE_URL}/dashboard/payment-methods-breakdown?period=${dashboardPeriod}`, {
             headers: { Authorization: `Bearer ${token}` }
           }),
           axios.get(`${API_BASE_URL}/dashboard/outstanding-balances`, {
@@ -296,7 +310,7 @@ export default function Dashboard() {
         setMonthGrowth(responses[6].data);
       }
 
-      writeDashboardCache(statsPeriod, isAdmin, {
+      writeDashboardCache(dashboardPeriod, isAdmin, {
         stats: responses[0].data,
         recentOrders: responses[1].data.orders || [],
         businessHours: responses[2].data,
@@ -311,7 +325,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [token, statsPeriod, isAdmin]);
+  }, [token, dashboardPeriod, isAdmin]);
 
   // Branch performance is fetched on its own so a failure never blocks the
   // dashboard, and it stays hidden until a second branch is actually created.
@@ -324,16 +338,16 @@ export default function Dashboard() {
       .then((res) => {
         const branches = res.data.multi_branch ? res.data.branches || [] : [];
         setBranchPerformance(branches);
-        const cached = readDashboardCache(statsPeriod, isAdmin);
+        const cached = readDashboardCache(dashboardPeriod, isAdmin);
         if (cached) {
-          writeDashboardCache(statsPeriod, isAdmin, {
+          writeDashboardCache(dashboardPeriod, isAdmin, {
             ...cached,
             branchPerformance: branches,
           });
         }
       })
       .catch(() => setBranchPerformance([]));
-  }, [token, isAdmin, statsPeriod]);
+  }, [token, isAdmin, dashboardPeriod]);
 
   // Initial data fetch and refresh on changes
   useEffect(() => {
@@ -364,18 +378,24 @@ export default function Dashboard() {
       {/* Period Selector for Stats */}
       <div className="mb-6 flex items-center gap-4">
         <span className="text-sm font-medium text-muted-foreground">Show stats for:</span>
-        <Select value={statsPeriod} onValueChange={(value) => setStatsPeriod(value as 'today' | 'week' | 'month' | 'year' | 'all')}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="today">Today</SelectItem>
-            <SelectItem value="week">This Week</SelectItem>
-            <SelectItem value="month">This Month</SelectItem>
-            <SelectItem value="year">This Year</SelectItem>
-            <SelectItem value="all">All Time</SelectItem>
-          </SelectContent>
-        </Select>
+        {isCashier ? (
+          <div className="rounded-full border border-border bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground">
+            Today only
+          </div>
+        ) : (
+          <Select value={statsPeriod} onValueChange={(value) => setStatsPeriod(value as 'today' | 'week' | 'month' | 'year' | 'all')}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="week">This Week</SelectItem>
+              <SelectItem value="month">This Month</SelectItem>
+              <SelectItem value="year">This Year</SelectItem>
+              <SelectItem value="all">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Stats Grid */}
