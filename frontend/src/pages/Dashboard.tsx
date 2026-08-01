@@ -131,9 +131,46 @@ interface BusinessHours {
   saturday: BusinessHoursDay;
 }
 
+interface DashboardCache {
+  stats: DashboardStats;
+  recentOrders: RecentOrder[];
+  businessHours: BusinessHours | null;
+  financialSummary: FinancialSummary | null;
+  paymentBreakdown: PaymentMethodBreakdown[];
+  outstandingBalances: OutstandingBalances | null;
+  monthGrowth: MonthOverMonth | null;
+  branchPerformance: BranchPerformance[];
+}
+
+function getDashboardCacheKey(period: string, isAdmin: boolean) {
+  return `dashboard-cache:${period}:${isAdmin ? 'admin' : 'staff'}`;
+}
+
+function readDashboardCache(period: string, isAdmin: boolean): DashboardCache | null {
+  try {
+    const raw = sessionStorage.getItem(getDashboardCacheKey(period, isAdmin));
+    return raw ? (JSON.parse(raw) as DashboardCache) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeDashboardCache(period: string, isAdmin: boolean, cache: DashboardCache) {
+  try {
+    sessionStorage.setItem(getDashboardCacheKey(period, isAdmin), JSON.stringify(cache));
+  } catch {
+    // Ignore storage failures and fall back to live fetching.
+  }
+}
+
 export default function Dashboard() {
   const { token, isAdmin, isCashier, user } = useAuth();
-  const [stats, setStats] = useState<DashboardStats>({
+  const initialStatsPeriod = (() => {
+    const saved = localStorage.getItem('dashboardStatsPeriod');
+    return (saved as 'today' | 'week' | 'month' | 'year' | 'all') || 'all';
+  })();
+  const cachedDashboard = readDashboardCache(initialStatsPeriod, isAdmin);
+  const [stats, setStats] = useState<DashboardStats>(() => cachedDashboard?.stats ?? {
     totalOrders: 0,
     totalRevenue: 0,
     activeCustomers: 0,
@@ -145,9 +182,9 @@ export default function Dashboard() {
     cancelledOrders: 0,
     totalPayments: 0,
   });
-  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [businessHours, setBusinessHours] = useState<BusinessHours | null>(null);
+  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>(() => cachedDashboard?.recentOrders ?? []);
+  const [loading, setLoading] = useState(() => !cachedDashboard);
+  const [businessHours, setBusinessHours] = useState<BusinessHours | null>(() => cachedDashboard?.businessHours ?? null);
   
   // Main period selector - controls both stats AND financial performance
   const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'all'>(() => {
@@ -156,11 +193,11 @@ export default function Dashboard() {
   });
   
   // Enhanced financial states
-  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
-  const [paymentBreakdown, setPaymentBreakdown] = useState<PaymentMethodBreakdown[]>([]);
-  const [outstandingBalances, setOutstandingBalances] = useState<OutstandingBalances | null>(null);
-  const [monthGrowth, setMonthGrowth] = useState<MonthOverMonth | null>(null);
-  const [branchPerformance, setBranchPerformance] = useState<BranchPerformance[]>([]);
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(() => cachedDashboard?.financialSummary ?? null);
+  const [paymentBreakdown, setPaymentBreakdown] = useState<PaymentMethodBreakdown[]>(() => cachedDashboard?.paymentBreakdown ?? []);
+  const [outstandingBalances, setOutstandingBalances] = useState<OutstandingBalances | null>(() => cachedDashboard?.outstandingBalances ?? null);
+  const [monthGrowth, setMonthGrowth] = useState<MonthOverMonth | null>(() => cachedDashboard?.monthGrowth ?? null);
+  const [branchPerformance, setBranchPerformance] = useState<BranchPerformance[]>(() => cachedDashboard?.branchPerformance ?? []);
 
   const TODAY_KEY = DAY_KEYS[new Date().getDay()];
 
@@ -208,7 +245,10 @@ export default function Dashboard() {
     if (!token) return;
     
     try {
-      setLoading(true);
+      const hasCachedData = Boolean(readDashboardCache(statsPeriod, isAdmin));
+      if (!hasCachedData) {
+        setLoading(true);
+      }
       
       // Fetch all data in parallel
       const requests = [
@@ -255,6 +295,17 @@ export default function Dashboard() {
         setOutstandingBalances(responses[5].data);
         setMonthGrowth(responses[6].data);
       }
+
+      writeDashboardCache(statsPeriod, isAdmin, {
+        stats: responses[0].data,
+        recentOrders: responses[1].data.orders || [],
+        businessHours: responses[2].data,
+        financialSummary: isAdmin && responses.length > 3 ? responses[3].data : null,
+        paymentBreakdown: isAdmin && responses.length > 3 ? responses[4].data : [],
+        outstandingBalances: isAdmin && responses.length > 3 ? responses[5].data : null,
+        monthGrowth: isAdmin && responses.length > 3 ? responses[6].data : null,
+        branchPerformance: [],
+      });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -271,7 +322,15 @@ export default function Dashboard() {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((res) => {
-        setBranchPerformance(res.data.multi_branch ? res.data.branches || [] : []);
+        const branches = res.data.multi_branch ? res.data.branches || [] : [];
+        setBranchPerformance(branches);
+        const cached = readDashboardCache(statsPeriod, isAdmin);
+        if (cached) {
+          writeDashboardCache(statsPeriod, isAdmin, {
+            ...cached,
+            branchPerformance: branches,
+          });
+        }
       })
       .catch(() => setBranchPerformance([]));
   }, [token, isAdmin, statsPeriod]);
