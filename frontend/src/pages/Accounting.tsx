@@ -145,7 +145,7 @@ interface TrialBalance {
 export default function Accounting() {
   const { token } = useAuth();
   const [activeTab, setActiveTab] = useState('income-statement');
-  const [period, setPeriod] = useState('month');
+  const [period, setPeriod] = useState('all');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [loading, setLoading] = useState(false);
   

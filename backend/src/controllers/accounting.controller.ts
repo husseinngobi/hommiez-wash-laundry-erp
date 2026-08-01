@@ -8,7 +8,7 @@ import { AuthRequest } from '../middleware/auth';
  */
 export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'month', from_date, to_date } = req.query;
+    const { period = 'all', from_date, to_date } = req.query;
 
     let dateFilter = '';
     let paymentDateFilter = '';
@@ -20,6 +20,11 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
       expenseDateFilter = `WHERE expense_date >= '${from_date}' AND expense_date <= '${to_date}'`;
     } else {
       switch (period) {
+        case 'all':
+          dateFilter = '';
+          paymentDateFilter = '';
+          expenseDateFilter = '';
+          break;
         case 'today':
           dateFilter = "WHERE DATE(o.created_at) = CURRENT_DATE";
           paymentDateFilter = "WHERE DATE(p.payment_date) = CURRENT_DATE";
@@ -41,9 +46,9 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
           expenseDateFilter = "WHERE DATE_TRUNC('year', expense_date) = DATE_TRUNC('year', CURRENT_DATE)";
           break;
         default:
-          dateFilter = "WHERE DATE_TRUNC('month', o.created_at) = DATE_TRUNC('month', CURRENT_DATE)";
-          paymentDateFilter = "WHERE DATE_TRUNC('month', p.payment_date) = DATE_TRUNC('month', CURRENT_DATE)";
-          expenseDateFilter = "WHERE DATE_TRUNC('month', expense_date) = DATE_TRUNC('month', CURRENT_DATE)";
+          dateFilter = '';
+          paymentDateFilter = '';
+          expenseDateFilter = '';
       }
     }
 
@@ -292,13 +297,16 @@ export const getBalanceSheet = async (req: AuthRequest, res: Response) => {
  */
 export const getCashFlowStatement = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'month', from_date, to_date } = req.query;
+    const { period = 'all', from_date, to_date } = req.query;
 
     let dateFilter = '';
     if (from_date && to_date) {
       dateFilter = `WHERE created_at >= '${from_date}' AND created_at <= '${to_date}'`;
     } else {
       switch (period) {
+        case 'all':
+          dateFilter = '';
+          break;
         case 'month':
           dateFilter = "WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)";
           break;
@@ -306,7 +314,7 @@ export const getCashFlowStatement = async (req: AuthRequest, res: Response) => {
           dateFilter = "WHERE DATE_TRUNC('year', created_at) = DATE_TRUNC('year', CURRENT_DATE)";
           break;
         default:
-          dateFilter = "WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)";
+          dateFilter = '';
       }
     }
 
@@ -535,10 +543,13 @@ export const getAgedReceivables = async (req: AuthRequest, res: Response) => {
  */
 export const getFinancialRatios = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'month' } = req.query;
+    const { period = 'all' } = req.query;
 
     let dateFilter = '';
     switch (period) {
+      case 'all':
+        dateFilter = '';
+        break;
       case 'month':
         dateFilter = "WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)";
         break;
@@ -546,7 +557,7 @@ export const getFinancialRatios = async (req: AuthRequest, res: Response) => {
         dateFilter = "WHERE DATE_TRUNC('year', created_at) = DATE_TRUNC('year', CURRENT_DATE)";
         break;
       default:
-        dateFilter = "WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)";
+        dateFilter = '';
     }
 
     // Get income statement data

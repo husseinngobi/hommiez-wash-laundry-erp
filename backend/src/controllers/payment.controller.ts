@@ -292,8 +292,8 @@ export const getPaymentStatistics = async (req: AuthRequest, res: Response) => {
       dateFilter = 'WHERE payment_date::date BETWEEN $1 AND $2';
       values.push(from_date, to_date);
     } else {
-      // Default to current month
-      dateFilter = `WHERE DATE_TRUNC('month', payment_date) = DATE_TRUNC('month', CURRENT_DATE)`;
+      // Default to all time so the summary cards reflect the full payment ledger
+      dateFilter = '';
     }
 
     // Total payments by method from payments table

@@ -152,7 +152,7 @@ export default function Dashboard() {
   // Main period selector - controls both stats AND financial performance
   const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'all'>(() => {
     const saved = localStorage.getItem('dashboardStatsPeriod');
-    return (saved as 'today' | 'week' | 'month' | 'year' | 'all') || 'today';
+    return (saved as 'today' | 'week' | 'month' | 'year' | 'all') || 'all';
   });
   
   // Enhanced financial states
