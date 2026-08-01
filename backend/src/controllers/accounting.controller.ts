@@ -340,7 +340,7 @@ export const getCashFlowStatement = async (req: AuthRequest, res: Response) => {
     }
 
     const appendFilter = (baseFilter: string, clause: string) => {
-      if (!baseFilter) return clause;
+      if (!baseFilter) return `WHERE ${clause}`;
       return `${baseFilter}\n        AND ${clause}`;
     };
 
@@ -584,7 +584,7 @@ export const getFinancialRatios = async (req: AuthRequest, res: Response) => {
     }
 
     const appendFilter = (baseFilter: string, clause: string) => {
-      if (!baseFilter) return clause;
+      if (!baseFilter) return `WHERE ${clause}`;
       return `${baseFilter}\n        AND ${clause}`;
     };
 
