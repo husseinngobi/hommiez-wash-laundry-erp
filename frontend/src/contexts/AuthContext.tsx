@@ -76,6 +76,7 @@ const TOKEN_KEY = 'lush_token';
 const USER_KEY = 'lush_user';
 const SESSION_TIMEOUT_KEY = 'lush_session_timeout'; // Store user's preferred timeout
 const LAST_ACTIVITY_KEY = 'lush_last_activity';
+const POST_LOGIN_REDIRECT_KEY = 'lush_post_login_redirect';
 // Writing on every scroll/click event would thrash localStorage
 const ACTIVITY_WRITE_INTERVAL = 5 * 1000;
 
@@ -90,6 +91,31 @@ function readTokenExpiry(token: string): number | null {
   } catch {
     return null;
   }
+}
+
+function storePostLoginRedirect() {
+  if (typeof window === 'undefined') return;
+
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (!currentPath || currentPath === '/login' || currentPath === '/create-account' || currentPath === '/forgot-password') {
+    return;
+  }
+
+  sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, currentPath);
+}
+
+function consumePostLoginRedirect() {
+  try {
+    const redirectPath = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
+    if (redirectPath) {
+      sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+      return redirectPath;
+    }
+  } catch {
+    // Ignore storage errors.
+  }
+
+  return null;
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -147,6 +173,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Logout function (defined before resetInactivityTimer to avoid dependency issues)
   const logout = useCallback(() => {
+    storePostLoginRedirect();
     setToken(null);
     setUser(null);
     localStorage.removeItem(TOKEN_KEY);
@@ -333,8 +360,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      // Redirect to dashboard for all users
-      navigate('/dashboard');
+      const redirectPath = consumePostLoginRedirect();
+
+      // Return the user to the page they were on before auth interruption.
+      navigate(redirectPath || '/dashboard');
     } catch (error: unknown) {
       console.error('❌ Login error:', error);
       const message = error instanceof Error ? error.message : 'Login failed';

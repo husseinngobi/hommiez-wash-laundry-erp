@@ -1,7 +1,9 @@
 import axios from 'axios';
+import type { AxiosRequestConfig, AxiosResponse, RawAxiosResponseHeaders } from 'axios';
 
 const API_CACHE_PREFIX = 'lush-api-cache:';
 const API_CACHE_TTL_MS = 30000;
+const POST_LOGIN_REDIRECT_KEY = 'lush_post_login_redirect';
 
 type CachedApiResponse = {
   data: unknown;
@@ -26,7 +28,7 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-function getRequestCacheKey(config: any) {
+function getRequestCacheKey(config: AxiosRequestConfig) {
   const token = localStorage.getItem('lush_token') || 'anonymous';
   const method = String(config.method || 'get').toLowerCase();
   const url = String(config.url || '');
@@ -52,7 +54,7 @@ function readApiCache(key: string): CachedApiResponse | null {
   }
 }
 
-function writeApiCache(key: string, response: any) {
+function writeApiCache(key: string, response: AxiosResponse<unknown>) {
   try {
     const cacheEntry: CachedApiResponse = {
       data: response.data,
@@ -83,15 +85,27 @@ function clearApiCache() {
   }
 }
 
+function storePostLoginRedirect() {
+  if (typeof window === 'undefined') return;
+
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (!currentPath || currentPath === '/login' || currentPath === '/create-account' || currentPath === '/forgot-password') {
+    return;
+  }
+
+  sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, currentPath);
+}
+
 // Global axios interceptor to handle authentication errors
 export const setupAxiosInterceptors = () => {
   axios.interceptors.request.use(
     (config) => {
       const token = localStorage.getItem('lush_token');
       if (token) {
+        const lowercaseHeaders = config.headers as Record<string, unknown> | undefined;
         const existingAuth =
           config.headers?.Authorization ||
-          (config.headers as any)?.authorization;
+          lowercaseHeaders?.authorization;
 
         if (!existingAuth) {
           config.headers = config.headers || {};
@@ -113,7 +127,7 @@ export const setupAxiosInterceptors = () => {
             data: cachedResponse.data,
             status: cachedResponse.status,
             statusText: cachedResponse.statusText,
-            headers: cachedResponse.headers as any,
+            headers: cachedResponse.headers as RawAxiosResponseHeaders,
             config,
             request: {},
           });
@@ -143,6 +157,7 @@ export const setupAxiosInterceptors = () => {
       // Only force logout when an authenticated request is rejected.
       if (status === 401 && hasAuthHeader && !isPublicAuthRoute) {
         // Clear stored authentication data
+        storePostLoginRedirect();
         localStorage.removeItem('lush_token');
         localStorage.removeItem('lush_user');
         clearApiCache();

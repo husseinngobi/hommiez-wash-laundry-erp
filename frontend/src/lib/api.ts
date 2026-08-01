@@ -53,8 +53,20 @@ api.interceptors.response.use(
       requestUrl.includes('/auth/register') ||
       requestUrl.includes('/auth/forgot-password');
 
+    const storePostLoginRedirect = () => {
+      if (typeof window === 'undefined') return;
+
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (!currentPath || currentPath === '/login' || currentPath === '/create-account' || currentPath === '/forgot-password') {
+        return;
+      }
+
+      sessionStorage.setItem('lush_post_login_redirect', currentPath);
+    };
+
     if (status === 401 && hasAuthHeader && !isPublicAuthRoute) {
       // Token expired or invalid
+      storePostLoginRedirect();
       localStorage.removeItem('lush_token');
       localStorage.removeItem('lush_user');
       window.location.href = '/login';

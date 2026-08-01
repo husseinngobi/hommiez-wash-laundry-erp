@@ -8,11 +8,15 @@ import { AuthRequest } from '../middleware/auth';
  */
 export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'all', from_date, to_date } = req.query;
+    const { period = 'all', from_date, to_date, year } = req.query;
 
     let dateFilter = '';
     let paymentDateFilter = '';
     let expenseDateFilter = '';
+    const selectedYear = typeof year === 'string' ? Number(year) : NaN;
+    const hasSelectedYear = Number.isInteger(selectedYear) && selectedYear >= 2000;
+    const yearStart = hasSelectedYear ? `${selectedYear}-01-01` : '';
+    const yearEnd = hasSelectedYear ? `${selectedYear + 1}-01-01` : '';
     
     if (from_date && to_date) {
       dateFilter = `WHERE created_at >= '${from_date}' AND created_at <= '${to_date}'`;
@@ -41,9 +45,15 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
           expenseDateFilter = "WHERE DATE_TRUNC('month', expense_date) = DATE_TRUNC('month', CURRENT_DATE)";
           break;
         case 'year':
-          dateFilter = "WHERE DATE_TRUNC('year', o.created_at) = DATE_TRUNC('year', CURRENT_DATE)";
-          paymentDateFilter = "WHERE DATE_TRUNC('year', p.payment_date) = DATE_TRUNC('year', CURRENT_DATE)";
-          expenseDateFilter = "WHERE DATE_TRUNC('year', expense_date) = DATE_TRUNC('year', CURRENT_DATE)";
+          if (yearStart && yearEnd) {
+            dateFilter = `WHERE o.created_at >= '${yearStart}' AND o.created_at < '${yearEnd}'`;
+            paymentDateFilter = `WHERE p.payment_date >= '${yearStart}' AND p.payment_date < '${yearEnd}'`;
+            expenseDateFilter = `WHERE expense_date >= '${yearStart}' AND expense_date < '${yearEnd}'`;
+          } else {
+            dateFilter = "WHERE DATE_TRUNC('year', o.created_at) = DATE_TRUNC('year', CURRENT_DATE)";
+            paymentDateFilter = "WHERE DATE_TRUNC('year', p.payment_date) = DATE_TRUNC('year', CURRENT_DATE)";
+            expenseDateFilter = "WHERE DATE_TRUNC('year', expense_date) = DATE_TRUNC('year', CURRENT_DATE)";
+          }
           break;
         default:
           dateFilter = '';
@@ -301,9 +311,14 @@ export const getBalanceSheet = async (req: AuthRequest, res: Response) => {
  */
 export const getCashFlowStatement = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'all', from_date, to_date } = req.query;
+    const { period = 'all', from_date, to_date, year } = req.query;
 
     let dateFilter = '';
+    const selectedYear = typeof year === 'string' ? Number(year) : NaN;
+    const hasSelectedYear = Number.isInteger(selectedYear) && selectedYear >= 2000;
+    const yearStart = hasSelectedYear ? `${selectedYear}-01-01` : '';
+    const yearEnd = hasSelectedYear ? `${selectedYear + 1}-01-01` : '';
+
     if (from_date && to_date) {
       dateFilter = `WHERE created_at >= '${from_date}' AND created_at <= '${to_date}'`;
     } else {
@@ -315,7 +330,9 @@ export const getCashFlowStatement = async (req: AuthRequest, res: Response) => {
           dateFilter = "WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)";
           break;
         case 'year':
-          dateFilter = "WHERE DATE_TRUNC('year', created_at) = DATE_TRUNC('year', CURRENT_DATE)";
+          dateFilter = yearStart && yearEnd
+            ? `WHERE created_at >= '${yearStart}' AND created_at < '${yearEnd}'`
+            : "WHERE DATE_TRUNC('year', created_at) = DATE_TRUNC('year', CURRENT_DATE)";
           break;
         default:
           dateFilter = '';

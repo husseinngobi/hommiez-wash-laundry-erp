@@ -159,6 +159,22 @@ export default function Accounting() {
   const [cashFlow, setCashFlow] = useState<CashFlow | null>(null);
   const [trialBalance, setTrialBalance] = useState<TrialBalance | null>(null);
 
+  const getAccountingPeriodParams = () => {
+    if (period === 'year') {
+      return `period=${period}&year=${selectedYear}`;
+    }
+
+    return `period=${period}`;
+  };
+
+  const getAsOfDate = () => {
+    if (period === 'year') {
+      return `${selectedYear}-12-31`;
+    }
+
+    return new Date().toISOString().split('T')[0];
+  };
+
   useEffect(() => {
     if (activeTab === 'income-statement') {
       fetchIncomeStatement();
@@ -170,13 +186,13 @@ export default function Accounting() {
       fetchTrialBalance();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, period, token]);
+  }, [activeTab, period, selectedYear, token]);
 
   const fetchIncomeStatement = async () => {
     try {
       setLoading(true);
       const response = await axios.get(
-        `${API_BASE_URL}/accounting/income-statement?period=${period}`,
+        `${API_BASE_URL}/accounting/income-statement?${getAccountingPeriodParams()}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setIncomeStatement(response.data);
@@ -209,7 +225,7 @@ export default function Accounting() {
     try {
       setLoading(true);
       const response = await axios.get(
-        `${API_BASE_URL}/accounting/cash-flow?period=${period}`,
+        `${API_BASE_URL}/accounting/cash-flow?${getAccountingPeriodParams()}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setCashFlow(response.data);
@@ -224,7 +240,7 @@ export default function Accounting() {
     try {
       setLoading(true);
       const response = await axios.get(
-        `${API_BASE_URL}/accounting/trial-balance`,
+        `${API_BASE_URL}/accounting/trial-balance?as_of_date=${getAsOfDate()}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setTrialBalance(response.data);
@@ -254,7 +270,7 @@ export default function Accounting() {
       
       if (selectedReports.includes('income-statement') && !incomeData) {
         fetchPromises.push(
-          axios.get(`${API_BASE_URL}/accounting/income-statement?period=${period}`, {
+          axios.get(`${API_BASE_URL}/accounting/income-statement?${getAccountingPeriodParams()}`, {
             headers: { Authorization: `Bearer ${token}` }
           }).then(res => {
             incomeData = res.data;
@@ -276,7 +292,7 @@ export default function Accounting() {
       
       if (selectedReports.includes('cash-flow') && !cashFlowData) {
         fetchPromises.push(
-          axios.get(`${API_BASE_URL}/accounting/cash-flow?period=${period}`, {
+          axios.get(`${API_BASE_URL}/accounting/cash-flow?${getAccountingPeriodParams()}`, {
             headers: { Authorization: `Bearer ${token}` }
           }).then(res => {
             cashFlowData = res.data;
@@ -287,7 +303,7 @@ export default function Accounting() {
       
       if (selectedReports.includes('trial-balance') && !trialBalanceData) {
         fetchPromises.push(
-          axios.get(`${API_BASE_URL}/accounting/trial-balance`, {
+          axios.get(`${API_BASE_URL}/accounting/trial-balance?as_of_date=${getAsOfDate()}`, {
             headers: { Authorization: `Bearer ${token}` }
           }).then(res => {
             trialBalanceData = res.data;
