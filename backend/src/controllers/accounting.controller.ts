@@ -52,6 +52,11 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    const appendFilter = (baseFilter: string, clause: string) => {
+      if (!baseFilter) return clause;
+      return `${baseFilter}\n        AND ${clause}`;
+    };
+
     // Revenue (from payments table — cash actually received)
     // is_refund may be missing on older DBs; COALESCE treats NULL as not-refund
     const revenueResult = await query(`
@@ -76,8 +81,7 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
       JOIN orders o ON p.order_id = o.id
       JOIN order_items oi ON o.id = oi.order_id
       JOIN price_items pi ON oi.price_item_id = pi.id
-      ${paymentDateFilter}
-        AND COALESCE(p.is_refund, FALSE) = FALSE
+      ${appendFilter(paymentDateFilter, 'COALESCE(p.is_refund, FALSE) = FALSE')}
       GROUP BY pi.category
       ORDER BY revenue DESC
     `);
@@ -89,9 +93,10 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(amount), 0) as amount,
         COUNT(*) as count
       FROM expenses
-      ${expenseDateFilter}
-        AND approval_status = 'APPROVED'
-        AND category != 'Salaries'
+      ${appendFilter(
+        appendFilter(expenseDateFilter, "approval_status = 'APPROVED'"),
+        "category != 'Salaries'"
+      )}
       GROUP BY category
       ORDER BY amount DESC
     `);
@@ -102,17 +107,17 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(net_amount), 0) as total_salaries,
         COUNT(*) as payment_count
       FROM salary_payments
-      ${expenseDateFilter.replace('expense_date', 'payment_date')}
-        AND payment_status = 'PAID'
+      ${appendFilter(expenseDateFilter.replace('expense_date', 'payment_date'), "payment_status = 'PAID'")}
     `);
 
     // Total expenses (excluding salaries)
     const totalExpensesResult = await query(`
       SELECT COALESCE(SUM(amount), 0) as total_expenses
       FROM expenses
-      ${expenseDateFilter}
-        AND approval_status = 'APPROVED'
-        AND category != 'Salaries'
+      ${appendFilter(
+        appendFilter(expenseDateFilter, "approval_status = 'APPROVED'"),
+        "category != 'Salaries'"
+      )}
     `);
 
     const totalPayments = parseFloat(revenueResult.rows[0].total_payments);
@@ -131,8 +136,7 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(total_amount), 0) as revenue_inc_vat,
         COALESCE(SUM(total_amount - COALESCE(tax_amount, 0)), 0) as revenue_exc_vat
       FROM orders o
-      ${dateFilter}
-        AND tax_amount > 0
+      ${appendFilter(dateFilter, 'tax_amount > 0')}
     `);
 
     const vatSummary = {
@@ -318,26 +322,28 @@ export const getCashFlowStatement = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    const appendFilter = (baseFilter: string, clause: string) => {
+      if (!baseFilter) return clause;
+      return `${baseFilter}\n        AND ${clause}`;
+    };
+
     // Operating Activities
     const cashFromCustomersResult = await query(`
       SELECT COALESCE(SUM(amount_paid), 0) as cash_from_customers
       FROM orders
-      ${dateFilter}
-        AND payment_status = 'PAID'
+      ${appendFilter(dateFilter, "payment_status = 'PAID'")}
     `);
 
     const cashForExpensesResult = await query(`
       SELECT COALESCE(SUM(amount), 0) as cash_for_expenses
       FROM expenses
-      ${dateFilter.replace('created_at', 'expense_date')}
-        AND approval_status = 'APPROVED'
+      ${appendFilter(dateFilter.replace('created_at', 'expense_date'), "approval_status = 'APPROVED'")}
     `);
 
     const cashForSalariesResult = await query(`
       SELECT COALESCE(SUM(net_amount), 0) as cash_for_salaries
       FROM salary_payments
-      ${dateFilter.replace('created_at', 'payment_date')}
-        AND payment_status = 'PAID'
+      ${appendFilter(dateFilter.replace('created_at', 'payment_date'), "payment_status = 'PAID'")}
     `);
 
     // Investing Activities (equipment, inventory purchases)
@@ -560,10 +566,15 @@ export const getFinancialRatios = async (req: AuthRequest, res: Response) => {
         dateFilter = '';
     }
 
+    const appendFilter = (baseFilter: string, clause: string) => {
+      if (!baseFilter) return clause;
+      return `${baseFilter}\n        AND ${clause}`;
+    };
+
     // Get income statement data
     const revenueResult = await query(`SELECT COALESCE(SUM(amount_paid), 0) as revenue FROM orders ${dateFilter}`);
-    const expensesResult = await query(`SELECT COALESCE(SUM(amount), 0) as expenses FROM expenses ${dateFilter.replace('created_at', 'expense_date')} AND approval_status = 'APPROVED'`);
-    const salariesResult = await query(`SELECT COALESCE(SUM(net_amount), 0) as salaries FROM salary_payments ${dateFilter.replace('created_at', 'payment_date')} AND payment_status = 'PAID'`);
+    const expensesResult = await query(`SELECT COALESCE(SUM(amount), 0) as expenses FROM expenses ${appendFilter(dateFilter.replace('created_at', 'expense_date'), "approval_status = 'APPROVED'")}`);
+    const salariesResult = await query(`SELECT COALESCE(SUM(net_amount), 0) as salaries FROM salary_payments ${appendFilter(dateFilter.replace('created_at', 'payment_date'), "payment_status = 'PAID'")}`);
 
     // Get balance sheet data
     const assetsResult = await query(`
