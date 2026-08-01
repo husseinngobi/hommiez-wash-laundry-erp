@@ -582,6 +582,8 @@ export default function Orders() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
   const [showRefundDialog, setShowRefundDialog] = useState(false);
+  const [showItemNoteDialog, setShowItemNoteDialog] = useState(false);
+  const [selectedItemNote, setSelectedItemNote] = useState<OrderItem | null>(null);
   const [cancelPaymentTarget, setCancelPaymentTarget] = useState<PaymentTransaction | null>(null);
   const [cancelPaymentReason, setCancelPaymentReason] = useState('');
   const [cancellingPayment, setCancellingPayment] = useState(false);
@@ -1841,9 +1843,22 @@ export default function Orders() {
                         <span>{formatUGX(item.unit_price)} each</span>
                       </div>
                       {item.notes?.trim() && (
-                        <div className="flex items-start gap-1.5 text-xs text-muted-foreground border-t pt-2">
-                          <StickyNote className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                          <span className="break-words">{item.notes}</span>
+                        <div className="flex items-center justify-between gap-2 border-t pt-2">
+                          <div className="flex items-start gap-1.5 text-xs text-muted-foreground min-w-0">
+                            <StickyNote className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                            <span className="truncate">Note added</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              setSelectedItemNote(item);
+                              setShowItemNoteDialog(true);
+                            }}
+                          >
+                            View note
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -1870,10 +1885,18 @@ export default function Orders() {
                             <div className="max-w-[260px]">
                               <span className="block break-words">{item.item_name}</span>
                               {item.notes?.trim() && (
-                                <span className="mt-1 flex items-start gap-1 text-xs font-normal text-muted-foreground">
-                                  <StickyNote className="h-3 w-3 mt-0.5 shrink-0" />
-                                  <span className="break-words">{item.notes}</span>
-                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="mt-1 h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
+                                  onClick={() => {
+                                    setSelectedItemNote(item);
+                                    setShowItemNoteDialog(true);
+                                  }}
+                                >
+                                  <StickyNote className="h-3 w-3 mr-1 shrink-0" />
+                                  View note
+                                </Button>
                               )}
                             </div>
                           </TableCell>
@@ -3252,6 +3275,29 @@ export default function Orders() {
               }} 
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showItemNoteDialog} onOpenChange={setShowItemNoteDialog}>
+        <DialogContent className="max-w-[95vw] sm:max-w-lg p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <StickyNote className="h-4 w-4" />
+              Item Note
+            </DialogTitle>
+            <DialogDescription>
+              {selectedItemNote?.item_name}
+              {selectedItemNote?.service_type ? ` • ${selectedItemNote.service_type}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg border bg-muted/40 p-4 text-sm whitespace-pre-wrap break-words min-h-[120px]">
+            {selectedItemNote?.notes || 'No note available.'}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowItemNoteDialog(false)} className="w-full sm:w-auto">
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

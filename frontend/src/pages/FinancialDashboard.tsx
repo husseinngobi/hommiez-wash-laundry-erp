@@ -92,8 +92,7 @@ const FinancialDashboard = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState(() => {
-    // Persist period selection in localStorage
-    return localStorage.getItem('financialDashboardPeriod') || 'month';
+    return localStorage.getItem('financialDashboardPeriod') || 'all';
   });
   const [dateRange, setDateRange] = useState({
     from_date: '',
@@ -178,7 +177,8 @@ const FinancialDashboard = () => {
 
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
-      const periodText = period === 'today' ? 'Today' : 
+      const periodText = period === 'all' ? 'All Time' :
+            period === 'today' ? 'Today' : 
                         period === 'week' ? 'This Week' : 
                         period === 'month' ? 'This Month' : 
                         `Year ${period}`;
@@ -388,6 +388,7 @@ const FinancialDashboard = () => {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
               <SelectItem value="today">Today</SelectItem>
               <SelectItem value="week">This Week</SelectItem>
               <SelectItem value="month">This Month</SelectItem>
@@ -569,6 +570,7 @@ const FinancialDashboard = () => {
             <CardTitle className="flex items-center gap-2">
               <Receipt className="h-5 w-5" />
               Payment Methods Breakdown
+              {period === 'all' && ' (All Time)'}
               {period === 'today' && ' (Today)'}
               {period === 'week' && ' (This Week)'}
               {period === 'month' && ' (This Month)'}
@@ -638,6 +640,7 @@ const FinancialDashboard = () => {
           <CardHeader>
             <CardTitle>
               Financial Trend
+              {period === 'all' && ' (All Time)'}
               {period === 'today' && ' (Today)'}
               {period === 'week' && ' (7 Days)'}
               {period === 'month' && ' (This Month)'}

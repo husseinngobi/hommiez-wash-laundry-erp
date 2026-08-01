@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -6,34 +7,41 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import Login from "./pages/Login";
-import CreateAccount from "./pages/CreateAccount";
-import ForgotPassword from "./pages/ForgotPassword";
-import ChangePassword from "./pages/ChangePassword";
-import Dashboard from "./pages/Dashboard";
-import Orders from "./pages/Orders";
-import NewOrder from "./pages/NewOrder";
-import Customers from "./pages/Customers";
-import Messages from "./pages/Messages";
-import PriceList from "./pages/PriceList";
-import Inventory from "./pages/Inventory";
-import Deliveries from "./pages/Deliveries";
-import Reports from "./pages/Reports";
-import Settings from "./pages/Settings";
-import Profile from "./pages/Profile";
-import Help from "./pages/Help";
-import UserManagement from "./pages/UserManagement";
-import PasswordResetRequests from "./pages/PasswordResetRequests";
-import Expenses from "./pages/Expenses";
-import FinancialDashboard from "./pages/FinancialDashboard";
-import Accounting from "./pages/Accounting";
-import Payroll from "./pages/Payroll";
-import Payments from "./pages/Payments";
-import RefundRequests from "./pages/RefundRequests";
-import NotFound from "./pages/NotFound";
 import ScrollToTop from "./components/ScrollToTop";
 
+const Login = lazy(() => import("./pages/Login"));
+const CreateAccount = lazy(() => import("./pages/CreateAccount"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ChangePassword = lazy(() => import("./pages/ChangePassword"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Orders = lazy(() => import("./pages/Orders"));
+const NewOrder = lazy(() => import("./pages/NewOrder"));
+const Customers = lazy(() => import("./pages/Customers"));
+const Messages = lazy(() => import("./pages/Messages"));
+const PriceList = lazy(() => import("./pages/PriceList"));
+const Inventory = lazy(() => import("./pages/Inventory"));
+const Deliveries = lazy(() => import("./pages/Deliveries"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Help = lazy(() => import("./pages/Help"));
+const UserManagement = lazy(() => import("./pages/UserManagement"));
+const PasswordResetRequests = lazy(() => import("./pages/PasswordResetRequests"));
+const Expenses = lazy(() => import("./pages/Expenses"));
+const FinancialDashboard = lazy(() => import("./pages/FinancialDashboard"));
+const Accounting = lazy(() => import("./pages/Accounting"));
+const Payroll = lazy(() => import("./pages/Payroll"));
+const Payments = lazy(() => import("./pages/Payments"));
+const RefundRequests = lazy(() => import("./pages/RefundRequests"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
 const queryClient = new QueryClient();
+
+const routeFallback = (
+  <div className="min-h-screen flex items-center justify-center bg-background text-sm text-muted-foreground">
+    Loading screen...
+  </div>
+);
 
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
@@ -44,190 +52,192 @@ const App = () => (
         <BrowserRouter>
           <ScrollToTop />
           <AuthProvider>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/login" element={<Login />} />
-              <Route path="/create-account" element={<CreateAccount />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              
-              {/* Protected Route - Change Password (requires authentication) */}
-              <Route 
-                path="/change-password" 
-                element={
-                  <ProtectedRoute>
-                    <ChangePassword />
-                  </ProtectedRoute>
-                } 
-              />
-              
-              {/* Protected Routes - Admin Only */}
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/customers"
-                element={
-                  <ProtectedRoute>
-                    <Customers />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/prices"
-                element={
-                  <ProtectedRoute>
-                    <PriceList />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/inventory"
-                element={
-                  <ProtectedRoute requireManager>
-                    <Inventory />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/deliveries"
-                element={
-                  <ProtectedRoute>
-                    <Deliveries />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/messages"
-                element={
-                  <ProtectedRoute>
-                    <Messages />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/reports"
-                element={
-                  <ProtectedRoute requireManager>
-                    <Reports />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/settings"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <Settings />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/user-management"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <UserManagement />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/password-reset-requests"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <PasswordResetRequests />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/financial"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <FinancialDashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/accounting"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <Accounting />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/payments"
-                element={
-                  <ProtectedRoute>
-                    <Payments />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/refund-requests"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <RefundRequests />
-                  </ProtectedRoute>
-                }
-              />
-              
-              {/* Protected Routes - Both Admin and Cashier */}
-              <Route
-                path="/orders"
-                element={
-                  <ProtectedRoute>
-                    <Orders />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/orders/new"
-                element={
-                  <ProtectedRoute>
-                    <NewOrder />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/expenses"
-                element={
-                  <ProtectedRoute>
-                    <Expenses />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/help"
-                element={
-                  <ProtectedRoute>
-                    <Help />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/profile"
-                element={
-                  <ProtectedRoute>
-                    <Profile />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/payroll"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <Payroll />
-                  </ProtectedRoute>
-                }
-              />
-              
-              {/* Catch-all */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <Suspense fallback={routeFallback}>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/login" element={<Login />} />
+                <Route path="/create-account" element={<CreateAccount />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                
+                {/* Protected Route - Change Password (requires authentication) */}
+                <Route 
+                  path="/change-password" 
+                  element={
+                    <ProtectedRoute>
+                      <ChangePassword />
+                    </ProtectedRoute>
+                  } 
+                />
+                
+                {/* Protected Routes - Admin Only */}
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/customers"
+                  element={
+                    <ProtectedRoute>
+                      <Customers />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/prices"
+                  element={
+                    <ProtectedRoute>
+                      <PriceList />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/inventory"
+                  element={
+                    <ProtectedRoute requireManager>
+                      <Inventory />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/deliveries"
+                  element={
+                    <ProtectedRoute>
+                      <Deliveries />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/messages"
+                  element={
+                    <ProtectedRoute>
+                      <Messages />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reports"
+                  element={
+                    <ProtectedRoute requireManager>
+                      <Reports />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <Settings />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/user-management"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <UserManagement />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/password-reset-requests"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <PasswordResetRequests />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/financial"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <FinancialDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/accounting"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <Accounting />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/payments"
+                  element={
+                    <ProtectedRoute>
+                      <Payments />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/refund-requests"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <RefundRequests />
+                    </ProtectedRoute>
+                  }
+                />
+                
+                {/* Protected Routes - Both Admin and Cashier */}
+                <Route
+                  path="/orders"
+                  element={
+                    <ProtectedRoute>
+                      <Orders />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/orders/new"
+                  element={
+                    <ProtectedRoute>
+                      <NewOrder />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/expenses"
+                  element={
+                    <ProtectedRoute>
+                      <Expenses />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/help"
+                  element={
+                    <ProtectedRoute>
+                      <Help />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/profile"
+                  element={
+                    <ProtectedRoute>
+                      <Profile />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/payroll"
+                  element={
+                    <ProtectedRoute requireAdmin>
+                      <Payroll />
+                    </ProtectedRoute>
+                  }
+                />
+                
+                {/* Catch-all */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>

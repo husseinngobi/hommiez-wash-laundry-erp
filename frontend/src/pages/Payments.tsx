@@ -107,6 +107,13 @@ interface PendingPayment {
   rejected_by_name?: string;
 }
 
+const formatLocalDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const Payments = () => {
   const { token, isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -132,20 +139,14 @@ const Payments = () => {
   const [loadingPending, setLoadingPending] = useState(false);
   const [loadingRejected, setLoadingRejected] = useState(false);
 
-  // Set default date filters to current month
-  const today = new Date();
-  const currentMonth = today.toISOString().slice(0, 7);
-  const firstDay = `${currentMonth}-01`;
-  const lastDay = `${currentMonth}-${new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()}`;
-
   const [filters, setFilters] = useState({
-    from_date: firstDay,
-    to_date: lastDay,
+    from_date: '',
+    to_date: '',
     payment_method: '',
     search: '',
   });
   
-  const [selectedPeriod, setSelectedPeriod] = useState('THIS_MONTH');
+  const [selectedPeriod, setSelectedPeriod] = useState('ALL_TIME');
   
   // Helper function to get date ranges for different periods
   const getPeriodDates = (period: string) => {
@@ -155,11 +156,11 @@ const Payments = () => {
     const day = now.getDate();
     
     switch (period) {
+      case 'ALL_TIME':
+        return { from_date: '', to_date: '' };
+
       case 'TODAY':
-        return {
-          from_date: now.toISOString().split('T')[0],
-          to_date: now.toISOString().split('T')[0]
-        };
+        return { from_date: formatLocalDate(now), to_date: formatLocalDate(now) };
       
       case 'THIS_WEEK': {
         const firstDayOfWeek = new Date(now);
@@ -167,15 +168,15 @@ const Payments = () => {
         const lastDayOfWeek = new Date(firstDayOfWeek);
         lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6); // Saturday
         return {
-          from_date: firstDayOfWeek.toISOString().split('T')[0],
-          to_date: lastDayOfWeek.toISOString().split('T')[0]
+          from_date: formatLocalDate(firstDayOfWeek),
+          to_date: formatLocalDate(lastDayOfWeek)
         };
       }
       
       case 'THIS_MONTH':
         return {
           from_date: `${year}-${String(month + 1).padStart(2, '0')}-01`,
-          to_date: `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`
+          to_date: `${year}-${String(month + 1).padStart(2, '0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, '0')}`
         };
       
       case 'LAST_MONTH': {
@@ -183,7 +184,7 @@ const Payments = () => {
         const lastMonthYear = month === 0 ? year - 1 : year;
         return {
           from_date: `${lastMonthYear}-${String(lastMonth + 1).padStart(2, '0')}-01`,
-          to_date: `${lastMonthYear}-${String(lastMonth + 1).padStart(2, '0')}-${new Date(lastMonthYear, lastMonth + 1, 0).getDate()}`
+          to_date: `${lastMonthYear}-${String(lastMonth + 1).padStart(2, '0')}-${String(new Date(lastMonthYear, lastMonth + 1, 0).getDate()).padStart(2, '0')}`
         };
       }
       
@@ -674,6 +675,7 @@ const Payments = () => {
                     <SelectValue placeholder="Select Period" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="ALL_TIME">All Time</SelectItem>
                     <SelectItem value="TODAY">Today</SelectItem>
                     <SelectItem value="THIS_WEEK">This Week</SelectItem>
                     <SelectItem value="THIS_MONTH">This Month</SelectItem>
