@@ -149,6 +149,7 @@ export function Sidebar({ isOpen, hasInteracted = false, onClose }: SidebarProps
           {visibleNavigation.map((item) => {
             const isActive = location.pathname === item.href || 
               (item.href !== '/' && location.pathname.startsWith(item.href));
+            const displayName = isCashier && item.href === '/reports' ? 'My Performance' : item.name;
             return (
               <li key={item.name}>
                 <Link
@@ -156,7 +157,7 @@ export function Sidebar({ isOpen, hasInteracted = false, onClose }: SidebarProps
                   className={cn('nav-item', isActive && 'active')}
                 >
                   <item.icon className="h-5 w-5 flex-shrink-0" />
-                  <span className="font-medium truncate">{item.name}</span>
+                  <span className="font-medium truncate">{displayName}</span>
                 </Link>
               </li>
             );

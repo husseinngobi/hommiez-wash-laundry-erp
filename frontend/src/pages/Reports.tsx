@@ -143,6 +143,8 @@ export default function Reports() {
   // Check if user is DESKTOP_AGENT (sees only own performance)
   const isDesktopAgent = user?.role === 'DESKTOP_AGENT';
   const isManagerOrAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const pageTitle = isDesktopAgent ? 'My Performance' : 'Reports';
+  const pageSubtitle = isDesktopAgent ? 'Your day-to-day performance overview' : 'Business analytics and insights';
 
   // Pie chart colors
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7c7c'];
@@ -593,7 +595,7 @@ export default function Reports() {
 
   if (loading) {
     return (
-      <MainLayout title="Reports" subtitle={isDesktopAgent ? "My Performance" : "Business analytics and insights"}>
+      <MainLayout title={pageTitle} subtitle={pageSubtitle}>
         <div className="flex items-center justify-center h-64">
           <p className="text-muted-foreground">Loading reports...</p>
         </div>
@@ -604,7 +606,7 @@ export default function Reports() {
   // For ADMIN/MANAGER, check if reportData exists
   if (isManagerOrAdmin && !reportData) {
     return (
-      <MainLayout title="Reports" subtitle="Business analytics and insights">
+      <MainLayout title={pageTitle} subtitle={pageSubtitle}>
         <div className="flex items-center justify-center h-64">
           <p className="text-muted-foreground">Loading reports...</p>
         </div>
@@ -628,7 +630,7 @@ export default function Reports() {
   }));
 
   return (
-    <MainLayout title="Reports" subtitle={isDesktopAgent ? "My Performance" : "Business analytics and insights"}>
+    <MainLayout title={pageTitle} subtitle={pageSubtitle}>
       {/* Header with Period Selector and Download Buttons */}
       <div className="mb-6 flex flex-col gap-4">
         <div className="flex items-center gap-2">
