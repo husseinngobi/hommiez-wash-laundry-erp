@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+import { Sidebar } from "@/components/layout/Sidebar";
 import ScrollToTop from "./components/ScrollToTop";
 
 const Login = lazy(() => import("./pages/Login"));
@@ -38,8 +39,36 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const queryClient = new QueryClient();
 
 const routeFallback = (
-  <div className="min-h-screen flex items-center justify-center bg-background text-sm text-muted-foreground">
-    Loading screen...
+  <div className="min-h-screen bg-background">
+    <Sidebar isOpen={true} hasInteracted={false} />
+    <div className="pl-64">
+      <header className="sticky top-0 z-30 h-14 md:h-16 bg-card border-b border-border flex items-center justify-between px-3 md:px-6 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0 overflow-hidden">
+          <div className="h-9 w-9 rounded-lg bg-muted animate-pulse" />
+          <div className="min-w-0 space-y-2">
+            <div className="h-4 w-32 rounded bg-muted animate-pulse" />
+            <div className="hidden sm:block h-3 w-48 rounded bg-muted animate-pulse" />
+          </div>
+        </div>
+        <div className="hidden sm:block h-9 w-72 rounded-lg bg-muted animate-pulse" />
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="h-8 w-8 rounded-full bg-muted animate-pulse" />
+          <div className="h-8 w-8 rounded-full bg-muted animate-pulse" />
+          <div className="h-8 w-8 rounded-full bg-muted animate-pulse" />
+        </div>
+      </header>
+      <main className="p-3 md:p-6">
+        <div className="space-y-4">
+          <div className="h-24 rounded-xl bg-card border border-border animate-pulse" />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="h-40 rounded-xl bg-card border border-border animate-pulse" />
+            <div className="h-40 rounded-xl bg-card border border-border animate-pulse" />
+            <div className="h-40 rounded-xl bg-card border border-border animate-pulse" />
+          </div>
+          <div className="h-[420px] rounded-xl bg-card border border-border animate-pulse" />
+        </div>
+      </main>
+    </div>
   </div>
 );
 
