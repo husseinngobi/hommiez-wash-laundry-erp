@@ -551,9 +551,10 @@ export default function Settings() {
 
   // Save bargain limits for all roles
   const saveBargainLimits = async () => {
-    const desktopAgent = Math.max(0, Math.round(Number(desktopAgentBargainLimit) || 0));
-    const manager = Math.max(0, Math.round(Number(managerBargainLimit) || 0));
-    const admin = Math.max(0, Math.round(Number(adminBargainLimit) || 0));
+    const parseLimit = (value: string) => Number(String(value || '').replace(/,/g, '').trim()) || 0;
+    const desktopAgent = Math.max(0, Math.round(parseLimit(desktopAgentBargainLimit)));
+    const manager = Math.max(0, Math.round(parseLimit(managerBargainLimit)));
+    const admin = Math.max(0, Math.round(parseLimit(adminBargainLimit)));
 
     if (manager < desktopAgent) {
       toast({

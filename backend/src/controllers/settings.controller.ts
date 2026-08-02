@@ -341,9 +341,18 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
   try {
     const { desktop_agent_limit, manager_limit, admin_limit } = req.body;
 
-    const desktopAgent = Number(desktop_agent_limit);
-    const manager = Number(manager_limit);
-    const admin = Number(admin_limit);
+    const parseLimit = (value: unknown): number => {
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const normalized = value.replace(/,/g, '').trim();
+        return Number(normalized);
+      }
+      return Number(value);
+    };
+
+    const desktopAgent = parseLimit(desktop_agent_limit);
+    const manager = parseLimit(manager_limit);
+    const admin = parseLimit(admin_limit);
 
     if (!Number.isFinite(desktopAgent) || !Number.isFinite(manager) || !Number.isFinite(admin)) {
       return res.status(400).json({ error: 'Bargain limits must be numbers' });
