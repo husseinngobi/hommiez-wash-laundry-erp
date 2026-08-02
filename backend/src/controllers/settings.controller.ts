@@ -339,17 +339,23 @@ export const getBargainLimits = async (req: AuthRequest, res: Response) => {
 
 export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
   try {
-    // Administrators are deliberately not configurable here — they are uncapped
-    const { desktop_agent_limit, manager_limit } = req.body;
+    const { desktop_agent_limit, manager_limit, admin_limit } = req.body;
 
     const desktopAgent = Number(desktop_agent_limit);
     const manager = Number(manager_limit);
+    const admin = Number(admin_limit);
 
-    if (!Number.isFinite(desktopAgent) || !Number.isFinite(manager)) {
+    if (!Number.isFinite(desktopAgent) || !Number.isFinite(manager) || !Number.isFinite(admin)) {
       return res.status(400).json({ error: 'Bargain limits must be numbers' });
     }
-    if (desktopAgent < 0 || manager < 0) {
+    if (desktopAgent < 0 || manager < 0 || admin < 0) {
       return res.status(400).json({ error: 'Bargain limits cannot be negative' });
+    }
+    if (manager < desktopAgent) {
+      return res.status(400).json({ error: 'Manager limit should not be lower than desktop agent limit' });
+    }
+    if (admin < manager) {
+      return res.status(400).json({ error: 'Administrator limit should not be lower than manager limit' });
     }
 
     // Update all users by role
@@ -363,8 +369,13 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
       [manager]
     );
 
+    await query(
+      `UPDATE users SET max_bargain_amount = $1 WHERE role = 'ADMIN'`,
+      [admin]
+    );
+
     console.log(
-      `✅ Bargain limits updated by ${req.user?.email} — agent ${desktopAgent}, manager ${manager} (admins uncapped)`
+      `✅ Bargain limits updated by ${req.user?.email} — agent ${desktopAgent}, manager ${manager}, admin ${admin}`
     );
 
     res.json({
@@ -372,7 +383,7 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
       limits: {
         desktop_agent: desktopAgent,
         manager: manager,
-        admin: null,
+        admin: admin,
       },
     });
   } catch (error) {

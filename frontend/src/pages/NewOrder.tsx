@@ -21,6 +21,7 @@ import {
   UserPlus,
   MessageCircle,
   StickyNote,
+  Loader2,
 } from 'lucide-react';
 import {
   Select,
@@ -94,6 +95,12 @@ interface OrderItem {
   unit_price: number;
   /** Per-item bargain given to this customer on this line */
   discount_amount?: number;
+  /** Quantity used when the current bargain was entered */
+  discount_basis_quantity?: number;
+  /** Bargain amount at the basis quantity */
+  discount_basis_amount?: number;
+  /** Whether the line bargain should scale as quantity changes */
+  discount_scales_with_quantity?: boolean;
   /** Net line total: quantity × unit price − item discount */
   subtotal: number;
   unit?: string;
@@ -116,6 +123,24 @@ interface Branch {
 function computeLineSubtotal(quantity: number, unitPrice: number, discount = 0): number {
   const gross = Math.round(Number(quantity) * Number(unitPrice));
   return Math.max(0, gross - Math.max(0, Math.round(Number(discount) || 0)));
+}
+
+function getScaledLineDiscount(
+  item: Pick<OrderItem, 'discount_amount' | 'discount_basis_quantity' | 'discount_basis_amount' | 'discount_scales_with_quantity'>,
+  quantity: number
+): number {
+  if (!item.discount_scales_with_quantity) {
+    return Math.max(0, Math.round(Number(item.discount_amount || 0)));
+  }
+
+  const basisQuantity = Number(item.discount_basis_quantity || 0);
+  const basisAmount = Number(item.discount_basis_amount ?? item.discount_amount ?? 0);
+
+  if (basisQuantity > 0 && basisAmount > 0) {
+    return Math.max(0, Math.round((basisAmount * Number(quantity)) / basisQuantity));
+  }
+
+  return Math.max(0, Math.round(Number(item.discount_amount || 0)));
 }
 
 
@@ -174,6 +199,7 @@ export default function NewOrder() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerPopover, setShowCustomerPopover] = useState(false);
   const [showAddCustomerDialog, setShowAddCustomerDialog] = useState(false);
+  const [addingCustomer, setAddingCustomer] = useState(false);
 
   // Price items state
   const [priceItems, setPriceItems] = useState<PriceItem[]>([]);
@@ -356,13 +382,15 @@ export default function NewOrder() {
       const updated = [...orderItems];
       const step = item.unit === 'kg' ? 0.5 : 1;
       const nextQty = Number(updated[existingIndex].quantity) + step;
+      const nextDiscount = getScaledLineDiscount(updated[existingIndex], nextQty);
       updated[existingIndex] = {
         ...updated[existingIndex],
         quantity: nextQty,
+        discount_amount: nextDiscount,
         subtotal: computeLineSubtotal(
           nextQty,
           Number(updated[existingIndex].unit_price),
-          updated[existingIndex].discount_amount
+          nextDiscount
         ),
       };
       setOrderItems(updated);
@@ -411,10 +439,11 @@ export default function NewOrder() {
     updated[index] = {
       ...updated[index],
       quantity: normalizedQuantity,
+      discount_amount: getScaledLineDiscount(updated[index], normalizedQuantity),
       subtotal: computeLineSubtotal(
         normalizedQuantity,
         Number(updated[index].unit_price),
-        updated[index].discount_amount
+        getScaledLineDiscount(updated[index], normalizedQuantity)
       ),
     };
     setOrderItems(updated);
@@ -445,13 +474,15 @@ export default function NewOrder() {
 
     const quantity = isKg ? Math.round(parsed * 100) / 100 : Math.round(parsed);
     const updated = [...orderItems];
+    const nextDiscount = getScaledLineDiscount(updated[index], quantity);
     updated[index] = {
       ...updated[index],
       quantity,
+      discount_amount: nextDiscount,
       subtotal: computeLineSubtotal(
         quantity,
         Number(updated[index].unit_price),
-        updated[index].discount_amount
+        nextDiscount
       ),
     };
     setOrderItems(updated);
@@ -479,6 +510,9 @@ export default function NewOrder() {
     updated[index] = {
       ...updated[index],
       discount_amount: discount,
+      discount_basis_quantity: current.quantity,
+      discount_basis_amount: discount,
+      discount_scales_with_quantity: current.quantity === 1,
       subtotal: computeLineSubtotal(current.quantity, current.unit_price, discount),
     };
     setOrderItems(updated);
@@ -564,7 +598,12 @@ export default function NewOrder() {
       return;
     }
 
+    if (addingCustomer) {
+      return;
+    }
+
     try {
+      setAddingCustomer(true);
       const response = await axios.post(
         `${API_BASE_URL}/customers`,
         newCustomerForm,
@@ -589,11 +628,39 @@ export default function NewOrder() {
         description: `${newCustomer.name} has been added to the system`,
       });
     } catch (error) {
+      const axiosError = error as AxiosError<{
+        error?: string;
+        message?: string;
+        existingCustomer?: Customer;
+      }>;
+      const existingCustomer = axiosError.response?.data?.existingCustomer;
+
+      if (axiosError.response?.status === 409 && axiosError.response?.data?.error === 'DUPLICATE_PHONE' && existingCustomer) {
+        setSelectedCustomer(existingCustomer);
+        setShowAddCustomerDialog(false);
+        setNewCustomerForm({
+          name: '',
+          phone: '',
+          email: '',
+          location: '',
+          sms_opt_in: true,
+          customer_type: 'INDIVIDUAL',
+        });
+
+        toast({
+          title: 'Customer already exists',
+          description: `${existingCustomer.name} is already registered. We selected the existing customer record instead.`,
+        });
+        return;
+      }
+
       toast({
         variant: 'destructive',
         title: 'Error',
         description: getApiErrorMessage(error, 'Failed to add customer'),
       });
+    } finally {
+      setAddingCustomer(false);
     }
   };
 
@@ -1175,6 +1242,10 @@ export default function NewOrder() {
                 </div>
               </div>
 
+              <div className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <strong className="text-foreground">Bargain rule:</strong> if you enter a bargain while the line is still at quantity 1, the discount follows the line as quantity increases. If you enter the bargain after the line has already been summed up, the discount stays fixed for that line.
+              </div>
+
               {/* Payment method + status row */}
               <div className="grid grid-cols-2 gap-2">
                 <Select
@@ -1538,9 +1609,13 @@ export default function NewOrder() {
             <Button variant="outline" onClick={() => setShowAddCustomerDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleQuickAddCustomer}>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Add Customer
+            <Button onClick={handleQuickAddCustomer} disabled={addingCustomer}>
+              {addingCustomer ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <UserPlus className="mr-2 h-4 w-4" />
+              )}
+              {addingCustomer ? 'Adding...' : 'Add Customer'}
             </Button>
           </DialogFooter>
         </DialogContent>

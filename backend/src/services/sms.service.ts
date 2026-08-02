@@ -1,4 +1,15 @@
 import AfricasTalking from 'africastalking';
+import {
+  buildBusinessInfoLines,
+  buildReceiptClosingMessage,
+  buildReceiptSummaryLines,
+  buildPaymentMethodsLine,
+  buildStoragePolicyLine,
+  formatReceiptItemText,
+  ReceiptItem,
+  ReceiptOrderStatus,
+  ReceiptPaymentStatus,
+} from '../utils/receiptFormatter';
 
 // Initialize Africa's Talking SDK
 const africastalking = AfricasTalking({
@@ -60,21 +71,83 @@ export const sendSMS = async ({ to, message }: SendSMSParams): Promise<boolean> 
 /**
  * Send order ready notification to customer
  */
+export const sendOrderStatusNotification = async (
+  customerPhone: string,
+  orderNumber: string,
+  customerName: string,
+  orderStatus: ReceiptOrderStatus,
+  paymentStatus: ReceiptPaymentStatus,
+  balance: number,
+  paymentMethods?: string[]
+): Promise<boolean> => {
+  const statusLead = orderStatus === 'delivered'
+    ? `Your laundry order ${orderNumber} has been marked as delivered.`
+    : `Your laundry order ${orderNumber} is ready for pickup.`;
+
+  const paymentNote = paymentStatus === 'PAID'
+    ? orderStatus === 'delivered'
+      ? 'Your payment is complete.'
+      : 'Your payment has already been received.'
+    : `Outstanding balance: UGX ${balance.toLocaleString()}.`;
+
+  const paymentPrompt = paymentStatus === 'PAID'
+    ? ''
+    : `\n${buildPaymentMethodsLine(paymentMethods)}`;
+
+  const businessInfo = buildBusinessInfoLines().join('\n');
+  const storagePolicy = buildStoragePolicyLine();
+
+  const closing = orderStatus === 'delivered' && paymentStatus === 'PAID'
+    ? `\n\nThank you for choosing Lush Laundry. We appreciate your business and look forward to serving you again.`
+    : `\n\nThank you for choosing Lush Laundry.`;
+
+  const message = `Hello ${customerName}!
+
+${statusLead}
+${paymentNote}${paymentPrompt}
+
+${storagePolicy}
+${businessInfo}${closing}`;
+
+  return sendSMS({ to: customerPhone, message });
+};
+
 export const sendOrderReadyNotification = async (
   customerPhone: string,
   orderNumber: string,
-  customerName: string
+  customerName: string,
+  paymentStatus: ReceiptPaymentStatus = 'UNPAID',
+  balance = 0,
+  paymentMethods?: string[]
 ): Promise<boolean> => {
-  const message = `Hello ${customerName}! 🎉
+  return sendOrderStatusNotification(
+    customerPhone,
+    orderNumber,
+    customerName,
+    'ready',
+    paymentStatus,
+    balance,
+    paymentMethods
+  );
+};
 
-Your laundry order ${orderNumber} is ready for pickup!
-
-📍 Visit us at: Lush Laundry
-⏰ ${process.env.BUSINESS_HOURS || 'Mon-Sat: 7:00 AM - 9:00 PM'}
-
-Thank you for choosing Lush Laundry! ✨`;
-
-  return sendSMS({ to: customerPhone, message });
+export const sendOrderDeliveredNotification = async (
+  customerPhone: string,
+  orderNumber: string,
+  customerName: string,
+  paymentStatus: ReceiptPaymentStatus,
+  balance: number,
+  paymentMethods?: string[]
+): Promise<boolean> => {
+  return sendOrderStatusNotification(
+    customerPhone,
+    orderNumber,
+    customerName,
+    'delivered',
+    paymentStatus,
+    balance,
+    paymentMethods
+  );
 };
 
 /**
@@ -85,13 +158,16 @@ export const sendOrderReceipt = async (
   orderNumber: string,
   customerName: string,
   orderDetails: {
-    items: Array<{ name: string; quantity: number; price: number }>;
+    items: ReceiptItem[];
     subtotal: number;
-    discount: number;
+    orderDiscountAmount: number;
+    bargainAmount: number;
+    taxAmount: number;
     total: number;
     amountPaid: number;
     balance: number;
     paymentStatus: 'PAID' | 'PARTIAL' | 'UNPAID';
+    orderStatus?: ReceiptOrderStatus;
   }
 ): Promise<boolean> => {
   const today = new Date();
@@ -112,12 +188,34 @@ export const sendOrderReceipt = async (
 
   // Build items list with professional formatting
   const itemsList = orderDetails.items
-    .map((item) => {
-      const itemLine = `${item.name}`;
-      const qtyLine = `• ${item.quantity === 1 ? 'Standard' : 'Express'} Service${' '.repeat(Math.max(0, 5 - item.quantity.toString().length))}${item.quantity}${' '.repeat(3)}${item.price.toLocaleString()}`;
-      return `${itemLine}\n${qtyLine}`;
-    })
+    .map((item) => formatReceiptItemText(item))
     .join('\n──────────────────────────────────\n');
+
+  const businessInfo = buildBusinessInfoLines().join('\n');
+
+  const summaryLines = buildReceiptSummaryLines({
+    subtotal: orderDetails.subtotal,
+    orderDiscountAmount: orderDetails.orderDiscountAmount,
+    bargainAmount: orderDetails.bargainAmount,
+    taxAmount: orderDetails.taxAmount,
+    total: orderDetails.total,
+    amountPaid: orderDetails.amountPaid,
+    balance: orderDetails.balance,
+  });
+
+  const closing = buildReceiptClosingMessage({
+    customerName,
+    orderNumber,
+    orderStatus: orderDetails.orderStatus || 'pending',
+    paymentStatus: orderDetails.paymentStatus,
+    subtotal: orderDetails.subtotal,
+    orderDiscountAmount: orderDetails.orderDiscountAmount,
+    bargainAmount: orderDetails.bargainAmount,
+    taxAmount: orderDetails.taxAmount,
+    total: orderDetails.total,
+    amountPaid: orderDetails.amountPaid,
+    balance: orderDetails.balance,
+  });
 
   const message = `══════════════════════════════════
         LUSH DRY CLEANERS
@@ -128,6 +226,7 @@ ORDER RECEIPT
 Order No : ${orderNumber}
 Date     : ${formattedDate}
 Customer : ${customerName}
+${businessInfo}
 ──────────────────────────────────
 
 ITEMS
@@ -137,16 +236,13 @@ Item                Qty   Amount
 ${itemsList}
 ──────────────────────────────────
 
-SUBTOTAL                 ${orderDetails.subtotal.toLocaleString()}${orderDetails.discount > 0 ? `\nDISCOUNT                 -${orderDetails.discount.toLocaleString()}` : ''}
-TOTAL                    ${orderDetails.total.toLocaleString()}
-PAID                     ${orderDetails.amountPaid.toLocaleString()}
-BALANCE DUE              ${orderDetails.balance.toLocaleString()}
+${summaryLines.join('\n')}
 ──────────────────────────────────
 
 Pickup Date : ${formattedPickupDate}
 ══════════════════════════════════
 
-Thank you for choosing Lush!
+${closing}
 For inquiries, please call us.`;
 
   return sendSMS({ to: customerPhone, message });

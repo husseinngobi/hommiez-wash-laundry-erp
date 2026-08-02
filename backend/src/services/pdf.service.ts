@@ -1,11 +1,21 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
+import {
+  buildBusinessInfoLines,
+  buildReceiptClosingMessage,
+  buildReceiptSummaryLines,
+  formatReceiptItemText,
+  ReceiptItem,
+  ReceiptOrderStatus,
+} from '../utils/receiptFormatter';
 
 interface OrderItem {
   name: string;
   quantity: number;
-  price: number;
+  unitPrice: number;
+  discountAmount?: number;
+  totalPrice: number;
 }
 
 interface OrderDetails {
@@ -16,11 +26,14 @@ interface OrderDetails {
   pickupDate: Date;
   items: OrderItem[];
   subtotal: number;
-  discount: number;
+  orderDiscountAmount: number;
+  bargainAmount: number;
+  taxAmount: number;
   total: number;
   amountPaid: number;
   balance: number;
   paymentStatus: 'PAID' | 'PARTIAL' | 'UNPAID';
+  orderStatus?: ReceiptOrderStatus;
 }
 
 /**
@@ -83,10 +96,13 @@ export const generateOrderReceiptPDF = async (orderDetails: OrderDetails): Promi
          .moveDown(0.5);
 
       // Order details
+      const businessInfo = buildBusinessInfoLines();
+
       doc.fontSize(8)
          .text(`Order No : ${orderDetails.orderNumber}`)
          .text(`Date     : ${orderDate}`)
          .text(`Customer : ${orderDetails.customerName}`)
+        .text(businessInfo.join('\n'))
          .text('──────────────────────────────────')
          .moveDown(0.3);
 
@@ -98,25 +114,25 @@ export const generateOrderReceiptPDF = async (orderDetails: OrderDetails): Promi
 
       // Items list
       orderDetails.items.forEach((item) => {
-        doc.text(item.name);
-        const serviceType = item.quantity === 1 ? 'Standard Service' : 'Express Service';
-        doc.text(`• ${serviceType}${' '.repeat(Math.max(0, 5 - item.quantity.toString().length))}${item.quantity}   ${item.price.toLocaleString()}`);
+        const itemLines = formatReceiptItemText(item as ReceiptItem).split('\n');
+        itemLines.forEach((line) => doc.text(line));
         doc.text('──────────────────────────────────');
       });
 
       doc.moveDown(0.3);
 
       // Financial summary
-      doc.text(`SUBTOTAL                 ${orderDetails.subtotal.toLocaleString()}`);
-      
-      if (orderDetails.discount > 0) {
-        doc.text(`DISCOUNT                 -${orderDetails.discount.toLocaleString()}`);
-      }
-      
-      doc.text(`TOTAL                    ${orderDetails.total.toLocaleString()}`)
-         .text(`PAID                     ${orderDetails.amountPaid.toLocaleString()}`)
-         .text(`BALANCE DUE              ${orderDetails.balance.toLocaleString()}`)
-         .text('──────────────────────────────────')
+      buildReceiptSummaryLines({
+        subtotal: orderDetails.subtotal,
+        orderDiscountAmount: orderDetails.orderDiscountAmount,
+        bargainAmount: orderDetails.bargainAmount,
+        taxAmount: orderDetails.taxAmount,
+        total: orderDetails.total,
+        amountPaid: orderDetails.amountPaid,
+        balance: orderDetails.balance,
+      }).forEach((line) => doc.text(line));
+
+      doc.text('──────────────────────────────────')
          .moveDown(0.3);
 
       // Pickup date
@@ -125,8 +141,22 @@ export const generateOrderReceiptPDF = async (orderDetails: OrderDetails): Promi
          .moveDown(0.5);
 
       // Footer
-      doc.text('Thank you for choosing Lush!', { align: 'center' })
-         .text('For inquiries, please call us.', { align: 'center' });
+      const closing = buildReceiptClosingMessage({
+        customerName: orderDetails.customerName,
+        orderNumber: orderDetails.orderNumber,
+        orderStatus: orderDetails.orderStatus || 'pending',
+        paymentStatus: orderDetails.paymentStatus,
+        subtotal: orderDetails.subtotal,
+        orderDiscountAmount: orderDetails.orderDiscountAmount,
+        bargainAmount: orderDetails.bargainAmount,
+        taxAmount: orderDetails.taxAmount,
+        total: orderDetails.total,
+        amountPaid: orderDetails.amountPaid,
+        balance: orderDetails.balance,
+      });
+
+      doc.text(closing.trim(), { align: 'center' })
+        .text('For inquiries, please call us.', { align: 'center' });
 
       // Finalize PDF
       doc.end();

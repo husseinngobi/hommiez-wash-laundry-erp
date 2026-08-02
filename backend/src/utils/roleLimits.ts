@@ -11,17 +11,13 @@ export const MAX_DISCOUNT_BY_ROLE = {
 } as const;
 
 /**
- * Administrators are not capped. Bargains and discounts are still bounded by
- * the order value itself, which is checked separately.
+ * Bargain limits are role-driven and can be overridden from Settings.
+ * When no stored limit exists, the role default is used.
  */
 export function getEffectiveBargainLimit(
   role: string,
   storedLimit: number | null | undefined
 ): number {
-  if (role === 'ADMIN') {
-    return Number.MAX_SAFE_INTEGER;
-  }
-
   const limit = Number(storedLimit) || 0;
   if (limit > 0) {
     return limit;

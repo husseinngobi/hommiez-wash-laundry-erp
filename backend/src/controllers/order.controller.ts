@@ -3,7 +3,7 @@ import { validationResult } from 'express-validator';
 import { query, getClient } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { OrderStatus } from '../models/Order';
-import { sendOrderReadyNotification, sendOrderReceipt } from '../services/sms.service';
+import { sendOrderDeliveredNotification, sendOrderReadyNotification, sendOrderReceipt } from '../services/sms.service';
 import { sendOrderConfirmation } from '../services/whatsapp.service';
 import { sendOrderReady } from '../services/whatsapp.service';
 import { generateOrderReceiptPDF } from '../services/pdf.service';
@@ -675,29 +675,35 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       const customerName = customerResult.rows[0].name;
       const customerPhone = customerResult.rows[0].phone;
       
-      // Get item details with names from price_items table FIRST
-      const itemDetails = await Promise.all(
-        items.map(async (item: any) => {
-          const priceItemResult = await client.query(
-            'SELECT name FROM price_items WHERE id = $1',
-            [item.price_item_id]
-          );
-          return {
-            name: priceItemResult.rows[0]?.name || 'Item',
-            quantity: item.quantity,
-            price: item.total_price || item.unit_price || 0,
-          };
-        })
+      const receiptItemsResult = await client.query(
+        `SELECT oi.quantity, oi.unit_price, oi.discount_amount, oi.total_price, pi.name as item_name
+         FROM order_items oi
+         JOIN price_items pi ON oi.price_item_id = pi.id
+         WHERE oi.order_id = $1`,
+        [orderId]
       );
-      
+
+      const receiptItems = receiptItemsResult.rows.map((item: any) => ({
+        name: item.item_name || 'Item',
+        quantity: Number(item.quantity) || 0,
+        unitPrice: Number(item.unit_price) || 0,
+        discountAmount: Number(item.discount_amount) || 0,
+        totalPrice: Number(item.total_price) || 0,
+      }));
+
       // Prepare order details for receipt with proper item names
       const orderDetails = {
-        items: itemDetails,
-        subtotal: total_amount,
+        items: receiptItems,
+        subtotal,
+        orderDiscountAmount: discount_amount,
+        bargainAmount: bargainAmountValue,
+        taxAmount: tax_amount,
         total: total_amount,
-        amountPaid: amount_paid || 0,
-        balance: (total_amount - (amount_paid || 0)),
-        pickupDate: pickup_date ? new Date(pickup_date).toLocaleDateString() : 'TBD'
+        amountPaid: finalAmountPaidValue,
+        balance,
+        pickupDate: pickup_date ? new Date(pickup_date).toLocaleDateString() : 'TBD',
+        orderStatus: createdOrder.status,
+        paymentStatus: finalPaymentStatus,
       };
       
       // 🔥 Check automation setting before sending WhatsApp order confirmation
@@ -744,21 +750,6 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         console.log(`ℹ️ Automation disabled - WhatsApp confirmation NOT sent for order ${order_number}`);
       }
       
-      // Get item details with names from price_items table
-      const itemDetailsForPDF = await Promise.all(
-        items.map(async (item: any) => {
-          const priceItemResult = await client.query(
-            'SELECT name FROM price_items WHERE id = $1',
-            [item.price_item_id]
-          );
-          return {
-            name: priceItemResult.rows[0]?.name || 'Item',
-            quantity: item.quantity,
-            price: item.subtotal,
-          };
-        })
-      );
-      
       // Calculate pickup date (3 days from now)
       const pickupDate = new Date();
       pickupDate.setDate(pickupDate.getDate() + 3);
@@ -772,13 +763,16 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         customerPhone,
         orderDate: new Date(),
         pickupDate,
-        items: itemDetailsForPDF,
+        items: receiptItems,
         subtotal,
-        discount: discount_amount,
+        orderDiscountAmount: discount_amount,
+        bargainAmount: bargainAmountValue,
+        taxAmount: tax_amount,
         total: total_amount,
-        amountPaid: amount_paid,
+        amountPaid: finalAmountPaidValue,
         balance,
-        paymentStatus: payment_status,
+        paymentStatus: finalPaymentStatus,
+        orderStatus: createdOrder.status,
       })
         .then(async (pdfPath) => {
           console.log(`✅ PDF receipt generated: ${pdfPath}`);
@@ -796,13 +790,16 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
             order_number,
             customerName,
             {
-              items: itemDetailsForPDF,
+              items: receiptItems,
               subtotal,
-              discount: discount_amount,
+              orderDiscountAmount: discount_amount,
+              bargainAmount: bargainAmountValue,
+              taxAmount: tax_amount,
               total: total_amount,
-              amountPaid: amount_paid,
+              amountPaid: finalAmountPaidValue,
               balance,
-              paymentStatus: payment_status,
+              paymentStatus: finalPaymentStatus,
+              orderStatus: createdOrder.status,
             }
           ).then((sent) => {
             if (sent) {
@@ -1185,6 +1182,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
       const totalAmount = orderBeforeUpdate.rows[0].total_amount;
       const amountPaid = orderBeforeUpdate.rows[0].amount_paid || 0;
       const balance = totalAmount - amountPaid;
+      const paymentStatus = orderBeforeUpdate.rows[0].payment_status || 'UNPAID';
       const orderDate = new Date(orderBeforeUpdate.rows[0].created_at).toLocaleDateString();
       
       // Get order items for WhatsApp message
@@ -1202,7 +1200,14 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
       }));
       
       // Send SMS notification
-      sendOrderReadyNotification(customerPhone, orderNumber, customerName)
+      sendOrderReadyNotification(
+        customerPhone,
+        orderNumber,
+        customerName,
+        paymentStatus,
+        balance,
+        ['cash', 'MTN Mobile Money', 'Airtel Money', 'bank transfer']
+      )
         .then((sent) => {
           if (sent) {
             console.log(`✅ SMS notification sent for order ${orderNumber}`);
@@ -1268,6 +1273,34 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
       } else {
         console.log(`ℹ️ Automation disabled - WhatsApp ready notification NOT sent for order ${orderNumber}`);
       }
+    }
+
+    if (oldStatus !== 'delivered' && dbStatus === 'delivered' && customerPhone) {
+      console.log(`📱 Sending delivered notification for order ${orderNumber} to ${customerPhone}`);
+
+      const totalAmount = orderBeforeUpdate.rows[0].total_amount;
+      const amountPaid = orderBeforeUpdate.rows[0].amount_paid || 0;
+      const balance = totalAmount - amountPaid;
+      const paymentStatus = orderBeforeUpdate.rows[0].payment_status || 'UNPAID';
+
+      sendOrderDeliveredNotification(
+        customerPhone,
+        orderNumber,
+        customerName,
+        paymentStatus,
+        balance,
+        ['cash', 'MTN Mobile Money', 'Airtel Money', 'bank transfer']
+      )
+        .then((sent) => {
+          if (sent) {
+            console.log(`✅ SMS delivered notification sent for order ${orderNumber}`);
+          } else {
+            console.log(`ℹ️ SMS delivered notification skipped for order ${orderNumber} (SMS disabled or failed)`);
+          }
+        })
+        .catch((error: any) => {
+          console.error(`❌ Failed to send delivered SMS for order ${orderNumber}:`, error);
+        });
     }
     
     res.json({

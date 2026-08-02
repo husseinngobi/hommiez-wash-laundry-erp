@@ -139,6 +139,7 @@ export default function Settings() {
   // a numeric state would immediately snap a cleared box back to "0".
   const [desktopAgentBargainLimit, setDesktopAgentBargainLimit] = useState('5000');
   const [managerBargainLimit, setManagerBargainLimit] = useState('10000');
+  const [adminBargainLimit, setAdminBargainLimit] = useState('50000');
   const [savingBargainLimits, setSavingBargainLimits] = useState(false);
 
   // Payment accounts for on-account / partial WhatsApp receipts
@@ -331,6 +332,7 @@ export default function Settings() {
       
       setDesktopAgentBargainLimit(String(response.data.desktop_agent ?? 5000));
       setManagerBargainLimit(String(response.data.manager ?? 10000));
+      setAdminBargainLimit(String(response.data.admin ?? 50000));
     } catch (error) {
       console.error('Failed to load bargain limits:', error);
     }
@@ -551,11 +553,21 @@ export default function Settings() {
   const saveBargainLimits = async () => {
     const desktopAgent = Math.max(0, Math.round(Number(desktopAgentBargainLimit) || 0));
     const manager = Math.max(0, Math.round(Number(managerBargainLimit) || 0));
+    const admin = Math.max(0, Math.round(Number(adminBargainLimit) || 0));
 
     if (manager < desktopAgent) {
       toast({
         title: 'Check the limits',
         description: 'The manager limit should not be lower than the desktop agent limit.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (admin < manager) {
+      toast({
+        title: 'Check the limits',
+        description: 'The administrator limit should not be lower than the manager limit.',
         variant: 'destructive',
       });
       return;
@@ -569,16 +581,18 @@ export default function Settings() {
         {
           desktop_agent_limit: desktopAgent,
           manager_limit: manager,
+          admin_limit: admin,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       setDesktopAgentBargainLimit(String(desktopAgent));
       setManagerBargainLimit(String(manager));
+      setAdminBargainLimit(String(admin));
 
       toast({
         title: 'Bargain limits updated',
-        description: `Desktop agent ${desktopAgent.toLocaleString()} UGX, manager ${manager.toLocaleString()} UGX. Administrators are not capped.`,
+        description: `Desktop agent ${desktopAgent.toLocaleString()} UGX, manager ${manager.toLocaleString()} UGX, administrator ${admin.toLocaleString()} UGX.`,
       });
     } catch (error) {
       const axiosError = error as AxiosError<{ error: string }>;
@@ -1074,10 +1088,18 @@ Don't miss out! ✨`;
             Quick Navigation
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <button
-              onClick={() => document.getElementById('business-info')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className="flex items-center gap-2 p-3 bg-white dark:bg-gray-900 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors text-left"
-            >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1000"
+                    value={adminBargainLimit}
+                    onChange={(e) => setAdminBargainLimit(e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="50000"
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Administrators can set this to any approved ceiling, including 100% if needed.</p>
               <Building className="h-4 w-4 text-blue-500" />
               <span className="text-sm font-medium">Business Info</span>
             </button>
@@ -2022,11 +2044,19 @@ Don't miss out! ✨`;
 
                 <div>
                   <Label>Administrator Limit</Label>
-                  <div className="mt-2 flex h-10 items-center rounded-md border border-input bg-muted px-3 text-sm font-medium">
-                    No limit
-                  </div>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1000"
+                    value={adminBargainLimit}
+                    onChange={(e) => setAdminBargainLimit(e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="50000"
+                    className="mt-2"
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Administrators are never capped, up to the order value.
+                    Administrators can set their own UGX bargain ceiling here.
                   </p>
                 </div>
               </div>
