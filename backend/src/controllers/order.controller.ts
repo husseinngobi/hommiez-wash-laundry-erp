@@ -406,6 +406,16 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       userResult.rows[0].role,
       userResult.rows[0].max_bargain_amount
     );
+
+    const totalBargainRequested = totalItemDiscount + bargainAmountValue;
+
+    if (totalBargainRequested > maxBargainAmount) {
+      const totalDisplay = totalBargainRequested.toLocaleString('en-UG');
+      const maxDisplay = maxBargainAmount.toLocaleString('en-UG');
+      throw new Error(
+        `Total bargain amount (item bargains + order bargain) is UGX ${totalDisplay}, which exceeds your maximum limit of UGX ${maxDisplay}`
+      );
+    }
     
     // Validate bargain amount doesn't exceed user's limit
     if (bargainAmountValue > maxBargainAmount) {

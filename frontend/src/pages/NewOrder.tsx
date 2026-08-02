@@ -561,7 +561,12 @@ export default function NewOrder() {
     orderItems.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0)
   );
   const discountAmount = Math.round((itemsSubtotal * transactionDiscount) / 100);
-  const safeBargain = Math.min(Math.max(0, Math.round(bargainAmount)), Math.max(0, itemsSubtotal - discountAmount));
+  const bargainLimitRemaining = Math.max(0, maxBargainAmount - itemDiscountTotal);
+  const safeBargain = Math.min(
+    Math.max(0, Math.round(bargainAmount)),
+    Math.max(0, itemsSubtotal - discountAmount),
+    bargainLimitRemaining
+  );
   const subtotalAfterDiscount = Math.max(0, itemsSubtotal - discountAmount - safeBargain);
   const taxAmount = vatApplies ? Math.round((subtotalAfterDiscount * VAT_RATE) / 100) : 0;
   const total = subtotalAfterDiscount + taxAmount;
@@ -717,6 +722,25 @@ export default function NewOrder() {
     }
 
     try {
+      const requestedBargain = Math.max(0, Math.round(bargainAmount));
+      if (!isAdminUser && itemDiscountTotal > maxBargainAmount) {
+        toast({
+          variant: 'destructive',
+          title: 'Bargain limit exceeded',
+          description: `Item bargains total ${formatUGX(itemDiscountTotal)}, which exceeds your limit of ${formatUGX(maxBargainAmount)}.`,
+        });
+        return;
+      }
+
+      if (!isAdminUser && requestedBargain > bargainLimitRemaining) {
+        toast({
+          variant: 'destructive',
+          title: 'Bargain limit exceeded',
+          description: `You have ${formatUGX(bargainLimitRemaining)} left after item bargains.`,
+        });
+        return;
+      }
+
       setLoading(true);
 
       const orderData = {
@@ -1136,6 +1160,12 @@ export default function NewOrder() {
                     <span>-{formatUGX(itemDiscountTotal)}</span>
                   </div>
                 )}
+                {!isAdminUser && (
+                  <div className="flex justify-between text-muted-foreground text-xs">
+                    <span>Bargain budget left</span>
+                    <span>{formatUGX(bargainLimitRemaining)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{formatUGX(itemsSubtotal)}</span>
@@ -1203,23 +1233,23 @@ export default function NewOrder() {
                   <Input
                     type="number"
                     min="0"
-                    max={isAdminUser ? undefined : maxBargainAmount}
+                    max={isAdminUser ? undefined : bargainLimitRemaining}
                     value={bargainAmount || ''}
                     onChange={(e) => {
                       const value = parseFloat(e.target.value) || 0;
-                      if (isAdminUser || value <= maxBargainAmount) {
+                      if (isAdminUser || value <= bargainLimitRemaining) {
                         setBargainAmount(value);
                       } else {
                         toast({
                           variant: 'destructive',
                           title: 'Bargain Limit',
-                          description: `Max: ${formatUGX(maxBargainAmount)}`,
+                          description: `You have ${formatUGX(bargainLimitRemaining)} left after item bargains.`,
                         });
                       }
                     }}
                     placeholder="0"
                     className="h-10 lg:h-8 text-sm mt-1"
-                    disabled={!isAdminUser && maxBargainAmount === 0}
+                    disabled={!isAdminUser && bargainLimitRemaining === 0}
                   />
                 </div>
                 <div className="col-span-2 lg:col-span-1">
