@@ -607,6 +607,9 @@ export default function Orders() {
   const [cancelPaymentTarget, setCancelPaymentTarget] = useState<PaymentTransaction | null>(null);
   const [cancelPaymentReason, setCancelPaymentReason] = useState('');
   const [cancellingPayment, setCancellingPayment] = useState(false);
+  const [showDeleteOrderDialog, setShowDeleteOrderDialog] = useState(false);
+  const [deleteOrderReason, setDeleteOrderReason] = useState('Cancelled by administrator');
+  const [deletingOrder, setDeletingOrder] = useState(false);
   const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
   const [branchCount, setBranchCount] = useState(0);
@@ -1111,40 +1114,22 @@ export default function Orders() {
   const handleDeleteOrder = async () => {
     if (!selectedOrder) return;
 
-    // Confirm deletion
-    const confirmed = window.confirm(
-      `⚠️ Are you sure you want to PERMANENTLY DELETE order ${selectedOrder.order_number}?\n\n` +
-      `This will:\n` +
-      `• Remove the order from all views\n` +
-      `• Archive complete order data for audit\n` +
-      `• This action CANNOT be undone\n\n` +
-      `Customer: ${selectedOrder.customer_name}\n` +
-      `Amount: ${formatUGX(selectedOrder.total_amount)}`
-    );
-
-    if (!confirmed) return;
-
-    // Optional deletion reason
-    const deletion_reason = window.prompt(
-      'Reason for deletion (optional):',
-      'Cancelled by administrator'
-    );
-
-    try {
+     try {
+      setDeletingOrder(true);
       const response = await axios.delete(
         `${API_BASE_URL}/orders/${selectedOrder.id}`,
         {
           headers: { Authorization: `Bearer ${token}` },
-          data: { deletion_reason }
+          data: { deletion_reason: deleteOrderReason }
         }
       );
 
-      toast({
+    toast({
         title: '🗑️ Order Deleted',
         description: response.data.message || 'Order has been permanently deleted and archived',
       });
 
-      // Close dialog and refresh orders list
+      setShowDeleteOrderDialog(false);
       setShowDetailsDialog(false);
       setSelectedOrder(null);
       await fetchOrders();
@@ -1155,6 +1140,8 @@ export default function Orders() {
         title: 'Delete Failed',
         description: err.response?.data?.error || 'Failed to delete order',
       });
+    } finally {
+      setDeletingOrder(false);
     }
   };
 
@@ -2547,7 +2534,10 @@ export default function Orders() {
                 {/* ADMIN ONLY: Delete Cancelled Orders */}
                 {canCancelOrders && selectedOrder.order_status === 'cancelled' && (
                   <Button
-                    onClick={handleDeleteOrder}
+                    onClick={() => {
+                      setDeleteOrderReason('Cancelled by administrator');
+                      setShowDeleteOrderDialog(true);
+                    }}
                     variant="destructive"
                     className="gap-2"
                   >
@@ -3419,6 +3409,72 @@ export default function Orders() {
               onClick={handleCancelPayment}
             >
               {cancellingPayment ? 'Cancelling…' : 'OK, cancel payment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete order (Admin only, cancelled orders only) */}
+      <Dialog open={showDeleteOrderDialog} onOpenChange={setShowDeleteOrderDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Permanently delete this order?
+            </DialogTitle>
+            <DialogDescription>
+              This cannot be undone. The order will be removed from all views and archived for audit.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedOrder && (
+            <div className="space-y-3 py-2">
+              <div className="rounded-lg border bg-muted/40 p-3 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Order</span>
+                  <span className="font-medium">{selectedOrder.order_number}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Customer</span>
+                  <span className="font-medium">{selectedOrder.customer_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Phone</span>
+                  <span className="font-medium">{selectedOrder.customer_phone}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="font-medium">{formatUGX(selectedOrder.total_amount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Status</span>
+                  <span className="font-medium capitalize">{selectedOrder.order_status}</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="delete-order-reason">Reason (optional)</Label>
+                <Input
+                  id="delete-order-reason"
+                  value={deleteOrderReason}
+                  onChange={(e) => setDeleteOrderReason(e.target.value)}
+                  placeholder="e.g. Duplicate order created by mistake"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteOrderDialog(false)}
+              disabled={deletingOrder}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteOrder}
+              disabled={deletingOrder}
+            >
+              {deletingOrder ? 'Deleting…' : 'Yes, permanently delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

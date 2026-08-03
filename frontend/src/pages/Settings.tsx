@@ -1108,18 +1108,10 @@ Don't miss out! ✨`;
             Quick Navigation
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    step="1000"
-                    value={adminBargainLimit}
-                    onChange={(e) => setAdminBargainLimit(e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                    placeholder="50000"
-                    className="mt-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Administrators can set this to any approved ceiling, including 100% if needed.</p>
+            <button
+              onClick={() => document.getElementById('business-info')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="flex items-center gap-2 p-3 bg-white dark:bg-gray-900 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors text-left"
+            >
               <Building className="h-4 w-4 text-blue-500" />
               <span className="text-sm font-medium">Business Info</span>
             </button>
