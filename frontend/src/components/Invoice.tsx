@@ -35,6 +35,9 @@ interface OrderDetails {
   customer_phone: string;
   customer_email: string;
   subtotal: number;
+  discount_percentage?: number;
+  discount_amount?: number;
+  bargain_amount?: number;
   tax_rate: number;
   tax_amount: number;
   total_amount: number;
@@ -51,7 +54,9 @@ interface OrderItem {
   item_name: string;
   quantity: number;
   unit_price: number;
-  subtotal: number;
+  total_price?: number;
+  subtotal?: number;
+  discount_amount?: number;
 }
 
 export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
@@ -253,14 +258,26 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
               </tr>
             </thead>
             <tbody>
-              {orderItems.map((item, index) => (
-                <tr key={index}>
-                  <td className="py-1">{item.item_name}</td>
-                  <td className="text-center">{item.quantity}</td>
-                  <td className="text-right">{formatUGX(item.unit_price)}</td>
-                  <td className="text-right">{formatUGX(item.subtotal)}</td>
-                </tr>
-              ))}
+              {orderItems.map((item, index) => {
+                const itemDiscount = Number(item.discount_amount || 0);
+                const lineTotal = Number(item.total_price ?? item.subtotal ?? 0);
+                const gross = lineTotal + itemDiscount;
+                return (
+                  <tr key={index}>
+                    <td className="py-1">
+                      {item.item_name}
+                      {itemDiscount > 0 && (
+                        <div className="text-[10px] text-red-700">
+                          Discount -{formatUGX(itemDiscount)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="text-center">{item.quantity}</td>
+                    <td className="text-right">{formatUGX(item.unit_price)}</td>
+                    <td className="text-right">{formatUGX(gross)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -268,10 +285,52 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
         {/* Totals */}
         <div className="border-t-2 border-black pt-3">
           <div className="space-y-1 text-sm">
-            <div className="flex justify-between">
-              <span>Subtotal:</span>
-              <span>{formatUGX(order.subtotal)}</span>
-            </div>
+            {(() => {
+              const itemDiscountTotal = orderItems.reduce(
+                (sum, item) => sum + Number(item.discount_amount || 0),
+                0
+              );
+              const orderDiscount = Number(order.discount_amount || 0);
+              const bargainDiscount = Number(order.bargain_amount || 0);
+              const totalSaved = itemDiscountTotal + orderDiscount + bargainDiscount;
+              return (
+                <>
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>{formatUGX(Number(order.subtotal) + itemDiscountTotal)}</span>
+                  </div>
+                  {itemDiscountTotal > 0 && (
+                    <div className="flex justify-between">
+                      <span>Item Discounts:</span>
+                      <span>-{formatUGX(itemDiscountTotal)}</span>
+                    </div>
+                  )}
+                  {orderDiscount > 0 && (
+                    <div className="flex justify-between">
+                      <span>
+                        {Number(order.discount_percentage || 0) > 0
+                          ? `Order Discount (${order.discount_percentage}%)`
+                          : 'Order Discount'}
+                        :
+                      </span>
+                      <span>-{formatUGX(orderDiscount)}</span>
+                    </div>
+                  )}
+                  {bargainDiscount > 0 && (
+                    <div className="flex justify-between">
+                      <span>Bargain Discount:</span>
+                      <span>-{formatUGX(bargainDiscount)}</span>
+                    </div>
+                  )}
+                  {totalSaved > 0 && (
+                    <div className="flex justify-between font-semibold">
+                      <span>You Saved:</span>
+                      <span>{formatUGX(totalSaved)}</span>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
             {settings.ura_compliance_enabled && order.tax_amount > 0 && (
               <div className="flex justify-between">
                 <span>VAT ({order.tax_rate}%):</span>

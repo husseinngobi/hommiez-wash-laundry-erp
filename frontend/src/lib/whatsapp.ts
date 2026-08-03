@@ -187,10 +187,17 @@ function buildItemLines(items: OrderWhatsAppItem[]): string[] {
   const lines = ['*ITEMS:*'];
   items.forEach((item, index) => {
     const discount = Number(item.discount_amount || 0);
-    const suffix = discount > 0 ? ` (incl. -${formatUGX(discount)} discount)` : '';
-    lines.push(
-      `${index + 1}. ${item.item_name} (${item.service_type}) x ${item.quantity} — ${formatUGX(item.total_price)}${suffix}`
-    );
+    const gross = Number(item.total_price || 0) + discount;
+    if (discount > 0) {
+      lines.push(
+        `${index + 1}. ${item.item_name} (${item.service_type}) x ${item.quantity} — ${formatUGX(gross)}`
+      );
+      lines.push(`   Discount: -${formatUGX(discount)} → ${formatUGX(item.total_price)}`);
+    } else {
+      lines.push(
+        `${index + 1}. ${item.item_name} (${item.service_type}) x ${item.quantity} — ${formatUGX(item.total_price)}`
+      );
+    }
   });
   lines.push('');
   return lines;
@@ -202,26 +209,35 @@ function buildPaymentSummaryLines(
 ): string[] {
   const lines = ['*PAYMENT SUMMARY*'];
 
-  // Per-item bargains are already netted off each line, so show them as their
-  // own total against the gross value rather than double-counting the subtotal.
+  // Per-item discounts are already netted off each line total, so add them
+  // back for a clear gross → discount → net story on the receipt.
   const itemDiscountTotal = items.reduce(
     (sum, item) => sum + Number(item.discount_amount || 0),
     0
   );
+  const orderDiscount = Number(order.discount_amount || 0);
+  const bargainDiscount = Number(order.bargain_amount || 0);
+  const grossSubtotal = Number(order.subtotal || 0) + itemDiscountTotal;
+
+  lines.push(`Subtotal: ${formatUGX(grossSubtotal)}`);
 
   if (itemDiscountTotal > 0) {
-    lines.push(`Subtotal: ${formatUGX(Number(order.subtotal) + itemDiscountTotal)}`);
-    lines.push(`Item bargains: -${formatUGX(itemDiscountTotal)}`);
-  } else {
-    lines.push(`Subtotal: ${formatUGX(order.subtotal)}`);
+    lines.push(`Item discounts: -${formatUGX(itemDiscountTotal)}`);
+  }
+  if (Number(order.discount_percentage || 0) > 0 && orderDiscount > 0) {
+    lines.push(`Order discount (${order.discount_percentage}%): -${formatUGX(orderDiscount)}`);
+  } else if (orderDiscount > 0) {
+    lines.push(`Order discount: -${formatUGX(orderDiscount)}`);
+  }
+  if (bargainDiscount > 0) {
+    lines.push(`Bargain discount: -${formatUGX(bargainDiscount)}`);
   }
 
-  if (Number(order.discount_percentage || 0) > 0) {
-    lines.push(`Discount (${order.discount_percentage}%): -${formatUGX(order.discount_amount || 0)}`);
+  const totalDiscount = itemDiscountTotal + orderDiscount + bargainDiscount;
+  if (totalDiscount > 0) {
+    lines.push(`*You saved: ${formatUGX(totalDiscount)}*`);
   }
-  if (Number(order.bargain_amount || 0) > 0) {
-    lines.push(`Bargain: -${formatUGX(order.bargain_amount || 0)}`);
-  }
+
   if (Number(order.tax_amount || 0) > 0) {
     lines.push(`VAT (${order.tax_rate || 18}%): +${formatUGX(order.tax_amount || 0)}`);
   }

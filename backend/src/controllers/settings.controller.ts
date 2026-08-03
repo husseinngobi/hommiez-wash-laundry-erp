@@ -321,12 +321,15 @@ export const getBargainLimits = async (req: AuthRequest, res: Response) => {
     };
 
     result.rows.forEach(row => {
+      const amount = Number(row.max_bargain_amount);
+      if (!Number.isFinite(amount) || amount < 0) return;
+
       if (row.role === 'DESKTOP_AGENT') {
-        limits.desktop_agent = row.max_bargain_amount;
+        limits.desktop_agent = amount;
       } else if (row.role === 'MANAGER') {
-        limits.manager = row.max_bargain_amount;
+        limits.manager = amount;
       } else if (row.role === 'ADMIN') {
-        limits.admin = row.max_bargain_amount;
+        limits.admin = amount;
       }
     });
 
@@ -341,33 +344,42 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
   try {
     const { desktop_agent_limit, manager_limit, admin_limit } = req.body;
 
-    const parseLimit = (value: unknown): number => {
-      if (typeof value === 'number') return value;
+    // Accept numbers, numeric strings, and comma-formatted amounts ("5,000").
+    // Empty / missing values become null so we can decide per-role.
+    const parseLimit = (value: unknown): number | null => {
+      if (value === null || value === undefined || value === '') return null;
+      if (typeof value === 'number') {
+        return Number.isFinite(value) ? Math.round(value) : null;
+      }
       if (typeof value === 'string') {
         const normalized = value.replace(/,/g, '').trim();
-        return Number(normalized);
+        if (!normalized) return null;
+        const parsed = Number(normalized);
+        return Number.isFinite(parsed) ? Math.round(parsed) : null;
       }
-      return Number(value);
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? Math.round(parsed) : null;
     };
 
     const desktopAgent = parseLimit(desktop_agent_limit);
     const manager = parseLimit(manager_limit);
     const admin = parseLimit(admin_limit);
 
-    if (!Number.isFinite(desktopAgent) || !Number.isFinite(manager) || !Number.isFinite(admin)) {
-      return res.status(400).json({ error: 'Bargain limits must be numbers' });
+    if (desktopAgent === null || manager === null) {
+      return res.status(400).json({
+        error: 'Desktop agent and manager bargain limits must be valid numbers (e.g. 5000)',
+      });
     }
-    if (desktopAgent < 0 || manager < 0 || admin < 0) {
+    if (desktopAgent < 0 || manager < 0 || (admin !== null && admin < 0)) {
       return res.status(400).json({ error: 'Bargain limits cannot be negative' });
     }
     if (manager < desktopAgent) {
       return res.status(400).json({ error: 'Manager limit should not be lower than desktop agent limit' });
     }
-    if (admin < manager) {
+    if (admin !== null && admin < manager) {
       return res.status(400).json({ error: 'Administrator limit should not be lower than manager limit' });
     }
 
-    // Update all users by role
     await query(
       `UPDATE users SET max_bargain_amount = $1 WHERE role = 'DESKTOP_AGENT'`,
       [desktopAgent]
@@ -378,13 +390,17 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
       [manager]
     );
 
-    await query(
-      `UPDATE users SET max_bargain_amount = $1 WHERE role = 'ADMIN'`,
-      [admin]
-    );
+    // Admin limit is optional — omit it to leave administrators unchanged
+    if (admin !== null) {
+      await query(
+        `UPDATE users SET max_bargain_amount = $1 WHERE role = 'ADMIN'`,
+        [admin]
+      );
+    }
 
     console.log(
-      `✅ Bargain limits updated by ${req.user?.email} — agent ${desktopAgent}, manager ${manager}, admin ${admin}`
+      `✅ Bargain limits updated by ${req.user?.email} — agent ${desktopAgent}, manager ${manager}` +
+        (admin !== null ? `, admin ${admin}` : ' (admin unchanged)')
     );
 
     res.json({

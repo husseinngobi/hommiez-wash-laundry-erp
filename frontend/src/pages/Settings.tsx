@@ -330,9 +330,13 @@ export default function Settings() {
         headers: { Authorization: `Bearer ${token}` },
       });
       
-      setDesktopAgentBargainLimit(String(response.data.desktop_agent ?? 5000));
-      setManagerBargainLimit(String(response.data.manager ?? 10000));
-      setAdminBargainLimit(String(response.data.admin ?? 50000));
+      const toLimit = (value: unknown, fallback: number) => {
+        const parsed = Number(value);
+        return String(Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : fallback);
+      };
+      setDesktopAgentBargainLimit(toLimit(response.data.desktop_agent, 5000));
+      setManagerBargainLimit(toLimit(response.data.manager, 10000));
+      setAdminBargainLimit(toLimit(response.data.admin, 50000));
     } catch (error) {
       console.error('Failed to load bargain limits:', error);
     }
@@ -551,10 +555,25 @@ export default function Settings() {
 
   // Save bargain limits for all roles
   const saveBargainLimits = async () => {
-    const parseLimit = (value: string) => Number(String(value || '').replace(/,/g, '').trim()) || 0;
-    const desktopAgent = Math.max(0, Math.round(parseLimit(desktopAgentBargainLimit)));
-    const manager = Math.max(0, Math.round(parseLimit(managerBargainLimit)));
-    const admin = Math.max(0, Math.round(parseLimit(adminBargainLimit)));
+    const parseLimit = (value: string): number | null => {
+      const normalized = String(value ?? '').replace(/,/g, '').trim();
+      if (!normalized) return null;
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : null;
+    };
+
+    const desktopAgent = parseLimit(desktopAgentBargainLimit);
+    const manager = parseLimit(managerBargainLimit);
+    const admin = parseLimit(adminBargainLimit);
+
+    if (desktopAgent === null || manager === null || admin === null) {
+      toast({
+        title: 'Enter valid amounts',
+        description: 'Each bargain limit must be a whole number in UGX (e.g. 5000).',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (manager < desktopAgent) {
       toast({

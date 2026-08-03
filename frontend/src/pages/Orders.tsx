@@ -452,15 +452,29 @@ const printReceipt = (
       <div class="section">
         <div class="section-title">Items</div>
         <div class="items-table">
-          ${items.map((item, index) => `
+          ${items.map((item, index) => {
+            const itemDiscount = Number(item.discount_amount || 0);
+            const gross = Number(item.total_price) + itemDiscount;
+            return `
             <div class="item-row">
               <div class="item-name">${index + 1}. ${item.item_name}</div>
               <div class="item-details">
                 <span>${item.service_type} × ${item.quantity}</span>
+                <strong>${formatUGX(gross)}</strong>
+              </div>
+              ${itemDiscount > 0 ? `
+              <div class="item-details" style="color:#c2410c;">
+                <span>Discount</span>
+                <strong>-${formatUGX(itemDiscount)}</strong>
+              </div>
+              <div class="item-details">
+                <span>Net</span>
                 <strong>${formatUGX(item.total_price)}</strong>
               </div>
+              ` : ''}
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       </div>
       
@@ -471,20 +485,26 @@ const printReceipt = (
         </div>
         ${itemDiscountTotal > 0 ? `
           <div class="total-row">
-            <span>Item Bargains:</span>
+            <span>Item Discounts:</span>
             <span>-${formatUGX(itemDiscountTotal)}</span>
           </div>
         ` : ''}
-        ${order.discount_percentage > 0 ? `
+        ${Number(order.discount_amount) > 0 ? `
           <div class="total-row">
-            <span>Discount (${order.discount_percentage}%):</span>
+            <span>${order.discount_percentage > 0 ? `Order Discount (${order.discount_percentage}%)` : 'Order Discount'}:</span>
             <span>-${formatUGX(order.discount_amount)}</span>
           </div>
         ` : ''}
-        ${order.bargain_amount > 0 ? `
+        ${Number(order.bargain_amount) > 0 ? `
           <div class="total-row">
-            <span>Bargain Deduction:</span>
+            <span>Bargain Discount:</span>
             <span>-${formatUGX(order.bargain_amount)}</span>
+          </div>
+        ` : ''}
+        ${(itemDiscountTotal + Number(order.discount_amount || 0) + Number(order.bargain_amount || 0)) > 0 ? `
+          <div class="total-row">
+            <span>You Saved:</span>
+            <strong>${formatUGX(itemDiscountTotal + Number(order.discount_amount || 0) + Number(order.bargain_amount || 0))}</strong>
           </div>
         ` : ''}
         ${order.tax_amount > 0 ? `
@@ -1841,6 +1861,11 @@ export default function Orders() {
                         </Badge>
                         <span>Qty: {item.quantity}</span>
                         <span>{formatUGX(item.unit_price)} each</span>
+                        {Number(item.discount_amount || 0) > 0 && (
+                          <span className="text-primary font-medium">
+                            Discount -{formatUGX(item.discount_amount)}
+                          </span>
+                        )}
                       </div>
                       {item.notes?.trim() && (
                         <div className="flex items-center justify-between gap-2 border-t pt-2">
@@ -1873,6 +1898,7 @@ export default function Orders() {
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Service</TableHead>
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Quantity</TableHead>
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Unit Price</TableHead>
+                        <TableHead className="whitespace-nowrap px-2 sm:px-4">Discount</TableHead>
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Total</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1907,6 +1933,11 @@ export default function Orders() {
                           </TableCell>
                           <TableCell className="px-2 sm:px-4 align-top">{item.quantity}</TableCell>
                           <TableCell className="px-2 sm:px-4 align-top whitespace-nowrap">{formatUGX(item.unit_price)}</TableCell>
+                          <TableCell className="px-2 sm:px-4 align-top whitespace-nowrap text-primary">
+                            {Number(item.discount_amount || 0) > 0
+                              ? `-${formatUGX(item.discount_amount)}`
+                              : '—'}
+                          </TableCell>
                           <TableCell className="font-semibold px-2 sm:px-4 align-top whitespace-nowrap">{formatUGX(item.total_price)}</TableCell>
                         </TableRow>
                       ))}
@@ -2111,18 +2142,53 @@ export default function Orders() {
                 <div className="space-y-3 p-4 bg-muted rounded-lg">
                   <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span className="font-medium">{formatUGX(selectedOrder.subtotal)}</span>
+                    <span className="font-medium">
+                      {formatUGX(
+                        Number(selectedOrder.subtotal) +
+                          orderItems.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0)
+                      )}
+                    </span>
                   </div>
-                  {selectedOrder.discount_percentage > 0 && (
+                  {orderItems.some((item) => Number(item.discount_amount || 0) > 0) && (
                     <div className="flex justify-between text-primary">
-                      <span>Discount ({selectedOrder.discount_percentage}%):</span>
+                      <span>Item Discounts:</span>
+                      <span className="font-medium">
+                        -
+                        {formatUGX(
+                          orderItems.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0)
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  {Number(selectedOrder.discount_amount) > 0 && (
+                    <div className="flex justify-between text-primary">
+                      <span>
+                        {selectedOrder.discount_percentage > 0
+                          ? `Order Discount (${selectedOrder.discount_percentage}%)`
+                          : 'Order Discount'}
+                        :
+                      </span>
                       <span className="font-medium">-{formatUGX(selectedOrder.discount_amount)}</span>
                     </div>
                   )}
-                  {selectedOrder.bargain_amount > 0 && (
+                  {Number(selectedOrder.bargain_amount) > 0 && (
                     <div className="flex justify-between text-orange-600">
-                      <span>Bargain Deduction:</span>
+                      <span>Bargain Discount:</span>
                       <span className="font-medium">-{formatUGX(selectedOrder.bargain_amount)}</span>
+                    </div>
+                  )}
+                  {(orderItems.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0) +
+                    Number(selectedOrder.discount_amount || 0) +
+                    Number(selectedOrder.bargain_amount || 0)) > 0 && (
+                    <div className="flex justify-between text-emerald-700 font-medium">
+                      <span>You Saved:</span>
+                      <span>
+                        {formatUGX(
+                          orderItems.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0) +
+                            Number(selectedOrder.discount_amount || 0) +
+                            Number(selectedOrder.bargain_amount || 0)
+                        )}
+                      </span>
                     </div>
                   )}
                   {selectedOrder.tax_amount > 0 && (
