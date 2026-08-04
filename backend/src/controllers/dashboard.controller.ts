@@ -257,17 +257,20 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 
     const orderRevenue = parseFloat(revenueResult.rows[0].total_revenue) || 0;
     const revenue      = orderRevenue + deliveryRevenue;
-    const expenses     = (parseFloat(expensesResult.rows[0].total_expenses) || 0) + salaries;
-    const profit       = revenue - expenses;
+    // Keep operational expenses and payroll separate so staff can see their own
+    // expense entries without salary figures leaking to non-admin views.
+    const expenses     = parseFloat(expensesResult.rows[0].total_expenses) || 0;
+    // Net profit deducts both operational expenses AND payroll salaries
+    const profit       = revenue - expenses - salaries;
     const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
 
     res.json({
       revenue,
       deliveryRevenue,
       orderRevenue,
-      expenses,
-      salaries,
-      profit,
+      expenses,       // operational expenses only (staff-visible)
+      salaries,       // payroll total (admin-only in UI)
+      profit,         // revenue − expenses − salaries
       profitMargin,
       outstandingBalance: parseFloat(outstandingResult.rows[0].outstanding_balance) || 0,
       orderCount: parseInt(revenueResult.rows[0].payment_count) || 0,

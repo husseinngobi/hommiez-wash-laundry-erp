@@ -40,6 +40,7 @@ interface DashboardStats {
 interface FinancialSummary {
   revenue: number;
   expenses: number;
+  salaries?: number;   // payroll — admin-only display
   profit: number;
   profitMargin: number;
   outstandingBalance: number;
@@ -550,12 +551,22 @@ export default function Dashboard() {
                 </p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Expenses</p>
+                <p className="text-sm text-muted-foreground">Operating Expenses</p>
                 <p className="text-2xl font-bold text-red-600">
                   {loading ? '...' : formatUGX(financialSummary?.expenses || 0)}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">Operating costs</p>
+                <p className="text-xs text-muted-foreground mt-1">Staff-recorded costs</p>
               </div>
+              {/* Payroll line — only visible to admins */}
+              {isAdmin && (financialSummary?.salaries ?? 0) > 0 && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Payroll</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {loading ? '...' : formatUGX(financialSummary?.salaries || 0)}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Salary payments</p>
+                </div>
+              )}
               <div>
                 <p className="text-sm text-muted-foreground">Net Profit</p>
                 <p className={`text-2xl font-bold ${(financialSummary?.profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -563,6 +574,9 @@ export default function Dashboard() {
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {loading ? '...' : `${(financialSummary?.profitMargin || 0).toFixed(1)}% margin`}
+                  {isAdmin && (financialSummary?.salaries ?? 0) > 0 && (
+                    <span className="block text-[10px] opacity-60">after expenses + payroll</span>
+                  )}
                 </p>
               </div>
             </div>
