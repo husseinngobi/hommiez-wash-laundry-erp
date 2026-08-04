@@ -115,6 +115,20 @@ export default function PriceList() {
   const [newCatName, setNewCatName] = useState('');
   const [catSaving, setCatSaving] = useState(false);
 
+  // Hardcoded categories the user has dismissed (persisted across sessions)
+  const [dismissedCategories, setDismissedCategories] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('pricelist_dismissed_categories');
+      return new Set(stored ? JSON.parse(stored) : []);
+    } catch { return new Set(); }
+  });
+
+  const dismissCategory = (name: string) => {
+    const next = new Set(dismissedCategories).add(name);
+    setDismissedCategories(next);
+    localStorage.setItem('pricelist_dismissed_categories', JSON.stringify([...next]));
+  };
+
   const fetchCategories = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/prices/categories`, {
@@ -126,10 +140,16 @@ export default function PriceList() {
 
   useEffect(() => { if (token) fetchCategories(); }, [token, fetchCategories]);
 
-  /** All known category names (from DB + hardcoded fallback) */
+  /** All known category names (from DB + hardcoded fallback), excluding dismissed ones */
   const allCategoryNames = Array.from(
     new Set([...categories.map(c => c.name), ...Object.keys(categoryConfig)])
-  );
+  ).filter(name => !dismissedCategories.has(name));
+
+  /** Build a merged list for the dialog: all categories with their item counts */
+  const allCategoriesForDialog: CategoryRow[] = allCategoryNames.map(name => ({
+    name,
+    item_count: categories.find(c => c.name === name)?.item_count ?? 0,
+  }));
 
   const getCategoryLabel = (key: string) =>
     categoryConfig[key as keyof typeof categoryConfig]?.label ||
@@ -160,6 +180,14 @@ export default function PriceList() {
   };
 
   const handleDeleteCategory = async (name: string) => {
+    // If this category has no DB entries (only hardcoded in frontend), just dismiss it locally
+    const inDb = categories.some(c => c.name === name);
+    if (!inDb) {
+      dismissCategory(name);
+      toast({ title: 'Category removed', description: `"${getCategoryLabel(name)}" hidden from the list.` });
+      if (activeCategory === name) setActiveCategory('ALL');
+      return;
+    }
     setCatSaving(true);
     try {
       await axios.delete(
@@ -1288,7 +1316,7 @@ export default function PriceList() {
           </DialogHeader>
 
           <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-            {categories.map(cat => (
+            {allCategoriesForDialog.map(cat => (
               <div key={cat.name} className="flex items-center gap-2 rounded-md border px-3 py-2">
                 <span className="text-base">{getCategoryIcon(cat.name)}</span>
                 {catEditTarget === cat.name ? (
@@ -1339,7 +1367,7 @@ export default function PriceList() {
                 )}
               </div>
             ))}
-            {categories.length === 0 && (
+            {allCategoriesForDialog.length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-4">No categories found.</p>
             )}
           </div>
