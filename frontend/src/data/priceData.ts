@@ -5,7 +5,7 @@ export interface PriceItem {
   id: string;
   name: string;
   price: number;
-  category: 'gents' | 'ladies' | 'general' | 'home_services' | 'kids';
+  category: 'gents' | 'ladies' | 'general' | 'kids';
   subcategory?: string;
   ironingPrice: number;
 }
@@ -14,7 +14,6 @@ export const priceCategories = {
   gents: { label: 'Gents', icon: '🧥', color: 'primary' },
   ladies: { label: 'Ladies', icon: '👗', color: 'secondary' },
   general: { label: 'General', icon: '🧺', color: 'accent' },
-  home_services: { label: 'Home Services', icon: '🏠', color: 'warning' },
   kids: { label: 'Kids', icon: '👶', color: 'success' },
 } as const;
 

@@ -74,7 +74,6 @@ const categoryConfig = {
   ladies: { label: 'Ladies', icon: '👗', color: 'pink' },
   general: { label: 'Household', icon: '🏠', color: 'green' },
   kids: { label: 'Kids', icon: '👶', color: 'yellow' },
-  home_services: { label: 'Home Services', icon: '🏡', color: 'purple' },
 };
 
 const unitConfig = {
