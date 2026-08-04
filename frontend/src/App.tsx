@@ -19,6 +19,7 @@ const Orders = lazy(() => import("./pages/Orders"));
 const NewOrder = lazy(() => import("./pages/NewOrder"));
 const Customers = lazy(() => import("./pages/Customers"));
 const Messages = lazy(() => import("./pages/Messages"));
+const Campaigns = lazy(() => import("./pages/Campaigns"));
 const PriceList = lazy(() => import("./pages/PriceList"));
 const Inventory = lazy(() => import("./pages/Inventory"));
 const Deliveries = lazy(() => import("./pages/Deliveries"));
@@ -127,7 +128,7 @@ const App = () => (
                 <Route
                   path="/inventory"
                   element={
-                    <ProtectedRoute requireManager>
+                    <ProtectedRoute>
                       <Inventory />
                     </ProtectedRoute>
                   }
@@ -145,6 +146,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <Messages />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/campaigns"
+                  element={
+                    <ProtectedRoute>
+                      <Campaigns />
                     </ProtectedRoute>
                   }
                 />

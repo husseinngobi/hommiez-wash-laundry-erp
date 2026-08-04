@@ -140,6 +140,10 @@ export default function Settings() {
   const [desktopAgentBargainLimit, setDesktopAgentBargainLimit] = useState('5000');
   const [managerBargainLimit, setManagerBargainLimit] = useState('10000');
   const [adminBargainLimit, setAdminBargainLimit] = useState('50000');
+  // Per-item bargain ceilings
+  const [desktopAgentItemLimit, setDesktopAgentItemLimit] = useState('1000');
+  const [managerItemLimit, setManagerItemLimit] = useState('2000');
+  const [adminItemLimit, setAdminItemLimit] = useState('10000');
   const [savingBargainLimits, setSavingBargainLimits] = useState(false);
 
   // Payment accounts for on-account / partial WhatsApp receipts
@@ -337,6 +341,9 @@ export default function Settings() {
       setDesktopAgentBargainLimit(toLimit(response.data.desktop_agent, 5000));
       setManagerBargainLimit(toLimit(response.data.manager, 10000));
       setAdminBargainLimit(toLimit(response.data.admin, 50000));
+      setDesktopAgentItemLimit(toLimit(response.data.desktop_agent_per_item, 1000));
+      setManagerItemLimit(toLimit(response.data.manager_per_item, 2000));
+      setAdminItemLimit(toLimit(response.data.admin_per_item, 10000));
     } catch (error) {
       console.error('Failed to load bargain limits:', error);
     }
@@ -562,34 +569,38 @@ export default function Settings() {
       return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : null;
     };
 
-    const desktopAgent = parseLimit(desktopAgentBargainLimit);
-    const manager = parseLimit(managerBargainLimit);
-    const admin = parseLimit(adminBargainLimit);
+    const desktopAgent     = parseLimit(desktopAgentBargainLimit);
+    const manager          = parseLimit(managerBargainLimit);
+    const admin            = parseLimit(adminBargainLimit);
+    const desktopAgentItem = parseLimit(desktopAgentItemLimit);
+    const managerItem      = parseLimit(managerItemLimit);
+    const adminItem        = parseLimit(adminItemLimit);
 
-    if (desktopAgent === null || manager === null || admin === null) {
+    if (
+      desktopAgent === null || manager === null || admin === null ||
+      desktopAgentItem === null || managerItem === null || adminItem === null
+    ) {
       toast({
         title: 'Enter valid amounts',
-        description: 'Each bargain limit must be a whole number in UGX (e.g. 5000).',
+        description: 'All bargain limits must be whole numbers in UGX (e.g. 5000).',
         variant: 'destructive',
       });
       return;
     }
-
+    if (desktopAgentItem > desktopAgent) {
+      toast({ title: 'Check per-item limit', description: 'Desktop agent per-item limit cannot exceed the overall limit.', variant: 'destructive' });
+      return;
+    }
+    if (managerItem > manager) {
+      toast({ title: 'Check per-item limit', description: 'Manager per-item limit cannot exceed the overall limit.', variant: 'destructive' });
+      return;
+    }
     if (manager < desktopAgent) {
-      toast({
-        title: 'Check the limits',
-        description: 'The manager limit should not be lower than the desktop agent limit.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Check overall limits', description: 'Manager overall limit should not be lower than desktop agent limit.', variant: 'destructive' });
       return;
     }
-
     if (admin < manager) {
-      toast({
-        title: 'Check the limits',
-        description: 'The administrator limit should not be lower than the manager limit.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Check overall limits', description: 'Administrator limit should not be lower than manager limit.', variant: 'destructive' });
       return;
     }
 
@@ -599,9 +610,12 @@ export default function Settings() {
       await axios.post(
         `${API_BASE_URL}/settings/bargain-limits`,
         {
-          desktop_agent_limit: desktopAgent,
-          manager_limit: manager,
-          admin_limit: admin,
+          desktop_agent_limit:      desktopAgent,
+          manager_limit:            manager,
+          admin_limit:              admin,
+          desktop_agent_item_limit: desktopAgentItem,
+          manager_item_limit:       managerItem,
+          admin_item_limit:         adminItem,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -609,6 +623,9 @@ export default function Settings() {
       setDesktopAgentBargainLimit(String(desktopAgent));
       setManagerBargainLimit(String(manager));
       setAdminBargainLimit(String(admin));
+      setDesktopAgentItemLimit(String(desktopAgentItem));
+      setManagerItemLimit(String(managerItem));
+      setAdminItemLimit(String(adminItem));
 
       toast({
         title: 'Bargain limits updated',
@@ -1343,9 +1360,15 @@ Don't miss out! ✨`;
                   />
                 </div>
               </div>
-              <Button onClick={createBranch} disabled={savingBranch}>
-                {savingBranch ? 'Saving…' : 'Add Branch'}
-              </Button>
+              {branches.length >= 5 ? (
+                <p className="text-sm text-amber-600 font-medium">
+                  Maximum of 5 branches reached. Remove an existing branch to add a new one.
+                </p>
+              ) : (
+                <Button onClick={createBranch} disabled={savingBranch}>
+                  {savingBranch ? 'Saving…' : `Add Branch (${branches.length}/5)`}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -2016,60 +2039,44 @@ Don't miss out! ✨`;
               </AlertDescription>
             </Alert>
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase">Maximum Bargain Limits (UGX)</h3>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="desktop-agent-limit">Desktop Agent Limit</Label>
-                  <Input
-                    id="desktop-agent-limit"
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    step="1000"
-                    value={desktopAgentBargainLimit}
-                    onChange={(e) => setDesktopAgentBargainLimit(e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                    placeholder="5000"
-                    className="mt-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Recommended: 5,000 - 10,000 UGX</p>
+            <div className="space-y-6">
+              {/* Overall limits */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Overall Order Bargain Limit (UGX)</h3>
+                <p className="text-xs text-muted-foreground">Maximum total bargain a staff member may apply across an entire order (item discounts + order bargain combined).</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {[
+                    { id: 'da-overall', label: 'Desktop Agent', value: desktopAgentBargainLimit, set: setDesktopAgentBargainLimit, placeholder: '5000' },
+                    { id: 'mgr-overall', label: 'Manager', value: managerBargainLimit, set: setManagerBargainLimit, placeholder: '10000' },
+                    { id: 'adm-overall', label: 'Administrator', value: adminBargainLimit, set: setAdminBargainLimit, placeholder: '50000' },
+                  ].map(({ id, label, value, set, placeholder }) => (
+                    <div key={id}>
+                      <Label htmlFor={id}>{label}</Label>
+                      <Input id={id} type="number" inputMode="numeric" min="0" step="1000"
+                        value={value} onChange={(e) => set(e.target.value)} onFocus={(e) => e.target.select()}
+                        placeholder={placeholder} className="mt-2" />
+                    </div>
+                  ))}
                 </div>
+              </div>
 
-                <div>
-                  <Label htmlFor="manager-limit">Manager Limit</Label>
-                  <Input
-                    id="manager-limit"
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    step="1000"
-                    value={managerBargainLimit}
-                    onChange={(e) => setManagerBargainLimit(e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                    placeholder="10000"
-                    className="mt-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">Recommended: 10,000 - 20,000 UGX</p>
-                </div>
-
-                <div>
-                  <Label>Administrator Limit</Label>
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    step="1000"
-                    value={adminBargainLimit}
-                    onChange={(e) => setAdminBargainLimit(e.target.value)}
-                    onFocus={(e) => e.target.select()}
-                    placeholder="50000"
-                    className="mt-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Administrators can set their own UGX bargain ceiling here.
-                  </p>
+              {/* Per-item limits */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Per-Item Bargain Limit (UGX)</h3>
+                <p className="text-xs text-muted-foreground">Maximum bargain a staff member may apply to a single item line. Must not exceed the overall limit above.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {[
+                    { id: 'da-item', label: 'Desktop Agent', value: desktopAgentItemLimit, set: setDesktopAgentItemLimit, placeholder: '1000' },
+                    { id: 'mgr-item', label: 'Manager', value: managerItemLimit, set: setManagerItemLimit, placeholder: '2000' },
+                    { id: 'adm-item', label: 'Administrator', value: adminItemLimit, set: setAdminItemLimit, placeholder: '10000' },
+                  ].map(({ id, label, value, set, placeholder }) => (
+                    <div key={id}>
+                      <Label htmlFor={id}>{label}</Label>
+                      <Input id={id} type="number" inputMode="numeric" min="0" step="500"
+                        value={value} onChange={(e) => set(e.target.value)} onFocus={(e) => e.target.select()}
+                        placeholder={placeholder} className="mt-2" />
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -2077,8 +2084,9 @@ Don't miss out! ✨`;
             <Alert className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
               <Shield className="h-4 w-4 text-blue-600" />
               <AlertDescription className="text-blue-800 dark:text-blue-200">
-                <strong>How it works:</strong> When creating an order, if staff enter a bargain amount above their limit, 
-                the system will show an error: "Beyond maximum bargaining limit". You'll receive a notification when bargain deductions are used.
+                <strong>How it works:</strong> When creating an order, item bargains must stay within the per-item ceiling
+                and all bargains combined must stay within the overall ceiling. You receive a notification whenever a
+                bargain is used.
               </AlertDescription>
             </Alert>
 

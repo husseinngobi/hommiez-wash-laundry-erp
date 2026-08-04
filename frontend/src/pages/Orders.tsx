@@ -38,11 +38,11 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare, StickyNote } from 'lucide-react';
+import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare, StickyNote, X, ShieldAlert } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -543,21 +543,28 @@ const printReceipt = (
           <span>Status:</span>
           <strong>${order.order_status}</strong>
         </div>
+        ${branchLine ? `
+        <div class="info-row">
+          <span>Branch:</span>
+          <strong>${branchLine}</strong>
+        </div>` : ''}
       </div>
       
       <div class="barcode">
         ${order.order_number}
       </div>
       
+      ${order.order_status === 'ready' || order.order_status === 'delivered' ? `
       <div class="section">
         <div class="section-title">Collection Policy</div>
         <p style="margin: 2px 0; font-size: 10px; line-height: 1.4;">
-          Kindly collect your items within ${COLLECTION_GRACE_DAYS} days of being notified that they
-          are ready. We do not have storage facilities for garments, so items held beyond
+          Kindly collect your items within ${COLLECTION_GRACE_DAYS} days of this notice.
+          We do not have storage facilities for garments, so items held beyond
           ${COLLECTION_GRACE_DAYS} days attract a storage charge and are kept at the owner's risk.
           Items left uncollected for over ${UNCOLLECTED_DONATION_MONTHS} months are donated to charity.
         </p>
       </div>
+      ` : ''}
 
       <div class="footer">
         <p>Thank you for choosing Lush!</p>
@@ -585,6 +592,7 @@ export default function Orders() {
   const { toast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [paymentFilter, setPaymentFilter] = useState('ALL');
@@ -609,12 +617,25 @@ export default function Orders() {
   const [cancellingPayment, setCancellingPayment] = useState(false);
   const [showDeleteOrderDialog, setShowDeleteOrderDialog] = useState(false);
   const [deleteOrderReason, setDeleteOrderReason] = useState('Cancelled by administrator');
+
+  // Damage/Loss claim state
+  const [showDamageDialog, setShowDamageDialog] = useState(false);
+  const [damageItemDesc, setDamageItemDesc] = useState('');
+  const [damageType, setDamageType] = useState<'DAMAGED' | 'LOST' | 'STAINED' | 'SHRUNK' | 'OTHER'>('DAMAGED');
+  const [damageDescription, setDamageDescription] = useState('');
+  const [damageCompensation, setDamageCompensation] = useState('0');
+  const [damageSaving, setDamageSaving] = useState(false);
   const [deletingOrder, setDeletingOrder] = useState(false);
   const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
   const [branchCount, setBranchCount] = useState(0);
   // Branch details stay hidden while the business runs a single branch
   const multiBranch = branchCount > 1;
+  /** Full branch records so we can inject branch-specific contact into receipts */
+  const [branchList, setBranchList] = useState<Array<{
+    id: number; name: string; phone?: string; email?: string;
+    location?: string; address?: string;
+  }>>([]);
   const [additionalPayment, setAdditionalPayment] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER'>('CASH');
   const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
@@ -635,6 +656,7 @@ export default function Orders() {
     orderDate: true,
     daysOld: true,
     salesPerson: true,
+    branch: true,
     total: true,
     payment: true,
     status: true,
@@ -675,18 +697,55 @@ export default function Orders() {
   // Track if we've already auto-opened an order from navigation
   const hasAutoOpenedRef = useRef(false);
 
+  // Highlighted order (from notification deep-link or payment back-link)
+  const [highlightedOrderNumber, setHighlightedOrderNumber] = useState<string | null>(null);
+  const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
+
   // Handle search from navigation state
   useEffect(() => {
     if (location.state?.searchQuery) {
       setSearchQuery(location.state.searchQuery);
-      // Clear the state after using it
       window.history.replaceState({}, document.title);
     }
     if (location.state?.searchOrderNumber) {
       setSearchQuery(location.state.searchOrderNumber);
       window.history.replaceState({}, document.title);
     }
+    // Highlight a specific order (from notification or payment view)
+    if (location.state?.highlightOrderNumber) {
+      const num = location.state.highlightOrderNumber as string;
+      setSearchQuery(num);
+      setHighlightedOrderNumber(num);
+      window.history.replaceState({}, document.title);
+    }
   }, [location.state]);
+
+  // Also handle ?order= URL param (from bargain notification links)
+  useEffect(() => {
+    const orderParam = searchParams.get('order') || searchParams.get('highlight');
+    if (orderParam) {
+      setSearchQuery(orderParam);
+      setHighlightedOrderNumber(orderParam);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Scroll to highlighted row and auto-clear after 4 s
+  useEffect(() => {
+    if (!highlightedOrderNumber) return;
+    const timer = setTimeout(() => {
+      if (highlightRowRef.current) {
+        highlightRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 400);
+    const clearTimer = setTimeout(() => {
+      setHighlightedOrderNumber(null);
+    }, 5000);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(clearTimer);
+    };
+  }, [highlightedOrderNumber]);
 
   // Fetch orders
   const fetchOrders = useCallback(async () => {
@@ -749,7 +808,11 @@ export default function Orders() {
       .catch(() => setPaymentModes(DEFAULT_PAYMENT_MODES));
     axios
       .get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => setBranchCount((res.data.branches || []).length))
+      .then((res) => {
+        const list = res.data.branches || [];
+        setBranchCount(list.length);
+        setBranchList(list);
+      })
       .catch(() => setBranchCount(0));
   }, [token]);
 
@@ -798,21 +861,41 @@ export default function Orders() {
     }
   };
 
+  /** Returns businessInfo merged with branch-specific contact details when available */
+  const resolveBusinessInfoForOrder = (order: Order): typeof businessInfo => {
+    if (!order.branch_name || !branchList.length) return businessInfo;
+    const branch = branchList.find(
+      (b) => b.name.toLowerCase() === order.branch_name!.toLowerCase()
+    );
+    if (!branch) return businessInfo;
+    return {
+      ...businessInfo,
+      branch_name: branch.name,
+      // Use branch contact if set, otherwise fall back to global settings
+      phone: branch.phone || businessInfo?.phone || '',
+      email: branch.email || businessInfo?.email || '',
+      location: branch.location || businessInfo?.location || '',
+      address: branch.address || businessInfo?.address || '',
+    };
+  };
+
   const buildWhatsAppTemplate = (
     kind: WhatsAppComposeKind,
     order: Order,
     items: OrderItem[]
   ): string => {
+    const effectiveBusiness = resolveBusinessInfoForOrder(order);
+    const effectivePhone = effectiveBusiness?.phone || businessPhone || undefined;
     switch (kind) {
       case 'receipt':
-        return generateOrderReceiptMessage(order, items, paymentModes, businessInfo, multiBranch);
+        return generateOrderReceiptMessage(order, items, paymentModes, effectiveBusiness, multiBranch);
       case 'ready':
-        return generateOrderReadyMessage(order, items, paymentModes, businessInfo, multiBranch);
+        return generateOrderReadyMessage(order, items, paymentModes, effectiveBusiness, multiBranch);
       case 'reminder':
-        return generateReminderMessage(order, businessPhone || undefined);
+        return generateReminderMessage(order, effectivePhone);
       case 'custom':
       default:
-        return `Hello ${order.customer_name},\n\nThis is Lush Dry Cleaners & Laundromat regarding your order *${order.order_number}*.\n\n${businessPhone ? `📞 ${businessPhone}\n\n` : ''}Thank you for choosing Lush!`;
+        return `Hello ${order.customer_name},\n\nThis is ${effectiveBusiness?.name || 'Lush Dry Cleaners & Laundromat'} regarding your order *${order.order_number}*.\n\n${effectivePhone ? `📞 ${effectivePhone}\n\n` : ''}Thank you for choosing us!`;
     }
   };
 
@@ -876,10 +959,10 @@ export default function Orders() {
     const opened = openWhatsAppMessenger(whatsAppComposePhone, whatsAppComposeMessage);
     if (opened) {
       toast({
-        title: 'Opening WhatsApp Messenger',
+        title: 'Opening WhatsApp',
         description: businessPhone
           ? `Send from your business WhatsApp (${businessPhone}). Review the message, then tap Send.`
-          : 'Review the message on WhatsApp, then tap Send. Set business phone in Settings for branding.',
+          : 'Review the message, then tap Send. Set a Business Phone in Settings to include it on receipts.',
       });
     } else {
       toast({
@@ -1479,6 +1562,14 @@ export default function Orders() {
             >
               Sales Person
             </DropdownMenuCheckboxItem>
+            {multiBranch && (
+              <DropdownMenuCheckboxItem
+                checked={visibleColumns.branch}
+                onCheckedChange={(checked) => setVisibleColumns(prev => ({ ...prev, branch: checked }))}
+              >
+                Branch
+              </DropdownMenuCheckboxItem>
+            )}
             <DropdownMenuCheckboxItem
               checked={visibleColumns.total}
               onCheckedChange={(checked) => setVisibleColumns(prev => ({ ...prev, total: checked }))}
@@ -1519,6 +1610,7 @@ export default function Orders() {
               {visibleColumns.orderDate && <TableHead>Order Date</TableHead>}
               {visibleColumns.daysOld && <TableHead>Days Old</TableHead>}
               {visibleColumns.salesPerson && <TableHead>Sales Person</TableHead>}
+              {multiBranch && visibleColumns.branch && <TableHead>Branch</TableHead>}
               {visibleColumns.total && <TableHead>Total</TableHead>}
               {visibleColumns.payment && <TableHead>Payment</TableHead>}
               {visibleColumns.status && <TableHead>Status</TableHead>}
@@ -1541,8 +1633,24 @@ export default function Orders() {
             ) : (
               filteredOrders.map((order) => {
                 const overdueStyle = getOverdueStyle(order);
+                const isHighlighted = highlightedOrderNumber === order.order_number;
                 return (
-                <TableRow key={order.id} className={overdueStyle.rowClass}>
+                <TableRow
+                  key={order.id}
+                  ref={isHighlighted ? (el) => { highlightRowRef.current = el; } : undefined}
+                  onClick={() => viewOrderDetails(order)}
+                  className={[
+                    'cursor-pointer transition-colors',
+                    // Active selection: dialog is open for this order
+                    showDetailsDialog && selectedOrder?.id === order.id
+                      ? 'bg-primary/10 dark:bg-primary/20 ring-1 ring-inset ring-primary/40'
+                      : 'hover:bg-muted/60',
+                    overdueStyle.rowClass,
+                    isHighlighted
+                      ? 'ring-2 ring-inset ring-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                      : '',
+                  ].filter(Boolean).join(' ')}
+                >
                   {visibleColumns.orderNumber && (
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
@@ -1576,6 +1684,17 @@ export default function Orders() {
                       </div>
                     </TableCell>
                   )}
+                  {multiBranch && visibleColumns.branch && (
+                    <TableCell className="text-sm">
+                      {order.branch_name ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 text-xs font-medium">
+                          {order.branch_name}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
+                    </TableCell>
+                  )}
                   {visibleColumns.total && (
                     <TableCell className="font-semibold">
                       <div>
@@ -1589,12 +1708,12 @@ export default function Orders() {
                   {visibleColumns.payment && <TableCell>{getPaymentBadge(order.payment_status)}</TableCell>}
                   {visibleColumns.status && <TableCell>{getStatusBadge(order.order_status)}</TableCell>}
                   {visibleColumns.actions && (
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => viewOrderDetails(order)}
+                          onClick={(e) => { e.stopPropagation(); viewOrderDetails(order); }}
                           title="View details"
                         >
                           <Eye className="h-4 w-4" />
@@ -1604,7 +1723,7 @@ export default function Orders() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => openReminderDialog(order)}
+                            onClick={(e) => { e.stopPropagation(); openReminderDialog(order); }}
                             disabled={sendingReminder === order.id}
                             title="Remind customer"
                             className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950"
@@ -1618,6 +1737,7 @@ export default function Orders() {
                               variant="ghost"
                               size="sm"
                               title="Share receipt"
+                              onClick={(e) => e.stopPropagation()}
                               className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
                             >
                               <Share2 className="h-4 w-4" />
@@ -1822,6 +1942,20 @@ export default function Orders() {
                       {selectedOrder.customer_phone}
                     </p>
                   </div>
+                  {selectedOrder.staff_name && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Handled by</p>
+                      <p className="font-medium">{selectedOrder.staff_name}</p>
+                    </div>
+                  )}
+                  {selectedOrder.branch_name && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Branch</p>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2.5 py-1 text-sm font-medium">
+                        {selectedOrder.branch_name}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1855,22 +1989,11 @@ export default function Orders() {
                         )}
                       </div>
                       {item.notes?.trim() && (
-                        <div className="flex items-center justify-between gap-2 border-t pt-2">
-                          <div className="flex items-start gap-1.5 text-xs text-muted-foreground min-w-0">
-                            <StickyNote className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                            <span className="truncate">Note added</span>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => {
-                              setSelectedItemNote(item);
-                              setShowItemNoteDialog(true);
-                            }}
-                          >
-                            View note
-                          </Button>
+                        <div className="flex items-start gap-1.5 border-t pt-2 mt-1">
+                          <StickyNote className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-500" />
+                          <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 rounded px-2 py-1 flex-1">
+                            {item.notes.trim()}
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1898,18 +2021,12 @@ export default function Orders() {
                             <div className="max-w-[260px]">
                               <span className="block break-words">{item.item_name}</span>
                               {item.notes?.trim() && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="mt-1 h-7 px-2 text-xs font-normal text-muted-foreground hover:text-foreground"
-                                  onClick={() => {
-                                    setSelectedItemNote(item);
-                                    setShowItemNoteDialog(true);
-                                  }}
-                                >
-                                  <StickyNote className="h-3 w-3 mr-1 shrink-0" />
-                                  View note
-                                </Button>
+                                <div className="flex items-start gap-1 mt-1.5">
+                                  <StickyNote className="h-3 w-3 mt-0.5 shrink-0 text-amber-500" />
+                                  <span className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 rounded px-1.5 py-0.5 break-words">
+                                    {item.notes.trim()}
+                                  </span>
+                                </div>
                               )}
                             </div>
                           </TableCell>
@@ -2346,43 +2463,58 @@ export default function Orders() {
                 </div>
               )}
 
-              {/* Status */}
-              <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
-                <span className="font-medium">Current Order Status:</span>
-                <div className="flex items-center gap-2">
-                  {getStatusBadge(selectedOrder.order_status)}
+              {/* ── Order Status ─────────────────────────────────────────────── */}
+              <div className="rounded-lg border-l-4 border-amber-500 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-amber-900 dark:text-amber-200 text-sm">
+                      Order Status — Keep This Updated
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 leading-snug">
+                      Status controls which WhatsApp messages are available.
+                      Mark as <strong>Ready</strong> to unlock the "Notify Ready" message to the customer.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3 bg-white dark:bg-gray-900 rounded-md px-3 py-2.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xs text-muted-foreground shrink-0">Current:</span>
+                    {getStatusBadge(selectedOrder.order_status)}
+                  </div>
                   <Button
-                    variant="outline"
                     size="sm"
+                    className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white shrink-0"
                     onClick={() => {
                       setNewStatus(selectedOrder.order_status);
                       setShowStatusDialog(true);
                     }}
                   >
-                    <Edit className="h-4 w-4 mr-1" />
-                    Update
+                    <Edit className="h-3.5 w-3.5" />
+                    Update Status
                   </Button>
                 </div>
               </div>
 
               {/* Quick Actions */}
               <div className="space-y-4 pt-4 border-t">
-                <h3 className="font-semibold text-lg flex items-center gap-2">
-                  <MessageCircle className="h-5 w-5 text-green-600" />
-                  WhatsApp Messenger
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Opens WhatsApp on this computer/phone so you can send from your business WhatsApp account.
-                  Edit the message first, then tap Send in Messenger.
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-semibold text-lg flex items-center gap-2">
+                    <MessageCircle className="h-5 w-5 text-green-600" />
+                    WhatsApp
+                  </h3>
                   {businessPhone ? (
-                    <span className="block mt-1 text-green-700 dark:text-green-400">
-                      Business contact on messages: {businessPhone} (from Settings)
+                    <span className="text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded px-2 py-0.5 shrink-0">
+                      {businessPhone}
                     </span>
                   ) : (
-                    <span className="block mt-1 text-amber-700 dark:text-amber-400">
-                      Tip: set Business Phone in Settings so receipts include your number.
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Set Business Phone in Settings
                     </span>
                   )}
+                </div>
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Choose a template, review or edit the message, then tap <strong>Open WhatsApp</strong> — it opens on this device so you can send from your business account.
                 </p>
                 <div className="flex flex-wrap gap-2 p-4 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
                   <Button
@@ -2545,10 +2677,39 @@ export default function Orders() {
                     Delete Order (Permanent)
                   </Button>
                 )}
+
+                {/* Log Damage / Loss Claim */}
+                <Button
+                  variant="outline"
+                  className="gap-2 border-orange-300 text-orange-700 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/30"
+                  onClick={() => {
+                    setDamageItemDesc('');
+                    setDamageType('DAMAGED');
+                    setDamageDescription('');
+                    setDamageCompensation('0');
+                    setShowDamageDialog(true);
+                  }}
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  Log Damage / Loss Claim
+                </Button>
                 </div>
               </div>
             </div>
           )}
+
+          {/* Sticky close footer — always reachable on mobile without scrolling back up */}
+          <div className="sticky bottom-0 -mx-4 sm:-mx-6 mt-6 px-4 sm:px-6 py-3 bg-background/95 backdrop-blur border-t flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setShowDetailsDialog(false)}
+            >
+              <X className="h-4 w-4" />
+              Close
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -2784,50 +2945,71 @@ export default function Orders() {
       <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
         <DialogContent className="max-w-[95vw] sm:max-w-md p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>Update Order Status</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="h-5 w-5 text-amber-500" />
+              Update Order Status
+            </DialogTitle>
             <DialogDescription>
-              Change the processing status for order {selectedOrder?.order_number}
+              Order <strong>{selectedOrder?.order_number}</strong> — select the new processing stage below.
             </DialogDescription>
           </DialogHeader>
           {selectedOrder && (
             <div className="space-y-4">
+              {/* Status flow visual */}
+              <div className="flex items-center gap-1 text-xs flex-wrap px-1">
+                {(
+                  [
+                    { key: 'pending',    label: 'Received',   color: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200' },
+                    { key: 'processing', label: 'Processing', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' },
+                    { key: 'ready',      label: 'Ready',      color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
+                    { key: 'delivered',  label: 'Delivered',  color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' },
+                  ] as const
+                ).map(({ key, label, color }, i, arr) => (
+                  <span key={key} className="flex items-center gap-1">
+                    <span className={`px-2 py-0.5 rounded-full font-medium ${color} ${selectedOrder.order_status === key ? 'ring-2 ring-amber-400' : 'opacity-60'}`}>
+                      {label}
+                    </span>
+                    {i < arr.length - 1 && <span className="text-muted-foreground">→</span>}
+                  </span>
+                ))}
+              </div>
+
               <div>
-                <Label htmlFor="new-status">Select New Status</Label>
+                <Label htmlFor="new-status" className="text-sm font-medium">Select New Status</Label>
                 <Select value={newStatus} onValueChange={setNewStatus}>
                   <SelectTrigger id="new-status" className="mt-2">
-                    <SelectValue />
+                    <SelectValue placeholder="Choose a status…" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PENDING">Pending (Order received)</SelectItem>
-                    <SelectItem value="PROCESSING">Processing (Being washed)</SelectItem>
-                    <SelectItem value="READY">Ready (Ready for pickup)</SelectItem>
-                    <SelectItem value="DELIVERED">Delivered (Customer collected)</SelectItem>
+                    <SelectItem value="PENDING">⏳ Received — order logged, awaiting processing</SelectItem>
+                    <SelectItem value="PROCESSING">🔄 Processing — currently being cleaned</SelectItem>
+                    <SelectItem value="READY">✅ Ready — cleaned, awaiting collection</SelectItem>
+                    <SelectItem value="DELIVERED">📦 Delivered — customer has collected</SelectItem>
                     {canCancelOrders && (
-                      <SelectItem value="CANCELLED">Cancelled (Admin only)</SelectItem>
+                      <SelectItem value="CANCELLED">🚫 Cancelled (Admin only)</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="p-3 sm:p-4 bg-muted rounded-lg">
-                <p className="text-sm font-medium mb-2">Status Flow:</p>
-                <div className="flex items-center gap-1 sm:gap-2 text-sm flex-wrap">
-                  <Badge variant="secondary">Received</Badge>
-                  <span>→</span>
-                  <Badge>Processing</Badge>
-                  <span>→</span>
-                  <Badge variant="outline">Ready</Badge>
-                  <span>→</span>
-                  <Badge variant="outline">Delivered</Badge>
+              {newStatus === 'READY' && (
+                <div className="flex items-start gap-2 rounded-md bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 p-3 text-xs text-green-800 dark:text-green-300">
+                  <MessageCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>Setting to <strong>Ready</strong> unlocks the <strong>"Notify Order Ready"</strong> WhatsApp message — remember to send it to the customer.</span>
                 </div>
-              </div>
+              )}
 
-              <div className="flex flex-col sm:flex-row gap-2 pt-4">
+              <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t">
                 <Button variant="outline" onClick={() => setShowStatusDialog(false)} className="w-full sm:w-auto">
                   Cancel
                 </Button>
-                <Button onClick={handleUpdateStatus} className="w-full sm:w-auto" disabled={!newStatus || newStatus === selectedOrder.order_status}>
-                  Update Status
+                <Button
+                  onClick={handleUpdateStatus}
+                  className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-white"
+                  disabled={!newStatus || newStatus.toLowerCase() === selectedOrder.order_status.toLowerCase()}
+                >
+                  <Edit className="h-4 w-4 mr-1.5" />
+                  Confirm Status Update
                 </Button>
               </div>
             </div>
@@ -2950,14 +3132,14 @@ export default function Orders() {
                       );
                       if (opened) {
                         toast({
-                          title: 'Opening WhatsApp Messenger',
-                          description: 'Use this when WhatsApp API automation is off.',
+                          title: 'Opening WhatsApp',
+                          description: 'Review the message, then tap Send from your business account.',
                         });
                       }
                     }}
                   >
                     <MessageCircle className="h-4 w-4 mr-2" />
-                    Open Messenger
+                    Open WhatsApp
                   </Button>
                 )}
                 <Button
@@ -2982,16 +3164,16 @@ export default function Orders() {
         </DialogContent>
       </Dialog>
 
-      {/* WhatsApp Messenger compose — edit then open Messenger */}
+      {/* WhatsApp compose — edit then open WhatsApp */}
       <Dialog open={showWhatsAppCompose} onOpenChange={setShowWhatsAppCompose}>
         <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[96dvh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5 text-green-600" />
-              WhatsApp Messenger
+              WhatsApp
             </DialogTitle>
             <DialogDescription>
-              Customize the message, then open WhatsApp to send to the customer from your business account on this device.
+              Review or edit the message below, then tap <strong>Open WhatsApp</strong> to send from your business account on this device.
             </DialogDescription>
           </DialogHeader>
 
@@ -3079,7 +3261,7 @@ export default function Orders() {
                   onClick={confirmOpenWhatsAppMessenger}
                 >
                   <MessageCircle className="h-4 w-4 mr-2" />
-                  Open WhatsApp Messenger
+                  Open WhatsApp
                 </Button>
               </div>
             </div>
@@ -3409,6 +3591,108 @@ export default function Orders() {
               onClick={handleCancelPayment}
             >
               {cancellingPayment ? 'Cancelling…' : 'OK, cancel payment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Damage / Loss Claim dialog */}
+      <Dialog open={showDamageDialog} onOpenChange={setShowDamageDialog}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-orange-500" />
+              Log Damage / Loss Claim
+            </DialogTitle>
+            <DialogDescription>
+              Record a customer complaint about a damaged or lost item.
+              {Number(damageCompensation) > 0 && ' A compensation expense will be created automatically.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Item Description *</label>
+              <input
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="e.g. Blue suit jacket — customer's item"
+                value={damageItemDesc}
+                onChange={(e) => setDamageItemDesc(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Claim Type</label>
+              <select
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                value={damageType}
+                onChange={(e) => setDamageType(e.target.value as typeof damageType)}
+              >
+                <option value="DAMAGED">Damaged</option>
+                <option value="LOST">Lost</option>
+                <option value="STAINED">Stained</option>
+                <option value="SHRUNK">Shrunk</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Description / Notes</label>
+              <textarea
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                rows={3}
+                placeholder="Describe what happened…"
+                value={damageDescription}
+                onChange={(e) => setDamageDescription(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Compensation Amount (UGX)</label>
+              <input
+                type="number"
+                min="0"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                placeholder="0 — if no compensation agreed yet"
+                value={damageCompensation}
+                onChange={(e) => setDamageCompensation(e.target.value)}
+              />
+              {Number(damageCompensation) > 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  ⚠️ This will auto-create an approved expense of UGX {Number(damageCompensation).toLocaleString()}.
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setShowDamageDialog(false)} className="w-full sm:w-auto">Cancel</Button>
+            <Button
+              disabled={damageSaving || !damageItemDesc.trim()}
+              className="w-full sm:w-auto gap-2 bg-orange-600 hover:bg-orange-700 text-white"
+              onClick={async () => {
+                if (!selectedOrder || !damageItemDesc.trim()) return;
+                setDamageSaving(true);
+                try {
+                  await axios.post(
+                    `${API_BASE_URL}/damage`,
+                    {
+                      order_id: selectedOrder.id,
+                      order_number: selectedOrder.order_number,
+                      customer_name: selectedOrder.customer_name,
+                      item_description: damageItemDesc.trim(),
+                      claim_type: damageType,
+                      description: damageDescription.trim() || undefined,
+                      compensation_amount: Number(damageCompensation) || 0,
+                    },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                  );
+                  toast({ title: 'Claim logged', description: 'Damage/loss claim has been recorded.' });
+                  setShowDamageDialog(false);
+                } catch {
+                  toast({ variant: 'destructive', title: 'Error', description: 'Failed to log claim.' });
+                } finally {
+                  setDamageSaving(false);
+                }
+              }}
+            >
+              <ShieldAlert className="h-4 w-4" />
+              {damageSaving ? 'Saving…' : 'Log Claim'}
             </Button>
           </DialogFooter>
         </DialogContent>

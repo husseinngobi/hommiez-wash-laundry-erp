@@ -79,6 +79,7 @@ interface StaffPerformanceData {
     id: number;
     staff_name: string;
     role: string;
+    user_status?: string;
     total_orders: number;
     total_revenue: number | string;
     avg_order_value: number | string;
@@ -1111,9 +1112,16 @@ export default function Reports() {
               </thead>
               <tbody>
                 {staffPerformance.staff_stats.map((staff) => (
-                  <tr key={staff.id} className="border-b border-border/50 hover:bg-muted/50 transition-colors">
+                  <tr key={staff.id} className={`border-b border-border/50 transition-colors ${staff.user_status && staff.user_status !== 'ACTIVE' ? 'opacity-60' : 'hover:bg-muted/50'}`}>
                     <td className="py-3 px-4">
                       <div className="font-medium text-foreground">{staff.staff_name}</div>
+                      {staff.user_status && staff.user_status !== 'ACTIVE' && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          <span className="inline-flex items-center gap-1 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded">
+                            Inactive / Deleted — historical data
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${

@@ -68,12 +68,13 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       whereClause += ` AND o.status != 'cancelled'`;
     }
 
-    // Search by order number, customer name, or phone
+    // Search by order number, customer name, phone, or staff name
     if (search) {
       whereClause += ` AND (
         o.order_number ILIKE $${paramCount} OR 
         c.name ILIKE $${paramCount} OR 
-        c.phone ILIKE $${paramCount}
+        c.phone ILIKE $${paramCount} OR
+        u.full_name ILIKE $${paramCount}
       )`;
       values.push(`%${search}%`);
       paramCount++;
@@ -276,7 +277,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     for (const item of items) {
       // Fetch actual price from database (prevent price manipulation)
       const priceResult = await client.query(
-        `SELECT id, name, unit, price, ironing_price, express_price,
+        `SELECT id, name, unit,
+         COALESCE(pricing_type, 'FIXED') as pricing_type,
+         COALESCE(price_per_kg, 0) as price_per_kg,
+         price, ironing_price, express_price,
          discount_percentage, discount_start_date, discount_end_date,
          CASE 
            WHEN discount_percentage > 0 
@@ -317,23 +321,32 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         throw new Error(`Invalid quantity for item ID ${item.price_item_id}`);
       }
 
-      if (priceItem.unit !== 'kg' && !Number.isInteger(quantity)) {
+      const isPerKg = priceItem.pricing_type === 'PER_KG' || priceItem.unit === 'kg';
+      if (!isPerKg && !Number.isInteger(quantity)) {
         throw new Error(`${priceItem.name} must use a whole number quantity`);
       }
       
       let actualUnitPrice = 0;
-      if (serviceType === 'WASH') {
-        actualUnitPrice = priceItem.effective_price; // Uses discounted price if applicable
+      if (isPerKg) {
+        // PER_KG items: rate per kg. EXPRESS doubles, IRON uses the same kg rate.
+        const baseKgRate = Number(priceItem.price_per_kg) > 0 ? Number(priceItem.price_per_kg) : Number(priceItem.effective_price);
+        if (serviceType === 'EXPRESS') {
+          actualUnitPrice = baseKgRate * 2;
+        } else {
+          actualUnitPrice = baseKgRate;
+        }
+      } else if (serviceType === 'WASH') {
+        actualUnitPrice = priceItem.effective_price;
       } else if (serviceType === 'IRON') {
-        actualUnitPrice = priceItem.effective_ironing_price; // Uses discounted ironing price if applicable
+        actualUnitPrice = priceItem.effective_ironing_price;
       } else if (serviceType === 'EXPRESS') {
-        // Uses: 1) Custom express_price if set, OR 2) Discounted price * 2 if discount active, OR 3) Regular price * 2
         actualUnitPrice = priceItem.effective_express_price;
       } else {
         throw new Error(`Invalid service type: ${item.service_type}`);
       }
       
-      const normalizedQuantity = priceItem.unit === 'kg' ? Math.round(quantity * 2) / 2 : quantity;
+      // PER_KG quantities round to nearest 0.1kg; FIXED quantities must be whole
+      const normalizedQuantity = isPerKg ? Math.round(quantity * 10) / 10 : quantity;
       const grossItemTotal = Math.round(normalizedQuantity * actualUnitPrice);
 
       // Per-item bargain: capped at the line total and at the role's discount ceiling,
@@ -394,36 +407,45 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       throw new Error('Bargain amount cannot be negative');
     }
     
-    // Fetch user's maximum bargain limit (with role-based default if unset)
+    // Fetch user's maximum bargain limits (overall + per-item)
     const userResult = await client.query(
-      `SELECT max_bargain_amount, role FROM users WHERE id = $1`,
+      `SELECT max_bargain_amount, max_item_bargain_amount, role FROM users WHERE id = $1`,
       [req.user!.id]
     );
-    
-    if (userResult.rows.length === 0) {
-      throw new Error('User not found');
+
+    if (userResult.rows.length === 0) throw new Error('User not found');
+
+    const { role, max_bargain_amount, max_item_bargain_amount } = userResult.rows[0];
+
+    // Admins are uncapped; all others obey the configured ceilings.
+    const maxOverall  = getEffectiveBargainLimit(role, max_bargain_amount);
+    const maxPerItem  = role === 'ADMIN' ? Number.MAX_SAFE_INTEGER
+                      : Math.max(0, Number(max_item_bargain_amount) || 0);
+
+    // Enforce per-item ceiling for every line that has a bargain
+    if (maxPerItem > 0) {
+      for (const item of validatedItems) {
+        const itemDiscount = Number(item.discount_amount || 0);
+        if (itemDiscount > maxPerItem) {
+          throw new Error(
+            `Item bargain of UGX ${itemDiscount.toLocaleString()} on one or more items exceeds your per-item limit of UGX ${maxPerItem.toLocaleString()}`
+          );
+        }
+      }
     }
-    
-    const maxBargainAmount = getEffectiveBargainLimit(
-      userResult.rows[0].role,
-      userResult.rows[0].max_bargain_amount
-    );
 
+    // Enforce overall ceiling (item bargains + order-level bargain combined)
     const totalBargainRequested = totalItemDiscount + bargainAmountValue;
-
-    if (totalBargainRequested > maxBargainAmount) {
-      const totalDisplay = totalBargainRequested.toLocaleString('en-UG');
-      const maxDisplay = maxBargainAmount.toLocaleString('en-UG');
+    if (totalBargainRequested > maxOverall) {
       throw new Error(
-        `Total bargain amount (item bargains + order bargain) is UGX ${totalDisplay}, which exceeds your maximum limit of UGX ${maxDisplay}`
+        `Total bargain (item discounts + order bargain) of UGX ${totalBargainRequested.toLocaleString()} exceeds your overall limit of UGX ${maxOverall.toLocaleString()}`
       );
     }
-    
-    // Validate bargain amount doesn't exceed user's limit
-    if (bargainAmountValue > maxBargainAmount) {
-      const bargainDisplay = bargainAmountValue.toLocaleString('en-UG');
-      const maxDisplay = maxBargainAmount.toLocaleString('en-UG');
-      throw new Error(`Bargain amount (UGX ${bargainDisplay}) exceeds your maximum limit of UGX ${maxDisplay}`);
+
+    if (bargainAmountValue > maxOverall) {
+      throw new Error(
+        `Order bargain of UGX ${bargainAmountValue.toLocaleString()} exceeds your overall limit of UGX ${maxOverall.toLocaleString()}`
+      );
     }
     
     // Validate bargain amount doesn't exceed order subtotal

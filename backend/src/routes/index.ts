@@ -26,6 +26,7 @@ import fiscalYearRoutes from './fiscalYear.routes';
 import automationRoutes from './automation.routes';
 import reminderRoutes from './reminder.routes';
 import branchRoutes from './branch.routes';
+import damageRoutes from './damage.routes';
 
 const router = Router();
 
@@ -57,6 +58,7 @@ router.use('/fiscal-years', fiscalYearRoutes);
 router.use('/admin', userManagementRoutes); // Admin-only user management routes
 router.use('/automation-settings', automationRoutes); // WhatsApp automation settings
 router.use('/reminders', reminderRoutes); // Customer reminder system
+router.use('/damage', damageRoutes); // Damage/loss claim management
 
 // Health check
 router.get('/health', (req, res) => {

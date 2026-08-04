@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -119,6 +119,10 @@ const Payments = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkOrderNumber = searchParams.get('orderNumber');
+
+  // Highlight support: set when navigated from Orders or another page
+  const [highlightedPaymentOrderNumber, setHighlightedPaymentOrderNumber] = useState<string | null>(null);
+  const highlightPaymentRowRef = useRef<HTMLTableRowElement | null>(null);
   
   const [payments, setPayments] = useState<Payment[]>([]);
   const [stats, setStats] = useState<PaymentStats | null>(null);
@@ -396,6 +400,8 @@ const Payments = () => {
       search: deepLinkOrderNumber,
     });
     setCurrentPage(1);
+    // Also highlight the rows for this order number
+    setHighlightedPaymentOrderNumber(deepLinkOrderNumber);
 
     const timer = setTimeout(() => {
       setSearchParams({});
@@ -403,6 +409,23 @@ const Payments = () => {
 
     return () => clearTimeout(timer);
   }, [deepLinkOrderNumber, setSearchParams]);
+
+  // Scroll to first highlighted payment row and clear after 5 s
+  useEffect(() => {
+    if (!highlightedPaymentOrderNumber) return;
+    const scroll = setTimeout(() => {
+      if (highlightPaymentRowRef.current) {
+        highlightPaymentRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 600);
+    const clear = setTimeout(() => {
+      setHighlightedPaymentOrderNumber(null);
+    }, 6000);
+    return () => {
+      clearTimeout(scroll);
+      clearTimeout(clear);
+    };
+  }, [highlightedPaymentOrderNumber, payments]);
 
   const handleExportCSV = async () => {
     try {
@@ -487,7 +510,7 @@ const Payments = () => {
   const openLinkedOrder = (orderNumber?: string) => {
     if (!orderNumber) return;
     setShowDetailsDialog(false);
-    navigate('/orders', { state: { searchOrderNumber: orderNumber } });
+    navigate('/orders', { state: { searchOrderNumber: orderNumber, highlightOrderNumber: orderNumber } });
   };
 
   const printPaymentReceipt = (payment: Payment) => {
@@ -799,10 +822,19 @@ const Payments = () => {
                       </td>
                     </tr>
                   ) : (
-                    payments.map((payment) => (
+                    payments.map((payment, idx) => {
+                      const isHighlighted = highlightedPaymentOrderNumber === payment.order_number;
+                      const isFirstHighlighted = isHighlighted && payments.findIndex(p => p.order_number === highlightedPaymentOrderNumber) === idx;
+                      return (
                       <tr
                         key={payment.id}
-                        className="border-b dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150"
+                        ref={isFirstHighlighted ? (el) => { highlightPaymentRowRef.current = el; } : undefined}
+                        className={[
+                          'border-b dark:border-gray-700 transition-colors duration-150',
+                          isHighlighted
+                            ? 'bg-blue-50 dark:bg-blue-950/30 outline outline-2 outline-blue-500 outline-offset-[-2px]'
+                            : 'hover:bg-gray-100 dark:hover:bg-gray-700',
+                        ].join(' ')}
                       >
                         <td className="px-4 py-3 text-sm dark:text-gray-300">
                           {new Date(payment.payment_date).toLocaleDateString()}
@@ -858,7 +890,8 @@ const Payments = () => {
                           </div>
                         </td>
                       </tr>
-                    ))
+                    );
+                    })
                   )}
                 </tbody>
               </table>

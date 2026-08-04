@@ -24,6 +24,9 @@ import { ensureOrderItemDiscountColumn } from './database/ensureOrderItemDiscoun
 import { ensureBranchSupport } from './database/ensureBranchSupport';
 import { ensureNotificationColumns } from './database/ensureNotificationColumns';
 import { ensureDeliveryPaymentColumns } from './database/ensureDeliveryPaymentColumns';
+import { ensureItemBargainLimit } from './database/ensureItemBargainLimit';
+import { ensureWeightPricing } from './database/ensureWeightPricing';
+import { ensureDamageClaims } from './database/ensureDamageClaims';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -168,6 +171,27 @@ const startServer = async () => {
       await ensureDeliveryPaymentColumns();
     } catch (deliveryPaymentError) {
       console.error('⚠️ delivery payment columns skipped or failed:', deliveryPaymentError);
+    }
+
+    // Per-item bargain ceiling column
+    try {
+      await ensureItemBargainLimit();
+    } catch (itemBargainError) {
+      console.error('⚠️ per-item bargain limit column skipped or failed:', itemBargainError);
+    }
+
+    // Weight-based pricing columns
+    try {
+      await ensureWeightPricing();
+    } catch (weightErr) {
+      console.error('⚠️ weight pricing migration skipped or failed:', weightErr);
+    }
+
+    // Damage/Loss claims table
+    try {
+      await ensureDamageClaims();
+    } catch (claimsErr) {
+      console.error('⚠️ damage claims migration skipped or failed:', claimsErr);
     }
 
     // Ensure upload directories exist

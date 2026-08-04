@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL } from '@/lib/api';
-import { Bell, Check, X, Trash2, Clock, CheckCircle, AlertCircle, DollarSign, Receipt, Megaphone, ShoppingCart, RotateCcw, Database } from 'lucide-react';
+import { Bell, Check, X, Trash2, Clock, CheckCircle, AlertCircle, DollarSign, Receipt, Megaphone, ShoppingCart, RotateCcw, Database, ExternalLink, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -41,6 +41,7 @@ export function NotificationDropdown() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [announcementDialog, setAnnouncementDialog] = useState<Notification | null>(null);
+  const [detailNotification, setDetailNotification] = useState<Notification | null>(null);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -131,6 +132,18 @@ export function NotificationDropdown() {
     }
   };
 
+  /** Extract order number from notification data or link */
+  const extractOrderNumber = (notification: Notification): string | null => {
+    if (notification.data?.order_number) return notification.data.order_number as string;
+    if (notification.link) {
+      const m = notification.link.match(/[?&]order=([^&]+)/);
+      if (m) return decodeURIComponent(m[1]);
+      const m2 = notification.link.match(/[?&]highlight=([^&]+)/);
+      if (m2) return decodeURIComponent(m2[1]);
+    }
+    return null;
+  };
+
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.is_read) {
       markAsRead(notification.id);
@@ -162,8 +175,6 @@ export function NotificationDropdown() {
       case 'EXPENSE':
       case 'EXPENSE_CREATED':
       case 'EXPENSE_UPDATED':
-        // Show dialog for expense notifications (especially rejections with detailed messages)
-        // User can then navigate to expenses page from the dialog if needed
         setAnnouncementDialog(notification);
         break;
       
@@ -171,16 +182,15 @@ export function NotificationDropdown() {
       case 'PAYMENT_RECEIVED':
       case 'PENDING_PAYMENT':
       case 'PAYMENT_ASSIGNED':
-        // Navigate to payments/orders page
-        navigate('/orders');
-        break;
-      
       case 'ORDER':
       case 'ORDER_CREATED':
       case 'ORDER_UPDATED':
-        // Navigate to orders page
-        navigate('/orders');
+      case 'ORDER_STATUS':
+      case 'BARGAIN_USED': {
+        // Show a detail card; user can then click "View Order" to navigate with highlight
+        setDetailNotification(notification);
         break;
+      }
       
       case 'DELIVERY':
       case 'DELIVERY_COMPLETED':
@@ -190,7 +200,6 @@ export function NotificationDropdown() {
       
       case 'REFUND_REQUEST':
       case 'REFUND_REJECTED':
-        // Navigate to refund requests with deep link
         if (notification.link) {
           navigate(notification.link);
         } else {
@@ -200,7 +209,6 @@ export function NotificationDropdown() {
       
       case 'REFUND_PROCESSED':
       case 'REFUND_APPROVED':
-        // Navigate to orders with deep link
         if (notification.link) {
           navigate(notification.link);
         } else {
@@ -209,8 +217,10 @@ export function NotificationDropdown() {
         break;
       
       default:
-        // If there's a link, use it
-        if (notification.link) {
+        // Check if this notification has an order number → show detail dialog
+        if (extractOrderNumber(notification)) {
+          setDetailNotification(notification);
+        } else if (notification.link) {
           navigate(notification.link);
         } else if (notification.data?.link) {
           navigate(notification.data.link as string);
@@ -323,10 +333,80 @@ export function NotificationDropdown() {
         </DialogContent>
       </Dialog>
 
+      {/* Order / Payment / Bargain Detail Dialog */}
+      <Dialog open={!!detailNotification} onOpenChange={() => setDetailNotification(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              {detailNotification?.type?.toUpperCase() === 'BARGAIN_USED' ? (
+                <Tag className="h-5 w-5 text-amber-500" />
+              ) : detailNotification?.type?.toUpperCase().startsWith('PAYMENT') ? (
+                <DollarSign className="h-5 w-5 text-green-600" />
+              ) : (
+                <ShoppingCart className="h-5 w-5 text-blue-600" />
+              )}
+              <DialogTitle className="text-base">{detailNotification?.title}</DialogTitle>
+            </div>
+            <DialogDescription className="text-xs text-muted-foreground pt-1">
+              {detailNotification?.created_at && new Date(detailNotification.created_at).toLocaleString('en-UG', {
+                dateStyle: 'medium',
+                timeStyle: 'short',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-3 space-y-3">
+            <p className="text-sm whitespace-pre-wrap leading-relaxed">
+              {detailNotification?.message}
+            </p>
+
+            {/* Key data chips */}
+            {detailNotification && (() => {
+              const orderNum = extractOrderNumber(detailNotification);
+              const amount = detailNotification.data?.amount as number | undefined;
+              const chips: { label: string; value: string; color: string }[] = [];
+              if (orderNum) chips.push({ label: 'Order', value: orderNum, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' });
+              if (amount) chips.push({ label: 'Amount', value: `UGX ${Number(amount).toLocaleString()}`, color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' });
+              if (!chips.length) return null;
+              return (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {chips.map(c => (
+                    <span key={c.label} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${c.color}`}>
+                      <span className="opacity-60">{c.label}:</span> {c.value}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            {detailNotification && extractOrderNumber(detailNotification) && (
+              <Button
+                variant="default"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  const orderNum = extractOrderNumber(detailNotification!);
+                  setDetailNotification(null);
+                  navigate('/orders', { state: { highlightOrderNumber: orderNum } });
+                }}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                View Order
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setDetailNotification(null)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
+          <Bell className={`h-5 w-5 transition-colors ${unreadCount > 0 ? 'text-red-500' : ''}`} />
           {unreadCount > 0 && (
             <Badge
               variant="destructive"

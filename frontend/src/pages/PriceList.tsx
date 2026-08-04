@@ -3,7 +3,7 @@ import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
 import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
-import { Search, Info, Plus, Edit, Trash2, Save, X, AlertCircle, RotateCcw } from 'lucide-react';
+import { Search, Info, Plus, Edit, Trash2, Save, X, AlertCircle, RotateCcw, FolderOpen, FolderPlus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +56,8 @@ interface PriceItem {
   ironing_price: number;
   express_price?: number | null;
   effective_express_price?: number;
+  pricing_type?: 'FIXED' | 'PER_KG';
+  price_per_kg?: number;
   discount_percentage?: number;
   discount_start_date?: string;
   discount_end_date?: string;
@@ -103,6 +105,91 @@ export default function PriceList() {
   const [deleteConfirmStep, setDeleteConfirmStep] = useState<1 | 2>(1);
   const [selectedItem, setSelectedItem] = useState<PriceItem | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Category management
+  interface CategoryRow { name: string; item_count: number }
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [catDialogOpen, setCatDialogOpen] = useState(false);
+  const [catEditTarget, setCatEditTarget] = useState<string | null>(null);
+  const [catEditValue, setCatEditValue] = useState('');
+  const [newCatName, setNewCatName] = useState('');
+  const [catSaving, setCatSaving] = useState(false);
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/prices/categories`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCategories(res.data.categories || []);
+    } catch { /* non-critical */ }
+  }, [token]);
+
+  useEffect(() => { if (token) fetchCategories(); }, [token, fetchCategories]);
+
+  /** All known category names (from DB + hardcoded fallback) */
+  const allCategoryNames = Array.from(
+    new Set([...categories.map(c => c.name), ...Object.keys(categoryConfig)])
+  );
+
+  const getCategoryLabel = (key: string) =>
+    categoryConfig[key as keyof typeof categoryConfig]?.label ||
+    key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  const getCategoryIcon = (key: string) =>
+    categoryConfig[key as keyof typeof categoryConfig]?.icon || '🏷️';
+
+  const handleRenameCategory = async (oldName: string, newName: string) => {
+    if (!newName.trim() || newName === oldName) return;
+    setCatSaving(true);
+    try {
+      await axios.put(
+        `${API_BASE_URL}/prices/categories/${encodeURIComponent(oldName)}`,
+        { new_name: newName.trim() },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({ title: 'Category renamed', description: `"${oldName}" → "${newName.trim()}"` });
+      setCatEditTarget(null);
+      setCatEditValue('');
+      await fetchCategories();
+      await fetchPriceItems();
+      if (activeCategory === oldName) setActiveCategory(newName.trim().toLowerCase().replace(/\s+/g, '_'));
+    } catch (err) {
+      const e = err as AxiosError<{ error: string }>;
+      toast({ variant: 'destructive', title: 'Rename failed', description: e.response?.data?.error || 'Could not rename category' });
+    } finally { setCatSaving(false); }
+  };
+
+  const handleDeleteCategory = async (name: string) => {
+    setCatSaving(true);
+    try {
+      await axios.delete(
+        `${API_BASE_URL}/prices/categories/${encodeURIComponent(name)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({ title: 'Category deleted', description: `"${name}" removed.` });
+      await fetchCategories();
+      if (activeCategory === name) setActiveCategory('ALL');
+    } catch (err) {
+      const e = err as AxiosError<{ error: string }>;
+      toast({ variant: 'destructive', title: 'Cannot delete', description: e.response?.data?.error || 'Could not delete category' });
+    } finally { setCatSaving(false); }
+  };
+
+  const handleAddCategory = async () => {
+    if (!newCatName.trim()) return;
+    // "Adding" a category just means the name is now available in selects.
+    // We store it by creating a temporary placeholder awareness — actual DB row
+    // only appears once an item is saved under that category.
+    const clean = newCatName.trim().toLowerCase().replace(/\s+/g, '_');
+    if (categories.some(c => c.name === clean)) {
+      toast({ variant: 'destructive', title: 'Already exists', description: `Category "${clean}" already exists.` });
+      return;
+    }
+    // Optimistically add to local state so it's immediately selectable in new/edit item forms
+    setCategories(prev => [...prev, { name: clean, item_count: 0 }]);
+    setNewCatName('');
+    toast({ title: 'Category added', description: `"${clean}" is now available. Assign items to it to persist it.` });
+  };
   
   // Form data
   const [formData, setFormData] = useState({
@@ -115,6 +202,8 @@ export default function PriceList() {
     ironing_price: 0,
     express_price: null as number | null,
     use_auto_express: true,
+    pricing_type: 'FIXED' as 'FIXED' | 'PER_KG',
+    price_per_kg: 0,
     discount_percentage: 0,
     discount_start_date: '',
     discount_end_date: '',
@@ -217,10 +306,12 @@ export default function PriceList() {
         name: formData.name,
         category: formData.category,
         subcategory: formData.subcategory || undefined,
-        unit: formData.unit,
-        price: washPrice,
-        ironing_price: ironingPrice,
-        express_price: formData.use_auto_express ? null : formData.express_price,
+        unit: formData.pricing_type === 'PER_KG' ? 'kg' : formData.unit,
+        price: formData.pricing_type === 'PER_KG' ? formData.price_per_kg : washPrice,
+        ironing_price: formData.pricing_type === 'PER_KG' ? formData.price_per_kg : ironingPrice,
+        express_price: formData.pricing_type === 'PER_KG' ? null : (formData.use_auto_express ? null : formData.express_price),
+        pricing_type: formData.pricing_type,
+        price_per_kg: formData.price_per_kg,
       };
       
       await axios.post(
@@ -245,6 +336,8 @@ export default function PriceList() {
         ironing_price: 0, 
         express_price: null,
         use_auto_express: true,
+        pricing_type: 'FIXED',
+        price_per_kg: 0,
         discount_percentage: 0, 
         discount_start_date: '', 
         discount_end_date: '' 
@@ -277,6 +370,8 @@ export default function PriceList() {
       ironing_price: item.ironing_price,
       express_price: item.express_price || null,
       use_auto_express: !hasCustomExpressPrice,
+      pricing_type: (item.pricing_type === 'PER_KG' ? 'PER_KG' : 'FIXED') as 'FIXED' | 'PER_KG',
+      price_per_kg: item.price_per_kg || 0,
       discount_percentage: item.discount_percentage || 0,
       discount_start_date: item.discount_start_date ? item.discount_start_date.split('T')[0] : '',
       discount_end_date: item.discount_end_date ? item.discount_end_date.split('T')[0] : '',
@@ -397,7 +492,7 @@ export default function PriceList() {
   // Statistics
   const stats = {
     total: items.length,
-    byCategory: Object.keys(categoryConfig).reduce((acc, cat) => {
+    byCategory: allCategoryNames.reduce((acc, cat) => {
       acc[cat] = items.filter(i => i.category === cat).length;
       return acc;
     }, {} as Record<string, number>),
@@ -455,41 +550,53 @@ export default function PriceList() {
           >
             All Items ({stats.total})
           </Button>
-          {Object.entries(categoryConfig).map(([key, config]) => (
+          {allCategoryNames.map((key) => (
             <Button
               key={key}
               variant={activeCategory === key ? 'default' : 'outline'}
               size="sm"
               onClick={() => setActiveCategory(key)}
             >
-              <span className="mr-2">{config.icon}</span>
-              {config.label} ({stats.byCategory[key] || 0})
+              <span className="mr-1">{getCategoryIcon(key)}</span>
+              {getCategoryLabel(key)} ({stats.byCategory[key] || 0})
             </Button>
           ))}
         </div>
 
-        {canEditPrices && (
-          <Button onClick={() => {
-            setFormData({
-              item_id: '',
-              name: '',
-              category: 'general',
-              subcategory: '',
-              unit: 'piece',
-              price: 0,
-              ironing_price: 0,
-              express_price: null,
-              use_auto_express: true,
-              discount_percentage: 0,
-              discount_start_date: '',
-              discount_end_date: '',
-            });
-            setAddDialogOpen(true);
-          }} size="sm">
-            <Plus className="mr-2 h-4 w-4" />
-            Add Item
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {canEditPrices && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCatDialogOpen(true)}
+            >
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Manage Categories
+            </Button>
+          )}
+          {canEditPrices && (
+            <Button onClick={() => {
+              setFormData({
+                item_id: '',
+                name: '',
+                category: allCategoryNames[0] || 'general',
+                subcategory: '',
+                unit: 'piece',
+                price: 0,
+                ironing_price: 0,
+                express_price: null,
+                use_auto_express: true,
+                discount_percentage: 0,
+                discount_start_date: '',
+                discount_end_date: '',
+              });
+              setAddDialogOpen(true);
+            }} size="sm">
+              <Plus className="mr-2 h-4 w-4" />
+              Add Item
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Search */}
@@ -564,18 +671,29 @@ export default function PriceList() {
                     item.category === 'general' && 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300',
                     item.category === 'kids' && 'bg-yellow-50 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-300'
                   )}>
-                    {categoryConfig[item.category as keyof typeof categoryConfig]?.icon} {item.category}
+                    {getCategoryIcon(item.category)} {getCategoryLabel(item.category)}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{item.subcategory || '-'}</TableCell>
                 <TableCell>
-                  <Badge variant="outline" className="capitalize">
-                    {unitConfig[item.unit as keyof typeof unitConfig]?.label || item.unit || 'Piece'}
-                  </Badge>
+                  <div className="flex flex-col gap-1">
+                    <Badge variant="outline" className="capitalize">
+                      {unitConfig[item.unit as keyof typeof unitConfig]?.label || item.unit || 'Piece'}
+                    </Badge>
+                    {item.pricing_type === 'PER_KG' && (
+                      <Badge variant="outline" className="text-xs bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-300">
+                        ⚖️ Per kg
+                      </Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex flex-col items-end gap-1">
-                    {item.has_active_discount ? (
+                    {item.pricing_type === 'PER_KG' ? (
+                      <span className="font-semibold text-amber-600 dark:text-amber-400">
+                        {formatUGX(item.price_per_kg || item.price)}/kg
+                      </span>
+                    ) : item.has_active_discount ? (
                       <>
                         <span className="text-sm line-through text-muted-foreground">{formatUGX(item.price)}</span>
                         <span className="font-semibold text-primary">{formatUGX(item.effective_price || item.price)}</span>
@@ -743,11 +861,11 @@ export default function PriceList() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="gents">👔 Gents</SelectItem>
-                  <SelectItem value="ladies">👗 Ladies</SelectItem>
-                  <SelectItem value="general">🏠 Household</SelectItem>
-                  <SelectItem value="kids">👶 Kids</SelectItem>
-                  <SelectItem value="home_services">🏡 Home Services</SelectItem>
+                  {allCategoryNames.map(key => (
+                    <SelectItem key={key} value={key}>
+                      {getCategoryIcon(key)} {getCategoryLabel(key)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -769,83 +887,131 @@ export default function PriceList() {
                 onChange={(e) => setFormData({ ...formData, subcategory: e.target.value })}
               />
             </div>
+            {/* Pricing type toggle */}
             <div className="space-y-2">
-              <Label htmlFor="unit">Measurement Unit</Label>
-              <Select value={formData.unit} onValueChange={(value) => setFormData({ ...formData, unit: value })}>
-                <SelectTrigger id="unit">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="piece">Piece</SelectItem>
-                  <SelectItem value="kg">Kilogram</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="price">Washing Price (UGX) *</Label>
-                <Input
-                  id="price"
-                  type="number"
-                  placeholder="0"
-                  value={formData.price || ''}
-                  onChange={(e) => {
-                    const wash = parseInt(e.target.value) || 0;
-                    setFormData({
-                      ...formData,
-                      price: wash,
-                      // Keep ironing at half wash unless user already set a custom ironing price
-                      ironing_price: Math.round(wash / 2),
-                    });
-                  }}
-                />
+              <Label>Pricing Method</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {(['FIXED', 'PER_KG'] as const).map((pt) => (
+                  <button
+                    key={pt}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, pricing_type: pt, unit: pt === 'PER_KG' ? 'kg' : 'piece' })}
+                    className={[
+                      'flex flex-col items-center gap-1 rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors',
+                      formData.pricing_type === pt
+                        ? 'border-primary bg-primary/5 text-primary'
+                        : 'border-border text-muted-foreground hover:border-muted-foreground',
+                    ].join(' ')}
+                  >
+                    <span className="text-lg">{pt === 'FIXED' ? '🏷️' : '⚖️'}</span>
+                    <span>{pt === 'FIXED' ? 'Per Item (Fixed)' : 'Per kg (Weight)'}</span>
+                  </button>
+                ))}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="ironing_price">Ironing Price (UGX)</Label>
-                <Input
-                  id="ironing_price"
-                  type="number"
-                  placeholder="Auto: half wash"
-                  value={formData.ironing_price || ''}
-                  onChange={(e) => setFormData({ ...formData, ironing_price: parseInt(e.target.value) || 0 })}
-                />
-                <p className="text-xs text-muted-foreground">Defaults to half of wash price</p>
-              </div>
+              {formData.pricing_type === 'PER_KG' && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded">
+                  ⚖️ Customers will enter weight in kg when ordering. Price = kg × rate.
+                </p>
+              )}
             </div>
 
-            {/* Express Price Section */}
-            <div className="pt-4 border-t border-border">
-              <h4 className="text-sm font-semibold mb-3 text-foreground flex items-center gap-2">
-                ⚡ Express Service Pricing
-              </h4>
-              <div className="space-y-3">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="use_auto_express"
-                    checked={formData.use_auto_express}
-                    onCheckedChange={(checked) => setFormData({ ...formData, use_auto_express: checked as boolean })}
-                  />
-                  <Label htmlFor="use_auto_express" className="text-sm font-normal cursor-pointer">
-                    Automatic (2x Wash Price = {formatUGX((formData.price || 0) * 2)})
-                  </Label>
-                </div>
-                {!formData.use_auto_express && (
-                  <div className="space-y-2">
-                    <Label htmlFor="express_price">Custom Express Price (UGX)</Label>
-                    <Input
-                      id="express_price"
-                      type="number"
-                      placeholder="0"
-                      value={formData.express_price || ''}
-                      onChange={(e) => setFormData({ ...formData, express_price: parseInt(e.target.value) || null })}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Set a custom express price instead of automatic 2x calculation
-                    </p>
-                  </div>
-                )}
+            {formData.pricing_type === 'FIXED' && (
+              <div className="space-y-2">
+                <Label htmlFor="unit">Measurement Unit</Label>
+                <Select value={formData.unit} onValueChange={(value) => setFormData({ ...formData, unit: value })}>
+                  <SelectTrigger id="unit">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="piece">Piece</SelectItem>
+                    <SelectItem value="kg">Kilogram</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
+            )}
+
+            {formData.pricing_type === 'PER_KG' ? (
+              <div className="space-y-2">
+                <Label htmlFor="price_per_kg">Rate per kg (UGX) *</Label>
+                <Input
+                  id="price_per_kg"
+                  type="number"
+                  placeholder="e.g., 3500"
+                  value={formData.price_per_kg || ''}
+                  onChange={(e) => setFormData({ ...formData, price_per_kg: parseInt(e.target.value) || 0 })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Express service charges 2× this rate.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="price">Washing Price (UGX) *</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    placeholder="0"
+                    value={formData.price || ''}
+                    onChange={(e) => {
+                      const wash = parseInt(e.target.value) || 0;
+                      setFormData({
+                        ...formData,
+                        price: wash,
+                        ironing_price: Math.round(wash / 2),
+                      });
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ironing_price">Ironing Price (UGX)</Label>
+                  <Input
+                    id="ironing_price"
+                    type="number"
+                    placeholder="Auto: half wash"
+                    value={formData.ironing_price || ''}
+                    onChange={(e) => setFormData({ ...formData, ironing_price: parseInt(e.target.value) || 0 })}
+                  />
+                  <p className="text-xs text-muted-foreground">Defaults to half of wash price</p>
+                </div>
+              </div>
+            )}
+
+            {/* Express Price Section — only for per-piece items */}
+            {formData.pricing_type !== 'PER_KG' && (
+              <div className="pt-4 border-t border-border">
+                <h4 className="text-sm font-semibold mb-3 text-foreground flex items-center gap-2">
+                  ⚡ Express Service Pricing
+                </h4>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="use_auto_express"
+                      checked={formData.use_auto_express}
+                      onCheckedChange={(checked) => setFormData({ ...formData, use_auto_express: checked as boolean })}
+                    />
+                    <Label htmlFor="use_auto_express" className="text-sm font-normal cursor-pointer">
+                      Automatic (2x Wash Price = {formatUGX((formData.price || 0) * 2)})
+                    </Label>
+                  </div>
+                  {!formData.use_auto_express && (
+                    <div className="space-y-2">
+                      <Label htmlFor="express_price">Custom Express Price (UGX)</Label>
+                      <Input
+                        id="express_price"
+                        type="number"
+                        placeholder="0"
+                        value={formData.express_price || ''}
+                        onChange={(e) => setFormData({ ...formData, express_price: parseInt(e.target.value) || null })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Set a custom express price instead of automatic 2x calculation
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setAddDialogOpen(false)} className="w-full sm:w-auto">
@@ -887,11 +1053,11 @@ export default function PriceList() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="gents">👔 Gents</SelectItem>
-                    <SelectItem value="ladies">👗 Ladies</SelectItem>
-                    <SelectItem value="general">🏠 Household</SelectItem>
-                    <SelectItem value="kids">👶 Kids</SelectItem>
-                    <SelectItem value="home_services">🏡 Home Services</SelectItem>
+                    {allCategoryNames.map(key => (
+                      <SelectItem key={key} value={key}>
+                        {getCategoryIcon(key)} {getCategoryLabel(key)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1107,6 +1273,106 @@ export default function PriceList() {
           </div>
         </div>
       </div>
+
+      {/* ── Manage Categories Dialog ─────────────────────────────────── */}
+      <Dialog open={catDialogOpen} onOpenChange={setCatDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FolderOpen className="h-5 w-5 text-primary" />
+              Manage Categories
+            </DialogTitle>
+            <DialogDescription>
+              Add, rename, or delete service categories. Only empty categories can be deleted.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+            {categories.map(cat => (
+              <div key={cat.name} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <span className="text-base">{getCategoryIcon(cat.name)}</span>
+                {catEditTarget === cat.name ? (
+                  <Input
+                    value={catEditValue}
+                    onChange={e => setCatEditValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleRenameCategory(cat.name, catEditValue);
+                      if (e.key === 'Escape') { setCatEditTarget(null); setCatEditValue(''); }
+                    }}
+                    className="h-7 text-sm flex-1"
+                    autoFocus
+                  />
+                ) : (
+                  <span className="flex-1 text-sm font-medium">{getCategoryLabel(cat.name)}</span>
+                )}
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ${cat.item_count > 0 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'bg-muted text-muted-foreground'}`}>
+                  {cat.item_count}
+                </span>
+                {catEditTarget === cat.name ? (
+                  <>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600"
+                      onClick={() => handleRenameCategory(cat.name, catEditValue)} disabled={catSaving}>
+                      <Save className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                      onClick={() => { setCatEditTarget(null); setCatEditValue(''); }}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                      title="Rename"
+                      onClick={() => { setCatEditTarget(cat.name); setCatEditValue(cat.name); }}>
+                      <Edit className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm" variant="ghost"
+                      className={`h-7 w-7 p-0 ${cat.item_count === 0 ? 'text-destructive hover:bg-destructive/10' : 'text-muted-foreground/40 cursor-not-allowed'}`}
+                      title={cat.item_count === 0 ? 'Delete empty category' : 'Cannot delete — category has items'}
+                      disabled={cat.item_count > 0 || catSaving}
+                      onClick={() => handleDeleteCategory(cat.name)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            ))}
+            {categories.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No categories found.</p>
+            )}
+          </div>
+
+          {/* Add new category */}
+          <div className="border-t pt-3 space-y-2">
+            <Label className="text-sm font-medium flex items-center gap-1.5">
+              <FolderPlus className="h-4 w-4" />
+              Add New Category
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
+                placeholder="e.g. bedding"
+                className="h-9 text-sm flex-1"
+              />
+              <Button size="sm" onClick={handleAddCategory} disabled={!newCatName.trim()}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Category name is stored in lowercase with underscores (e.g. "Bed Sheets" → "bed_sheets").
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCatDialogOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

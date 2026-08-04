@@ -416,7 +416,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Every settings write is ADMIN-only on the server; keep the UI honest
     canAccessSettings: user?.role === 'ADMIN',
     canAccessReports: user?.role === 'ADMIN' || user?.role === 'MANAGER', // Admin and Manager can access reports
-    canAccessInventory: user?.role === 'ADMIN',
+    canAccessInventory: !!user, // All authenticated roles can view inventory; writes are gated per-action
     canEditCustomers: user?.role === 'ADMIN',
     canDeleteCustomers: user?.role === 'ADMIN',
     canEditPrices: user?.role === 'ADMIN',

@@ -25,6 +25,7 @@ import {
   ClipboardCheck,
   KeyRound,
   X,
+  Megaphone,
 } from 'lucide-react';
 import lushLogo from '@/assets/lush_logo.png';
 
@@ -36,6 +37,7 @@ const navigation = [
   { name: 'Expenses', href: '/expenses', icon: Receipt },
   { name: 'Customers', href: '/customers', icon: Users },
   { name: 'Messages', href: '/messages', icon: MessageSquare },
+  { name: 'Campaigns', href: '/campaigns', icon: Megaphone },
   { name: 'Price List', href: '/prices', icon: DollarSign },
   { name: 'Inventory', href: '/inventory', icon: Package },
   { name: 'Deliveries', href: '/deliveries', icon: Truck },

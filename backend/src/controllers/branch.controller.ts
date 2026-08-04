@@ -114,6 +114,12 @@ export const createBranch = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Branch name is required' });
     }
 
+    // Hard cap: max 5 branches
+    const countResult = await query('SELECT COUNT(*) AS total FROM branches');
+    if (Number(countResult.rows[0].total) >= 5) {
+      return res.status(409).json({ error: 'Maximum of 5 branches reached. Remove an existing branch to add another.' });
+    }
+
     const duplicate = await query(
       'SELECT id FROM branches WHERE LOWER(TRIM(name)) = LOWER($1) LIMIT 1',
       [cleanName]

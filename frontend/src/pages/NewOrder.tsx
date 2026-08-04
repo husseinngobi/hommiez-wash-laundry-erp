@@ -77,6 +77,8 @@ interface PriceItem {
   category: string;
   subcategory?: string;
   unit?: string;
+  pricing_type?: 'FIXED' | 'PER_KG';
+  price_per_kg?: number;
   price: number;
   ironing_price: number;
   express_price?: number | null;
@@ -212,7 +214,7 @@ export default function NewOrder() {
   const [bargainAmount, setBargainAmount] = useState(0);
   const [maxBargainAmount, setMaxBargainAmount] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'UNPAID' | 'PARTIAL'>('UNPAID');
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'ON_ACCOUNT'>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'ON_ACCOUNT'>('ON_ACCOUNT');
   const [mobileProvider, setMobileProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
   const [transactionRef, setTransactionRef] = useState('');
   const [amountPaid, setAmountPaid] = useState(0);
@@ -407,6 +409,7 @@ export default function NewOrder() {
           discount_amount: 0,
           subtotal: computeLineSubtotal(startQty, unitPrice, 0),
           unit: item.unit || 'piece',
+          pricing_type: item.pricing_type,
         },
       ]);
     }
@@ -575,22 +578,37 @@ export default function NewOrder() {
   // For backward compatibility
   const subtotal = itemsSubtotal;
 
-  // Auto-update payment status based on amount paid
+  // Auto-update payment status based on amount paid and method
   useEffect(() => {
     if (paymentMethod === 'ON_ACCOUNT') {
+      // ON_ACCOUNT always = UNPAID, zero amount
       setPaymentStatus('UNPAID');
       if (amountPaid !== 0) setAmountPaid(0);
       return;
     }
+    // For cash/mm/bt: derive status from amount
     if (amountPaid === 0) {
+      // No amount entered yet with a real payment method — stay UNPAID momentarily
+      // but don't force-switch back to ON_ACCOUNT here (let user finish typing)
       setPaymentStatus('UNPAID');
-    } else if (amountPaid >= total) {
+    } else if (amountPaid >= total && total > 0) {
       setPaymentStatus('PAID');
-      setAmountPaid(total); // Cap at total
     } else {
       setPaymentStatus('PARTIAL');
     }
   }, [amountPaid, total, paymentMethod]);
+
+  /**
+   * When user types an amount > 0 while ON_ACCOUNT is selected,
+   * automatically switch to CASH so they don't have to manually change the method.
+   */
+  const handleAmountPaidChange = (raw: number) => {
+    const value = total > 0 ? Math.min(raw, total) : raw;
+    if (value > 0 && paymentMethod === 'ON_ACCOUNT') {
+      setPaymentMethod('CASH');
+    }
+    setAmountPaid(value);
+  };
 
   // Handle quick add customer
   const handleQuickAddCustomer = async () => {
@@ -678,7 +696,7 @@ export default function NewOrder() {
     setBargainAmount(0);
     setApplyVatToOrder(false);
     setPaymentStatus('UNPAID');
-    setPaymentMethod('CASH');
+    setPaymentMethod('ON_ACCOUNT');
     setTransactionRef('');
     setAmountPaid(0);
     setNotes('');
@@ -1053,7 +1071,7 @@ export default function NewOrder() {
                             }
                           }}
                           className="h-9 lg:h-7 w-[4.5rem] text-center text-sm font-bold px-1"
-                          title={item.unit === 'kg' ? 'Type kg weight, or use + / −' : 'Type quantity, or use + / −'}
+                          title={item.unit === 'kg' ? 'Enter weight in kg (e.g. 2.5)' : 'Type quantity, or use + / −'}
                         />
                         <Button
                           size="icon"
@@ -1258,16 +1276,13 @@ export default function NewOrder() {
                     type="number"
                     min="0"
                     value={amountPaid || ''}
-                    onChange={(e) => {
-                      const value = parseFloat(e.target.value) || 0;
-                      setAmountPaid(Math.min(value, total));
-                    }}
-                    placeholder="0"
-                    className="h-10 lg:h-8 text-sm mt-1"
+                    onChange={(e) => handleAmountPaidChange(parseFloat(e.target.value) || 0)}
+                    placeholder="Enter amount…"
+                    className={cn('h-10 lg:h-8 text-sm mt-1', paymentMethod === 'ON_ACCOUNT' && 'opacity-40')}
                     disabled={paymentMethod === 'ON_ACCOUNT'}
                   />
                   {paymentMethod === 'ON_ACCOUNT' && (
-                    <p className="text-[10px] text-muted-foreground mt-0.5">On Account → unpaid</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Deferred — customer pays on collection</p>
                   )}
                 </div>
               </div>
@@ -1276,54 +1291,50 @@ export default function NewOrder() {
                 <strong className="text-foreground">Bargain rule:</strong> if you enter a bargain while the line is still at quantity 1, the discount follows the line as quantity increases. If you enter the bargain after the line has already been summed up, the discount stays fixed for that line.
               </div>
 
-              {/* Payment method + status row */}
-              <div className="grid grid-cols-2 gap-2">
-                <Select
-                  value={paymentMethod}
-                  onValueChange={(v: 'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'ON_ACCOUNT') => {
-                    setPaymentMethod(v);
-                    if (v === 'ON_ACCOUNT') {
-                      setAmountPaid(0);
-                      setPaymentStatus('UNPAID');
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-10 lg:h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CASH">💵 Cash</SelectItem>
-                    <SelectItem value="MOBILE_MONEY">📱 Mobile Money</SelectItem>
-                    <SelectItem value="BANK_TRANSFER">🏦 Bank Transfer</SelectItem>
-                    <SelectItem value="ON_ACCOUNT">📋 On Account</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={paymentStatus}
-                  onValueChange={(v: 'PAID' | 'UNPAID' | 'PARTIAL') => {
-                    setPaymentStatus(v);
-                    if (v === 'PAID' && total > 0) {
-                      // Cash paid at counter → fill full amount so a payment ledger row is created
-                      setAmountPaid(total);
-                    }
-                    if (v === 'UNPAID') {
-                      setAmountPaid(0);
-                    }
-                  }}
-                  disabled={paymentMethod === 'ON_ACCOUNT'}
-                >
-                  <SelectTrigger className="h-10 lg:h-8 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PAID">✅ Paid (full)</SelectItem>
-                    <SelectItem value="UNPAID">⏳ Unpaid</SelectItem>
-                    <SelectItem value="PARTIAL">⚠️ Partial</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* ── Payment Method ───────────────────────────────────────── */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground font-medium">Payment Method</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(
+                    [
+                      { value: 'ON_ACCOUNT', label: 'On Account', emoji: '📋', desc: 'Pay later' },
+                      { value: 'CASH',       label: 'Cash',       emoji: '💵', desc: 'At counter' },
+                      { value: 'MOBILE_MONEY', label: 'Mobile Money', emoji: '📱', desc: 'MTN/Airtel' },
+                      { value: 'BANK_TRANSFER', label: 'Bank Transfer', emoji: '🏦', desc: 'Wire / EFT' },
+                    ] as const
+                  ).map(({ value, label, emoji, desc }) => {
+                    const isSelected = paymentMethod === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => {
+                          setPaymentMethod(value);
+                          if (value === 'ON_ACCOUNT') {
+                            setAmountPaid(0);
+                            setPaymentStatus('UNPAID');
+                          } else if (amountPaid === 0) {
+                            // Switching to a real method but no amount yet — keep as UNPAID
+                            // until user types the amount
+                          }
+                        }}
+                        className={cn(
+                          'flex flex-col items-center justify-center gap-0.5 rounded-lg border px-2 py-2.5 text-center transition-all select-none',
+                          isSelected
+                            ? 'border-primary bg-primary/10 text-primary shadow-sm font-semibold'
+                            : 'border-border bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                        )}
+                      >
+                        <span className="text-lg leading-none">{emoji}</span>
+                        <span className="text-xs font-medium leading-tight">{label}</span>
+                        <span className="text-[10px] leading-tight opacity-60">{desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Mobile money extras */}
+              {/* Mobile money provider + ref */}
               {paymentMethod === 'MOBILE_MONEY' && (
                 <div className="grid grid-cols-2 gap-2">
                   <Select value={mobileProvider} onValueChange={(v: 'MTN' | 'AIRTEL') => setMobileProvider(v)}>
@@ -1352,6 +1363,54 @@ export default function NewOrder() {
                   placeholder="Bank Reference #"
                   className="h-10 lg:h-8 text-sm"
                 />
+              )}
+
+              {/* Payment status — auto-derived; manual override allowed for cash/mm/bt */}
+              {paymentMethod !== 'ON_ACCOUNT' && (
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground shrink-0">Status:</Label>
+                  <div className="flex gap-1.5">
+                    {(
+                      [
+                        { value: 'PAID',    label: '✅ Paid (full)', color: 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/40 dark:text-green-300' },
+                        { value: 'PARTIAL', label: '⚠️ Partial',     color: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/40 dark:text-yellow-300' },
+                      ] as const
+                    ).map(({ value, label, color }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => {
+                          setPaymentStatus(value);
+                          if (value === 'PAID' && total > 0) setAmountPaid(total);
+                        }}
+                        className={cn(
+                          'rounded-full border px-2.5 py-0.5 text-xs font-medium transition-all',
+                          paymentStatus === value
+                            ? color + ' shadow-sm'
+                            : 'border-border text-muted-foreground hover:border-primary/40'
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {/* Show current status if it doesn't match a button — e.g. UNPAID with amount 0 */}
+                    {paymentStatus === 'UNPAID' && (
+                      <span className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
+                        ⏳ Unpaid (enter amount above)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* On Account status indicator */}
+              {paymentMethod === 'ON_ACCOUNT' && (
+                <div className="flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 px-3 py-2">
+                  <span className="text-sm">📋</span>
+                  <div className="text-xs text-blue-800 dark:text-blue-300">
+                    <span className="font-semibold">On Account</span> — order recorded as <span className="font-semibold">unpaid</span>. Customer settles on collection or at a later date.
+                  </div>
+                </div>
               )}
 
               {/* VAT + Notes row. VAT is unavailable until URA compliance is switched on. */}
@@ -1489,29 +1548,40 @@ export default function NewOrder() {
                     
                     {/* Prices */}
                     <div className="mt-2 space-y-0.5 text-xs">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-muted-foreground shrink-0">Wash</span>
-                        <span className="font-semibold min-w-0 text-right truncate">
-                          {item.has_active_discount ? (
-                            <>
-                              <span className="line-through text-muted-foreground mr-1 font-normal">
-                                {formatUGX(item.price)}
-                              </span>
-                              {formatUGX(item.effective_price || item.price)}
-                            </>
-                          ) : formatUGX(item.price)}
-                        </span>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-muted-foreground shrink-0">Iron</span>
-                        <span className="font-semibold min-w-0 text-right truncate">
-                          {Number(item.ironing_price) > 0 ? (
-                            item.has_active_discount ? formatUGX(item.effective_ironing_price || item.ironing_price) : formatUGX(item.ironing_price)
-                          ) : (
-                            <span className="text-muted-foreground text-[10px]">N/A</span>
-                          )}
-                        </span>
-                      </div>
+                      {item.pricing_type === 'PER_KG' ? (
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="text-muted-foreground shrink-0">⚖️ Per kg</span>
+                          <span className="font-semibold text-amber-600 dark:text-amber-400 min-w-0 text-right truncate">
+                            {formatUGX(item.price_per_kg || item.price)}/kg
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-muted-foreground shrink-0">Wash</span>
+                            <span className="font-semibold min-w-0 text-right truncate">
+                              {item.has_active_discount ? (
+                                <>
+                                  <span className="line-through text-muted-foreground mr-1 font-normal">
+                                    {formatUGX(item.price)}
+                                  </span>
+                                  {formatUGX(item.effective_price || item.price)}
+                                </>
+                              ) : formatUGX(item.price)}
+                            </span>
+                          </div>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-muted-foreground shrink-0">Iron</span>
+                            <span className="font-semibold min-w-0 text-right truncate">
+                              {Number(item.ironing_price) > 0 ? (
+                                item.has_active_discount ? formatUGX(item.effective_ironing_price || item.ironing_price) : formatUGX(item.ironing_price)
+                              ) : (
+                                <span className="text-muted-foreground text-[10px]">N/A</span>
+                              )}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                     
                     {/* Quick-add service buttons (2 rows for visibility) */}

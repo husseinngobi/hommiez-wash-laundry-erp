@@ -2,7 +2,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
 import { cn } from '@/lib/utils';
-import { Package, AlertTriangle, Plus, Search, Trash2, Edit, AlertCircle, Clock } from 'lucide-react';
+import { Package, AlertTriangle, Plus, Search, Trash2, Edit, AlertCircle, Clock, Settings2, Tag, Pencil, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -69,7 +69,9 @@ interface InventoryItem {
 }
 
 export default function Inventory() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const { toast } = useToast();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,6 +120,15 @@ export default function Inventory() {
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
   const [deleteConfirmStep, setDeleteConfirmStep] = useState(1);
 
+  // Category filter + management
+  const [activeCategory, setActiveCategory] = useState<string>('ALL');
+  const [categoryList, setCategoryList] = useState<string[]>([]);
+  const [showCatDialog, setShowCatDialog] = useState(false);
+  const [catEditTarget, setCatEditTarget] = useState<string | null>(null);
+  const [catEditValue, setCatEditValue] = useState('');
+  const [newCatName, setNewCatName] = useState('');
+  const [catSaving, setCatSaving] = useState(false);
+
   useEffect(() => {
     fetchInventory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -129,7 +140,11 @@ export default function Inventory() {
       const response = await axios.get(`${API_BASE_URL}/inventory`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setItems(response.data.items || []);
+      const fetched: InventoryItem[] = response.data.items || [];
+      setItems(fetched);
+      // Derive category list from returned items
+      const cats = Array.from(new Set(fetched.map((i) => i.category).filter(Boolean))).sort();
+      setCategoryList(cats);
     } catch (error) {
       console.error('Failed to fetch inventory:', error);
       toast({
@@ -140,6 +155,40 @@ export default function Inventory() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Rename a category across all items in the list
+  const handleRenameCategory = async (oldName: string, newName: string) => {
+    const clean = newName.trim().toUpperCase().replace(/\s+/g, '_');
+    if (!clean || clean === oldName) return;
+    setCatSaving(true);
+    try {
+      await axios.put(
+        `${API_BASE_URL}/inventory/categories/${encodeURIComponent(oldName)}`,
+        { new_name: clean },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({ title: 'Category renamed', description: `"${oldName}" → "${clean}"` });
+      setCatEditTarget(null);
+      setCatEditValue('');
+      if (activeCategory === oldName) setActiveCategory(clean);
+      await fetchInventory();
+    } catch {
+      toast({ variant: 'destructive', title: 'Rename failed', description: 'Could not rename category.' });
+    } finally { setCatSaving(false); }
+  };
+
+  // Add a local category (it becomes real once an item is assigned to it)
+  const handleAddCategory = () => {
+    const clean = newCatName.trim().toUpperCase().replace(/\s+/g, '_');
+    if (!clean) return;
+    if (categoryList.includes(clean)) {
+      toast({ variant: 'destructive', title: 'Already exists', description: `Category "${clean}" already exists.` });
+      return;
+    }
+    setCategoryList((prev) => [...prev, clean].sort());
+    setNewCatName('');
+    toast({ title: 'Category added', description: `"${clean}" is now selectable. Assign items to persist it.` });
   };
 
   const handleRestock = async () => {
@@ -363,10 +412,27 @@ export default function Inventory() {
     setNewItemAssetLocation('');
   };
 
-  const filteredItems = items.filter((item) =>
-    item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.category?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredItems = items.filter((item) => {
+    // Category tab filter
+    if (activeCategory === 'ASSETS') {
+      if (!item.is_long_term) return false;
+    } else if (activeCategory !== 'ALL') {
+      if ((item.category || '').toUpperCase() !== activeCategory) return false;
+    }
+    // Text search: name, category, supplier, unit; also "long term"/"asset" matches is_long_term
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      const matchesText =
+        item.name?.toLowerCase().includes(q) ||
+        item.category?.toLowerCase().includes(q) ||
+        item.supplier?.toLowerCase().includes(q) ||
+        item.unit?.toLowerCase().includes(q);
+      const matchesType =
+        item.is_long_term && (q.includes('long') || q.includes('asset') || q.includes('equipment'));
+      return matchesText || matchesType;
+    }
+    return true;
+  });
 
   // Pagination
   const totalFiltered = filteredItems.length;
@@ -490,21 +556,61 @@ export default function Inventory() {
         </Card>
       </div>
 
-      {/* Search Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 mb-6">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search items by name or category..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
+      {/* Toolbar */}
+      <div className="flex flex-col gap-3 mb-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, category, supplier, unit or type 'asset'…"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+              className="pl-10"
+            />
+          </div>
+          {isAdminOrManager && (
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button onClick={openAddDialog} className="flex-1 sm:flex-none">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Item
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                title="Manage Categories"
+                onClick={() => setShowCatDialog(true)}
+              >
+                <Settings2 className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
-        <Button onClick={openAddDialog} className="w-full sm:w-auto">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Item
-        </Button>
+
+        {/* Category filter tabs */}
+        <div className="flex flex-wrap gap-1.5">
+          {(['ALL', 'ASSETS', ...categoryList] as string[]).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => { setActiveCategory(cat); setCurrentPage(1); }}
+              className={[
+                'inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border transition-colors',
+                activeCategory === cat
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background text-muted-foreground border-border hover:bg-muted',
+              ].join(' ')}
+            >
+              {cat === 'ALL' ? 'All Items' : cat === 'ASSETS' ? '🏭 Long-Term Assets' : cat.replace(/_/g, ' ')}
+              {cat !== 'ALL' && cat !== 'ASSETS' && (
+                <span className="opacity-60 font-normal">
+                  ({items.filter((i) => (i.category || '').toUpperCase() === cat).length})
+                </span>
+              )}
+              {cat === 'ASSETS' && (
+                <span className="opacity-60 font-normal">({items.filter((i) => i.is_long_term).length})</span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Inventory Table */}
@@ -593,29 +699,46 @@ export default function Inventory() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant={isLowStock ? "default" : "outline"}
-                            onClick={() => openRestockDialog(item)}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            Restock
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openEditDialog(item)}
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteItem(item)}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          {!item.is_long_term && (
+                            <Button
+                              size="sm"
+                              variant={isLowStock ? "default" : "outline"}
+                              onClick={() => openRestockDialog(item)}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              Restock
+                            </Button>
+                          )}
+                          {item.is_long_term && isAdminOrManager && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditDialog(item)}
+                              title="Edit asset"
+                            >
+                              <Edit className="h-3 w-3 mr-1" />
+                              Edit
+                            </Button>
+                          )}
+                          {!item.is_long_term && isAdminOrManager && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditDialog(item)}
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {isAdmin && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteItem(item)}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -762,12 +885,14 @@ export default function Inventory() {
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="DETERGENT">Detergent</SelectItem>
-                    <SelectItem value="CHEMICAL">Chemical</SelectItem>
-                    <SelectItem value="PACKAGING">Packaging</SelectItem>
-                    <SelectItem value="HANGER">Hanger</SelectItem>
-                    <SelectItem value="ACCESSORY">Accessory</SelectItem>
-                    <SelectItem value="EQUIPMENT">Equipment</SelectItem>
+                    {(categoryList.length > 0
+                      ? categoryList
+                      : ['DETERGENT', 'CHEMICAL', 'PACKAGING', 'HANGER', 'ACCESSORY', 'EQUIPMENT']
+                    ).map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1042,6 +1167,96 @@ export default function Inventory() {
             <Button onClick={handleAddItem} disabled={adding} className="w-full sm:w-auto">
               {adding ? (isEditing ? 'Updating...' : 'Adding...') : (isEditing ? 'Update Item' : 'Add Item')}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Category Management Dialog — admin/manager only */}
+      <Dialog open={showCatDialog} onOpenChange={setShowCatDialog}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="h-5 w-5" />
+              Manage Inventory Categories
+            </DialogTitle>
+            <DialogDescription>
+              Rename or add categories. Categories with items cannot be deleted — reassign items first.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2 max-h-72 overflow-y-auto pr-1">
+            {categoryList.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No categories yet.</p>
+            )}
+            {categoryList.map((cat) => {
+              const count = items.filter((i) => (i.category || '').toUpperCase() === cat).length;
+              const isEditing = catEditTarget === cat;
+              return (
+                <div key={cat} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                  {isEditing ? (
+                    <>
+                      <Input
+                        className="h-7 text-sm flex-1"
+                        value={catEditValue}
+                        onChange={(e) => setCatEditValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleRenameCategory(cat, catEditValue);
+                          if (e.key === 'Escape') { setCatEditTarget(null); setCatEditValue(''); }
+                        }}
+                        autoFocus
+                      />
+                      <Button
+                        size="sm"
+                        disabled={catSaving}
+                        onClick={() => handleRenameCategory(cat, catEditValue)}
+                        className="h-7 px-2"
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2"
+                        onClick={() => { setCatEditTarget(null); setCatEditValue(''); }}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm font-medium">{cat.replace(/_/g, ' ')}</span>
+                      <span className="text-xs text-muted-foreground">{count} item{count !== 1 ? 's' : ''}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2"
+                        onClick={() => { setCatEditTarget(cat); setCatEditValue(cat); }}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Add new category */}
+          <div className="flex gap-2 pt-2 border-t">
+            <Input
+              placeholder="New category name…"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategory(); }}
+              className="h-8 text-sm"
+            />
+            <Button size="sm" onClick={handleAddCategory} disabled={!newCatName.trim()}>
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Add
+            </Button>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button variant="outline" onClick={() => setShowCatDialog(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -153,99 +153,125 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 /**
  * Get comprehensive financial summary with revenue, expenses, profit
  */
+/** Build a [startDate, endDate] pair for a human period label, or null for all-time. */
+function periodToDateRange(period: unknown): [Date, Date] | null {
+  const endDate = new Date();
+  const startDate = new Date();
+
+  switch (String(period)) {
+    case 'today':
+    case 'day':
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(23, 59, 59, 999);
+      break;
+    case 'week':
+      startDate.setDate(startDate.getDate() - 7);
+      startDate.setHours(0, 0, 0, 0);
+      break;
+    case 'month':
+      startDate.setDate(1);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setMonth(endDate.getMonth() + 1, 0);
+      endDate.setHours(23, 59, 59, 999);
+      break;
+    case 'year':
+      startDate.setMonth(0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setMonth(11, 31);
+      endDate.setHours(23, 59, 59, 999);
+      break;
+    default:
+      // 'all' or unknown — no date restriction
+      return null;
+  }
+
+  return [startDate, endDate];
+}
+
 export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
   try {
-    const period = req.query.period || 'month'; // today, week, month, year
-    
-    // Calculate date range - MUST MATCH Financial Dashboard logic!
-    const endDate = new Date();
-    const startDate = new Date();
-    
-    switch (period) {
-      case 'today':
-      case 'day':
-        // Today only (00:00:00 to 23:59:59)
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setHours(23, 59, 59, 999);
-        break;
-      case 'week':
-        // Last 7 days
-        startDate.setDate(startDate.getDate() - 7);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'month':
-        // Current calendar month (Jan 1 - Jan 31) - MATCHES Financial Dashboard
-        startDate.setDate(1); // First day of current month
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setMonth(endDate.getMonth() + 1, 0); // Last day of current month
-        endDate.setHours(23, 59, 59, 999);
-        break;
-      case 'year':
-        // Current calendar year (Jan 1 - Dec 31) - MATCHES Financial Dashboard
-        startDate.setMonth(0, 1); // January 1st
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setMonth(11, 31); // December 31st
-        endDate.setHours(23, 59, 59, 999);
-        break;
+    const period = req.query.period || 'month';
+    const dateRange = periodToDateRange(period);
+
+    // When dateRange is null we query all-time (no WHERE clause on date).
+    const paymentsWhere = dateRange
+      ? `WHERE payment_date >= $1 AND payment_date <= $2`
+      : `WHERE TRUE`;
+    const deliveriesWhere = dateRange
+      ? `WHERE delivered_at >= $1 AND delivered_at <= $2`
+      : `WHERE TRUE`;
+    const expensesWhere = dateRange
+      ? `WHERE expense_date >= $1 AND expense_date <= $2 AND approval_status = 'APPROVED'`
+      : `WHERE approval_status = 'APPROVED'`;
+    const params = dateRange ? dateRange : [];
+
+    const revenueResult = await query(
+      `SELECT COALESCE(SUM(amount), 0) as total_revenue,
+              COUNT(*) as payment_count
+       FROM payments ${paymentsWhere}`,
+      params
+    );
+
+    let deliveryRevenue = 0;
+    let deliveryCount = 0;
+    try {
+      const drResult = await query(
+        `SELECT COALESCE(SUM(delivery_revenue), 0) as delivery_revenue,
+                COUNT(*) as delivery_count
+         FROM deliveries ${deliveriesWhere}
+         AND delivery_type = 'PAID'
+         AND delivery_status = 'DELIVERED'`,
+        params
+      );
+      deliveryRevenue = parseFloat(drResult.rows[0].delivery_revenue) || 0;
+      deliveryCount   = parseInt(drResult.rows[0].delivery_count) || 0;
+    } catch {
+      // delivery_revenue column may not exist yet; safe to skip
     }
 
-    // Get total revenue from payments received in this period
-    const revenueResult = await query(
-      `SELECT 
-        COALESCE(SUM(amount), 0) as total_revenue,
-        COUNT(*) as payment_count
-       FROM payments 
-       WHERE payment_date >= $1 AND payment_date <= $2`,
-      [startDate, endDate]
-    );
-
-    // Get total delivery revenue from PAID deliveries completed in this period
-    const deliveryRevenueResult = await query(
-      `SELECT 
-        COALESCE(SUM(delivery_revenue), 0) as delivery_revenue,
-        COUNT(*) as delivery_count
-       FROM deliveries 
-       WHERE delivered_at >= $1 AND delivered_at <= $2
-       AND delivery_type = 'PAID'
-       AND delivery_status = 'DELIVERED'`,
-      [startDate, endDate]
-    );
-
-    // Get total expenses
     const expensesResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as total_expenses
-       FROM expenses 
-       WHERE expense_date >= $1 AND expense_date <= $2
-       AND approval_status = 'APPROVED'`,
-      [startDate, endDate]
+       FROM expenses ${expensesWhere}`,
+      params
     );
 
-    // Outstanding = total_amount − amount_paid (do not trust balance alone; it can be stuck at 0)
+    // Include salary payments in total expenses so dashboard profit is accurate
+    const salaryParams = params; // same date params apply
+    const salaryWhere = expensesWhere.replace('expense_date', 'payment_date').replace('approval_status', 'payment_status').replace("'APPROVED'", "'PAID'");
+    let salaries = 0;
+    try {
+      const salaryResult = await query(
+        `SELECT COALESCE(SUM(net_amount), 0) as total_salaries FROM salary_payments ${salaryWhere}`,
+        salaryParams
+      );
+      salaries = parseFloat(salaryResult.rows[0].total_salaries) || 0;
+    } catch { /* salary_payments table may not exist in older environments */ }
+
     const outstandingResult = await query(
       `SELECT COALESCE(SUM(
          GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
        ), 0) as outstanding_balance
-       FROM orders 
+       FROM orders
        WHERE payment_status IN ('UNPAID', 'PARTIAL')`
     );
 
-    const orderRevenue = parseFloat(revenueResult.rows[0].total_revenue);
-    const deliveryRevenue = parseFloat(deliveryRevenueResult.rows[0].delivery_revenue);
-    const revenue = orderRevenue + deliveryRevenue;
-    const expenses = parseFloat(expensesResult.rows[0].total_expenses);
-    const profit = revenue - expenses;
+    const orderRevenue = parseFloat(revenueResult.rows[0].total_revenue) || 0;
+    const revenue      = orderRevenue + deliveryRevenue;
+    const expenses     = (parseFloat(expensesResult.rows[0].total_expenses) || 0) + salaries;
+    const profit       = revenue - expenses;
     const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
 
     res.json({
       revenue,
-      deliveryRevenue, // NEW: Separate delivery revenue tracking
-      orderRevenue, // NEW: Order revenue only
+      deliveryRevenue,
+      orderRevenue,
       expenses,
+      salaries,
       profit,
       profitMargin,
-      outstandingBalance: parseFloat(outstandingResult.rows[0].outstanding_balance),
-      orderCount: parseInt(revenueResult.rows[0].order_count),
-      deliveryCount: parseInt(deliveryRevenueResult.rows[0].delivery_count), // NEW
+      outstandingBalance: parseFloat(outstandingResult.rows[0].outstanding_balance) || 0,
+      orderCount: parseInt(revenueResult.rows[0].payment_count) || 0,
+      deliveryCount,
     });
   } catch (error) {
     console.error('Get financial summary error:', error);
@@ -259,56 +285,30 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 export const getPaymentMethodsBreakdown = async (req: AuthRequest, res: Response) => {
   try {
     const period = req.query.period || 'month';
-    
-    // Calculate date range - MUST MATCH Financial Dashboard logic!
-    const endDate = new Date();
-    const startDate = new Date();
-    
-    switch (period) {
-      case 'today':
-      case 'day':
-        // Today only
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setHours(23, 59, 59, 999);
-        break;
-      case 'week':
-        // Last 7 days
-        startDate.setDate(startDate.getDate() - 7);
-        startDate.setHours(0, 0, 0, 0);
-        break;
-      case 'month':
-        // Current calendar month (MATCHES Financial Dashboard)
-        startDate.setDate(1);
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setMonth(endDate.getMonth() + 1, 0);
-        endDate.setHours(23, 59, 59, 999);
-        break;
-      case 'year':
-        // Current calendar year (MATCHES Financial Dashboard)
-        startDate.setMonth(0, 1);
-        startDate.setHours(0, 0, 0, 0);
-        endDate.setMonth(11, 31);
-        endDate.setHours(23, 59, 59, 999);
-        break;
-    }
+    const dateRange = periodToDateRange(period);
 
-    // Get payment breakdown from payments table (more accurate)
+    const whereClause = dateRange
+      ? `WHERE payment_date >= $1 AND payment_date <= $2`
+      : `WHERE TRUE`;
+    const params = dateRange ? dateRange : [];
+
     const breakdownResult = await query(
-      `SELECT 
-        CASE 
+      `SELECT
+        CASE
           WHEN payment_method IN ('MOBILE_MONEY_MTN', 'MTN Mobile Money') THEN 'Mobile Money (MTN)'
-          WHEN payment_method IN ('MOBILE_MONEY_AIRTEL', 'Airtel Money') THEN 'Mobile Money (Airtel)'
-          WHEN payment_method = 'BANK_TRANSFER' THEN 'Bank Transfer'
-          WHEN payment_method = 'CASH' THEN 'Cash'
-          ELSE payment_method
+          WHEN payment_method IN ('MOBILE_MONEY_AIRTEL', 'Airtel Money')  THEN 'Mobile Money (Airtel)'
+          WHEN payment_method = 'BANK_TRANSFER'  THEN 'Bank Transfer'
+          WHEN payment_method = 'ON_ACCOUNT'     THEN 'On Account'
+          WHEN payment_method = 'CASH'           THEN 'Cash'
+          ELSE COALESCE(NULLIF(TRIM(payment_method), ''), 'Other')
         END as method,
         COUNT(*) as transaction_count,
         COALESCE(SUM(amount), 0) as total_amount
        FROM payments
-       WHERE payment_date >= $1 AND payment_date <= $2
+       ${whereClause}
        GROUP BY method
        ORDER BY total_amount DESC`,
-      [startDate, endDate]
+      params
     );
 
     res.json(breakdownResult.rows);

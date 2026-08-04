@@ -380,6 +380,36 @@ export const updateInventoryItem = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * PUT /api/inventory/categories/:name — rename a category across all active inventory items
+ */
+export const renameInventoryCategory = async (req: AuthRequest, res: Response) => {
+  try {
+    const oldName = decodeURIComponent(req.params.name);
+    const { new_name } = req.body as { new_name?: string };
+    if (!new_name?.trim()) return res.status(400).json({ error: 'new_name is required' });
+    const clean = new_name.trim().toUpperCase().replace(/\s+/g, '_');
+
+    // Check uniqueness (ignore the category being renamed)
+    const conflict = await query(
+      `SELECT 1 FROM inventory_items WHERE UPPER(category) = $1 AND UPPER(category) <> UPPER($2) AND is_active = TRUE LIMIT 1`,
+      [clean, oldName]
+    );
+    if (conflict.rows.length) {
+      return res.status(409).json({ error: `Category "${clean}" already exists.` });
+    }
+
+    const result = await query(
+      `UPDATE inventory_items SET category = $1 WHERE UPPER(category) = UPPER($2) AND is_active = TRUE`,
+      [clean, oldName]
+    );
+    res.json({ updated: result.rowCount, old_name: oldName, new_name: clean });
+  } catch (error) {
+    console.error('Rename inventory category error:', error);
+    res.status(500).json({ error: 'Failed to rename category' });
+  }
+};
+
+/**
  * Delete inventory item (soft delete)
  */
 export const deleteInventoryItem = async (req: AuthRequest, res: Response) => {

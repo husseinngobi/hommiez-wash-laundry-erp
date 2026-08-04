@@ -305,35 +305,43 @@ export const updateVATSettings = async (req: AuthRequest, res: Response) => {
 
 export const getBargainLimits = async (req: AuthRequest, res: Response) => {
   try {
-    // Get bargain limits from sample users of each role
     const result = await query(
-      `SELECT role, max_bargain_amount 
-       FROM users 
+      `SELECT role,
+              MAX(max_bargain_amount)      AS overall_limit,
+              MAX(max_item_bargain_amount) AS item_limit
+       FROM users
        WHERE role IN ('DESKTOP_AGENT', 'MANAGER', 'ADMIN')
-       GROUP BY role, max_bargain_amount
+       GROUP BY role
        ORDER BY role`
     );
 
-    const limits: any = {
-      desktop_agent: 5000, // defaults
-      manager: 10000,
-      admin: 50000,
+    const limits: Record<string, { overall: number; per_item: number }> = {
+      desktop_agent: { overall: 5000, per_item: 1000 },
+      manager:       { overall: 10000, per_item: 2000 },
+      admin:         { overall: 50000, per_item: 10000 },
     };
 
-    result.rows.forEach(row => {
-      const amount = Number(row.max_bargain_amount);
-      if (!Number.isFinite(amount) || amount < 0) return;
-
-      if (row.role === 'DESKTOP_AGENT') {
-        limits.desktop_agent = amount;
-      } else if (row.role === 'MANAGER') {
-        limits.manager = amount;
-      } else if (row.role === 'ADMIN') {
-        limits.admin = amount;
-      }
+    result.rows.forEach((row: any) => {
+      const overall  = Number(row.overall_limit);
+      const perItem  = Number(row.item_limit);
+      const key = row.role === 'DESKTOP_AGENT' ? 'desktop_agent'
+                : row.role === 'MANAGER'       ? 'manager'
+                : row.role === 'ADMIN'         ? 'admin'
+                : null;
+      if (!key) return;
+      if (Number.isFinite(overall) && overall >= 0) limits[key].overall  = overall;
+      if (Number.isFinite(perItem) && perItem >= 0)  limits[key].per_item = perItem;
     });
 
-    res.json(limits);
+    // Flat structure for backward-compat + new per_item fields
+    res.json({
+      desktop_agent:          limits.desktop_agent.overall,
+      desktop_agent_per_item: limits.desktop_agent.per_item,
+      manager:                limits.manager.overall,
+      manager_per_item:       limits.manager.per_item,
+      admin:                  limits.admin.overall,
+      admin_per_item:         limits.admin.per_item,
+    });
   } catch (error) {
     console.error('Get bargain limits error:', error);
     res.status(500).json({ error: 'Failed to fetch bargain limits' });
@@ -342,7 +350,10 @@ export const getBargainLimits = async (req: AuthRequest, res: Response) => {
 
 export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
   try {
-    const { desktop_agent_limit, manager_limit, admin_limit } = req.body;
+    const {
+      desktop_agent_limit,       manager_limit,       admin_limit,
+      desktop_agent_item_limit,  manager_item_limit,  admin_item_limit,
+    } = req.body;
 
     // Accept numbers, numeric strings, and comma-formatted amounts ("5,000").
     // Empty / missing values become null so we can decide per-role.
@@ -361,54 +372,63 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
       return Number.isFinite(parsed) ? Math.round(parsed) : null;
     };
 
-    const desktopAgent = parseLimit(desktop_agent_limit);
-    const manager = parseLimit(manager_limit);
-    const admin = parseLimit(admin_limit);
+    const desktopAgent     = parseLimit(desktop_agent_limit);
+    const manager          = parseLimit(manager_limit);
+    const admin            = parseLimit(admin_limit);
+    const desktopAgentItem = parseLimit(desktop_agent_item_limit);
+    const managerItem      = parseLimit(manager_item_limit);
+    const adminItem        = parseLimit(admin_item_limit);
 
     if (desktopAgent === null || manager === null) {
       return res.status(400).json({
-        error: 'Desktop agent and manager bargain limits must be valid numbers (e.g. 5000)',
+        error: 'Desktop agent and manager overall bargain limits must be valid numbers (e.g. 5000)',
+      });
+    }
+    if (desktopAgentItem === null || managerItem === null) {
+      return res.status(400).json({
+        error: 'Desktop agent and manager per-item bargain limits must be valid numbers',
       });
     }
     if (desktopAgent < 0 || manager < 0 || (admin !== null && admin < 0)) {
       return res.status(400).json({ error: 'Bargain limits cannot be negative' });
     }
-    if (manager < desktopAgent) {
-      return res.status(400).json({ error: 'Manager limit should not be lower than desktop agent limit' });
+    if (desktopAgentItem > desktopAgent) {
+      return res.status(400).json({
+        error: 'Per-item limit cannot exceed the overall limit for desktop agents',
+      });
     }
-    if (admin !== null && admin < manager) {
-      return res.status(400).json({ error: 'Administrator limit should not be lower than manager limit' });
+    if (managerItem > manager) {
+      return res.status(400).json({
+        error: 'Per-item limit cannot exceed the overall limit for managers',
+      });
     }
 
     await query(
-      `UPDATE users SET max_bargain_amount = $1 WHERE role = 'DESKTOP_AGENT'`,
-      [desktopAgent]
+      `UPDATE users SET max_bargain_amount = $1, max_item_bargain_amount = $2 WHERE role = 'DESKTOP_AGENT'`,
+      [desktopAgent, desktopAgentItem]
     );
-
     await query(
-      `UPDATE users SET max_bargain_amount = $1 WHERE role = 'MANAGER'`,
-      [manager]
+      `UPDATE users SET max_bargain_amount = $1, max_item_bargain_amount = $2 WHERE role = 'MANAGER'`,
+      [manager, managerItem]
     );
-
-    // Admin limit is optional — omit it to leave administrators unchanged
     if (admin !== null) {
       await query(
-        `UPDATE users SET max_bargain_amount = $1 WHERE role = 'ADMIN'`,
-        [admin]
+        `UPDATE users SET max_bargain_amount = $1, max_item_bargain_amount = $2 WHERE role = 'ADMIN'`,
+        [admin, adminItem ?? 0]
       );
     }
 
     console.log(
-      `✅ Bargain limits updated by ${req.user?.email} — agent ${desktopAgent}, manager ${manager}` +
-        (admin !== null ? `, admin ${admin}` : ' (admin unchanged)')
+      `✅ Bargain limits updated by ${req.user?.email} — ` +
+      `agent ${desktopAgent} (item ${desktopAgentItem}), manager ${manager} (item ${managerItem})`
     );
 
     res.json({
       message: 'Bargain limits updated successfully',
       limits: {
-        desktop_agent: desktopAgent,
-        manager: manager,
-        admin: admin,
+        desktop_agent: desktopAgent, desktop_agent_per_item: desktopAgentItem,
+        manager: manager,           manager_per_item: managerItem,
+        admin: admin,               admin_per_item: adminItem,
       },
     });
   } catch (error) {

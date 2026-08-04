@@ -122,7 +122,7 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
       });
     }
     
-    const { category, subcategory, unit = 'piece', price, express_price } = req.body;
+    const { category, subcategory, unit = 'piece', price, express_price, pricing_type, price_per_kg } = req.body;
     let { item_id, ironing_price, name } = req.body;
 
     name = String(name || '').trim().replace(/\s+/g, ' ');
@@ -159,11 +159,14 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
       ironing_price = Math.round(Number(price) / 2);
     }
     
+    const resolvedPricingType = (pricing_type === 'PER_KG') ? 'PER_KG' : 'FIXED';
+    const resolvedPricePerKg = resolvedPricingType === 'PER_KG' ? (Number(price_per_kg) || Number(price) || 0) : 0;
+
     const result = await query(
-      `INSERT INTO price_items (item_id, name, category, subcategory, unit, price, ironing_price, express_price)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO price_items (item_id, name, category, subcategory, unit, price, ironing_price, express_price, pricing_type, price_per_kg)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [item_id, name, category, subcategory || null, unit, price, ironing_price, express_price ?? null]
+      [item_id, name, category, subcategory || null, unit, price, ironing_price, express_price ?? null, resolvedPricingType, resolvedPricePerKg]
     );
     
     res.status(201).json({
@@ -261,10 +264,18 @@ export const updatePrice = async (req: AuthRequest, res: Response) => {
     }
     if (discount_end_date !== undefined) {
       updates.push(`discount_end_date = $${paramCount++}`);
-      // Convert empty string to NULL for timestamp fields
       values.push(discount_end_date === '' ? null : discount_end_date);
     }
-    
+    if (req.body.pricing_type !== undefined) {
+      const pt = req.body.pricing_type === 'PER_KG' ? 'PER_KG' : 'FIXED';
+      updates.push(`pricing_type = $${paramCount++}`);
+      values.push(pt);
+    }
+    if (req.body.price_per_kg !== undefined) {
+      updates.push(`price_per_kg = $${paramCount++}`);
+      values.push(Number(req.body.price_per_kg) || 0);
+    }
+
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
     }
@@ -363,5 +374,63 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
     }
     console.error('Delete price error:', error);
     res.status(500).json({ error: 'Failed to delete price' });
+  }
+};
+
+/** GET /api/prices/categories — list all categories with item counts */
+export const getCategories = async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await query(`
+      SELECT category AS name, COUNT(*) FILTER (WHERE is_active = true) AS item_count
+      FROM price_items
+      GROUP BY category
+      ORDER BY category ASC
+    `);
+    res.json({ categories: result.rows.map(r => ({ name: r.name, item_count: Number(r.item_count) })) });
+  } catch (error) {
+    console.error('Get categories error:', error);
+    res.status(500).json({ error: 'Failed to fetch categories' });
+  }
+};
+
+/** PUT /api/prices/categories/:name — rename a category (updates all items) */
+export const renameCategory = async (req: AuthRequest, res: Response) => {
+  try {
+    const oldName = decodeURIComponent(req.params.name);
+    const { new_name } = req.body as { new_name?: string };
+    if (!new_name?.trim()) return res.status(400).json({ error: 'new_name is required' });
+    const clean = new_name.trim().toLowerCase().replace(/\s+/g, '_');
+    // Check uniqueness (case-insensitive, excluding self)
+    const conflict = await query(
+      `SELECT 1 FROM price_items WHERE LOWER(category) = LOWER($1) AND LOWER(category) <> LOWER($2) LIMIT 1`,
+      [clean, oldName]
+    );
+    if (conflict.rows.length) return res.status(409).json({ error: `Category "${clean}" already exists.` });
+    const result = await query(
+      `UPDATE price_items SET category = $1 WHERE LOWER(category) = LOWER($2)`,
+      [clean, oldName]
+    );
+    res.json({ updated: result.rowCount, old_name: oldName, new_name: clean });
+  } catch (error) {
+    console.error('Rename category error:', error);
+    res.status(500).json({ error: 'Failed to rename category' });
+  }
+};
+
+/** DELETE /api/prices/categories/:name — only if item count = 0 */
+export const deleteCategory = async (req: AuthRequest, res: Response) => {
+  try {
+    const name = decodeURIComponent(req.params.name);
+    const count = await query(
+      `SELECT COUNT(*) FROM price_items WHERE LOWER(category) = LOWER($1)`,
+      [name]
+    );
+    if (Number(count.rows[0].count) > 0) {
+      return res.status(409).json({ error: 'Cannot delete a category that still has items. Remove all items first or rename it.' });
+    }
+    res.json({ deleted: true, name });
+  } catch (error) {
+    console.error('Delete category error:', error);
+    res.status(500).json({ error: 'Failed to delete category' });
   }
 };

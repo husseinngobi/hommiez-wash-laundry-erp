@@ -347,12 +347,17 @@ export function buildOrderWhatsAppMessage(
   lines.push('');
   switch (kind) {
     case 'confirmation':
-      lines.push('We have received your items and started work on them.');
-      lines.push("We'll notify you as soon as your order is ready for pickup.");
+      lines.push('We have received your items and our team is now working on them.');
+      lines.push("We will send you a message as soon as your order is ready for collection.");
+      lines.push('');
+      lines.push('Please feel free to contact us if you have any questions.');
       break;
     case 'ready':
-      lines.push('Your order is ready. You can collect it at your convenience.');
+      lines.push('Great news — your order is ready for collection!');
       lines.push('Please check all items carefully when collecting.');
+      // Collection policy is relevant here: they now know it is ready and the
+      // 3-day clock starts from this notice.
+      lines.push(...buildCollectionPolicyLines());
       break;
     case 'delivered':
       lines.push('This order has been marked as delivered.');
@@ -361,12 +366,6 @@ export function buildOrderWhatsAppMessage(
     default:
       lines.push("We'll notify you as soon as your order is ready for pickup.");
       break;
-  }
-
-  // The collection terms belong on every receipt, not only ready notices.
-  // Once delivered there is nothing left to collect, so it is omitted there.
-  if (kind !== 'delivered') {
-    lines.push(...buildCollectionPolicyLines());
   }
 
   lines.push('');

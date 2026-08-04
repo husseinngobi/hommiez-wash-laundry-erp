@@ -480,11 +480,14 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
     const staffWhereSql = staffWhereClauses.join(' AND ');
 
     // Staff performance: orders created by each staff member - revenue counted when PAYMENT RECEIVED
+    // Only shows: active users (regardless of orders) OR inactive users who have at least one order.
+    // This prevents deleted/inactive staff with zero history from cluttering the report.
     const staffStats = await query(`
       SELECT 
         u.id,
         u.full_name as staff_name,
         u.role,
+        u.status as user_status,
         COUNT(DISTINCT o.id) as total_orders,
         COALESCE(SUM(p.amount), 0) as total_revenue,
         COALESCE(AVG(p.amount), 0) as avg_order_value,
@@ -494,7 +497,8 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
       LEFT JOIN orders o ON u.id = o.user_id
       LEFT JOIN payments p ON o.id = p.order_id ${dateFilter !== '1=1' ? `AND ${dateFilter}` : ''}
       WHERE ${staffWhereSql}
-      GROUP BY u.id, u.full_name, u.role
+      GROUP BY u.id, u.full_name, u.role, u.status
+      HAVING COUNT(DISTINCT o.id) > 0 OR u.status = 'ACTIVE'
       ORDER BY total_revenue DESC
     `, staffWhereParams);
 
