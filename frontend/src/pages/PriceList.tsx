@@ -194,7 +194,9 @@ export default function PriceList() {
         `${API_BASE_URL}/prices/categories/${encodeURIComponent(name)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      toast({ title: 'Category deleted', description: `"${name}" removed.` });
+      toast({ title: 'Category deleted', description: `"${getCategoryLabel(name)}" removed.` });
+      // Also dismiss from frontend so hardcoded categoryConfig entry doesn't re-add it
+      dismissCategory(name);
       await fetchCategories();
       if (activeCategory === name) setActiveCategory('ALL');
     } catch (err) {
