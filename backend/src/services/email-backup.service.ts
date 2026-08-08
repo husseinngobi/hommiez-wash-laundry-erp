@@ -31,7 +31,20 @@ export class EmailBackupService {
 
   async getTransactionsForDate(dateStr: string): Promise<DailyBackupData> {
     const ordersResult = await query(
-      `SELECT o.*, c.name as customer_name, c.phone as customer_phone
+      `SELECT o.*, o.status as order_status, c.name as customer_name, c.phone as customer_phone,
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+              'item_name', pi.name,
+              'service_type', oi.service_type,
+              'quantity', oi.quantity,
+              'unit_price', oi.unit_price,
+              'total_price', oi.total_price
+            ) ORDER BY oi.id)
+           FROM order_items oi
+           JOIN price_items pi ON oi.price_item_id = pi.id
+           WHERE oi.order_id = o.id
+          ), '[]'::json
+        ) as items
        FROM orders o JOIN customers c ON o.customer_id = c.id
        WHERE DATE(o.created_at) = $1 ORDER BY o.created_at DESC`,
       [dateStr]
@@ -103,21 +116,33 @@ export class EmailBackupService {
     <div class="section">
       <h3 class="section-title">📦 Today's Orders (${orders.length})</h3>
       ${orders.length > 0 ? `
-        <table>
-          <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Amount</th><th>Status</th><th>Time</th></tr></thead>
-          <tbody>
-            ${orders.map(order => `
-              <tr>
-                <td><strong>${order.order_number}</strong></td>
-                <td>${order.customer_name}</td>
-                <td>${order.customer_phone}</td>
-                <td>${parseFloat(order.total_amount).toLocaleString()} UGX</td>
-                <td>${order.order_status}</td>
-                <td>${new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+        ${orders.map(order => `
+          <div style="border:1px solid #e5e7eb; border-radius:8px; margin-bottom:16px; overflow:hidden;">
+            <div style="background:#f3f4f6; padding:10px 14px; display:flex; justify-content:space-between; flex-wrap:wrap;">
+              <strong>${order.order_number}</strong>
+              <span>${order.customer_name} · ${order.customer_phone}</span>
+              <span>Status: <strong>${order.order_status || 'N/A'}</strong></span>
+              <span>${new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+            <table style="margin:0;">
+              <thead><tr><th>Item</th><th>Service</th><th>Qty</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+              <tbody>
+                ${(order.items || []).map((item: any) => `
+                  <tr>
+                    <td>${item.item_name}</td>
+                    <td>${item.service_type}</td>
+                    <td>${item.quantity}</td>
+                    <td>${parseFloat(item.unit_price).toLocaleString()} UGX</td>
+                    <td>${parseFloat(item.total_price).toLocaleString()} UGX</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div style="text-align:right; padding:8px 14px; font-weight:bold; background:#fafafa;">
+              Order Total: ${parseFloat(order.total_amount).toLocaleString()} UGX
+            </div>
+          </div>
+        `).join('')}
       ` : '<p>No orders created today.</p>'}
     </div>
     <div class="section">
@@ -209,7 +234,15 @@ export class EmailBackupService {
           doc.text('No orders created.');
         } else {
           orders.forEach((order: any) => {
-            doc.text(`${order.order_number}  |  ${order.customer_name}  |  ${order.customer_phone}  |  UGX ${parseFloat(order.total_amount).toLocaleString()}  |  ${order.order_status}`);
+            doc.fontSize(9).fillColor('#111').text(
+              `${order.order_number}  |  ${order.customer_name}  |  ${order.customer_phone}  |  Status: ${order.order_status || 'N/A'}  |  Total: UGX ${parseFloat(order.total_amount).toLocaleString()}`
+            );
+            (order.items || []).forEach((item: any) => {
+              doc.fontSize(8).fillColor('#555').text(
+                `      • ${item.item_name} (${item.service_type}) x${item.quantity} — UGX ${parseFloat(item.total_price).toLocaleString()}`
+              );
+            });
+            doc.moveDown(0.3);
           });
         }
         doc.moveDown(1);
