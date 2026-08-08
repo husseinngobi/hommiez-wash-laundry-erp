@@ -59,8 +59,16 @@ export class EmailBackupService {
        WHERE d.scheduled_date = $1 ORDER BY d.scheduled_time_slot`,
       [dateStr]
     );
+    // Actual revenue received today = real payments, not order totals
+    const paymentsResult = await query(
+      `SELECT COALESCE(SUM(amount), 0) as total_received
+       FROM payments
+       WHERE DATE(payment_date) = $1 AND is_refund = FALSE`,
+      [dateStr]
+    );
+    const totalRevenue = parseFloat(paymentsResult.rows[0].total_received) || 0;
     const totalOrders = ordersResult.rows.length;
-    const totalRevenue = ordersResult.rows.reduce((sum, o) => sum + parseFloat(o.total_amount || 0), 0);
+    
     return {
       date: dateStr,
       orders: ordersResult.rows,
@@ -108,7 +116,7 @@ export class EmailBackupService {
       <h2 style="margin-top: 0;">📊 Daily Summary</h2>
       <div class="summary-grid">
         <div class="summary-item"><div>Total Orders</div><div class="summary-value">${summary.totalOrders}</div></div>
-        <div class="summary-item"><div>Revenue</div><div class="summary-value">${summary.totalRevenue.toLocaleString()} UGX</div></div>
+        <div class="summary-item"><div>Revenue Received</div><div class="summary-value">${summary.totalRevenue.toLocaleString()} UGX</div></div>
         <div class="summary-item"><div>New Customers</div><div class="summary-value">${summary.newCustomers}</div></div>
         <div class="summary-item"><div>Deliveries Scheduled</div><div class="summary-value">${summary.deliveriesScheduled}</div></div>
       </div>
@@ -122,6 +130,7 @@ export class EmailBackupService {
               <strong>${order.order_number}</strong>
               <span>${order.customer_name} · ${order.customer_phone}</span>
               <span>Status: <strong>${order.order_status || 'N/A'}</strong></span>
+              <span>Payment: <strong>${order.payment_status || 'N/A'}</strong> (Paid: ${parseFloat(order.amount_paid || 0).toLocaleString()} UGX${Number(order.balance) > 0 ? `, Balance: ${parseFloat(order.balance).toLocaleString()} UGX` : ''})</span>
               <span>${new Date(order.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
             </div>
             <table style="margin:0;">
@@ -222,7 +231,7 @@ export class EmailBackupService {
         doc.moveDown(0.3);
         doc.fontSize(11).fillColor('#333');
         doc.text(`Total Orders: ${summary.totalOrders}`);
-        doc.text(`Revenue: UGX ${summary.totalRevenue.toLocaleString()}`);
+        doc.text(`Revenue Received: UGX ${summary.totalRevenue.toLocaleString()}`);
         doc.text(`New Customers: ${summary.newCustomers}`);
         doc.text(`Deliveries Scheduled: ${summary.deliveriesScheduled}`);
         doc.moveDown(1);
@@ -235,7 +244,7 @@ export class EmailBackupService {
         } else {
           orders.forEach((order: any) => {
             doc.fontSize(9).fillColor('#111').text(
-              `${order.order_number}  |  ${order.customer_name}  |  ${order.customer_phone}  |  Status: ${order.order_status || 'N/A'}  |  Total: UGX ${parseFloat(order.total_amount).toLocaleString()}`
+              `${order.order_number}  |  ${order.customer_name}  |  ${order.customer_phone}  |  Status: ${order.order_status || 'N/A'}  |  Payment: ${order.payment_status || 'N/A'}  |  Total: UGX ${parseFloat(order.total_amount).toLocaleString()}`
             );
             (order.items || []).forEach((item: any) => {
               doc.fontSize(8).fillColor('#555').text(
