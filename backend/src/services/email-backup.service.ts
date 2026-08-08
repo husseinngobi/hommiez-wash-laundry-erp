@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { query } from '../config/database';
 import { notifyDailyBackupSent, notifyDailyBackupFailed } from './notification.service';
+import PDFDocument from 'pdfkit';
 
 interface DailyBackupData {
   date: string;
@@ -86,6 +87,40 @@ export class EmailBackupService {
       },
     };
   }
+
+  async getTransactionsForDate(dateStr: string): Promise<DailyBackupData> {
+    const ordersResult = await query(
+      `SELECT o.*, c.name as customer_name, c.phone as customer_phone
+       FROM orders o JOIN customers c ON o.customer_id = c.id
+       WHERE DATE(o.created_at) = $1 ORDER BY o.created_at DESC`,
+      [dateStr]
+    );
+    const customersResult = await query(
+      `SELECT * FROM customers WHERE DATE(created_at) = $1 ORDER BY created_at DESC`,
+      [dateStr]
+    );
+    const deliveriesResult = await query(
+      `SELECT d.*, o.order_number, c.name as customer_name
+       FROM deliveries d JOIN orders o ON d.order_id = o.id JOIN customers c ON o.customer_id = c.id
+       WHERE d.scheduled_date = $1 ORDER BY d.scheduled_time_slot`,
+      [dateStr]
+    );
+    const totalOrders = ordersResult.rows.length;
+    const totalRevenue = ordersResult.rows.reduce((sum, o) => sum + parseFloat(o.total_amount || 0), 0);
+    return {
+      date: dateStr,
+      orders: ordersResult.rows,
+      customers: customersResult.rows,
+      deliveries: deliveriesResult.rows,
+      summary: {
+        totalOrders,
+        totalRevenue,
+        newCustomers: customersResult.rows.length,
+        deliveriesScheduled: deliveriesResult.rows.length,
+      },
+    };
+  }
+
 
   /**
    * Format daily backup data as HTML email
@@ -244,6 +279,86 @@ export class EmailBackupService {
   }
 
   /**
+   * Generate a professional, phone-readable PDF summary.
+   * Accepts one or more days' data so failed days can be combined into one send.
+   */
+  async generatePDFBuffer(dataList: DailyBackupData[]): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      doc.fontSize(20).fillColor('#6366f1').text('Lush Laundry — Backup Report', { align: 'center' });
+      const rangeLabel = dataList.length === 1
+        ? new Date(dataList[0].date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+        : `${dataList.length} days combined (catch-up after an earlier failure)`;
+      doc.fontSize(11).fillColor('#666').text(rangeLabel, { align: 'center' });
+      doc.moveDown(1.5);
+
+      dataList.forEach((data, idx) => {
+        const { date, orders, customers, deliveries, summary } = data;
+
+        if (idx > 0) doc.addPage();
+
+        doc.fontSize(16).fillColor('#111').text(
+          new Date(date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+        );
+        doc.moveDown(0.5);
+
+        doc.fontSize(13).fillColor('#111').text('Summary', { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(11).fillColor('#333');
+        doc.text(`Total Orders: ${summary.totalOrders}`);
+        doc.text(`Revenue: UGX ${summary.totalRevenue.toLocaleString()}`);
+        doc.text(`New Customers: ${summary.newCustomers}`);
+        doc.text(`Deliveries Scheduled: ${summary.deliveriesScheduled}`);
+        doc.moveDown(1);
+
+        doc.fontSize(13).fillColor('#111').text(`Orders (${orders.length})`, { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(9).fillColor('#333');
+        if (orders.length === 0) {
+          doc.text('No orders created.');
+        } else {
+          orders.forEach((order: any) => {
+            doc.text(`${order.order_number}  |  ${order.customer_name}  |  ${order.customer_phone}  |  UGX ${parseFloat(order.total_amount).toLocaleString()}  |  ${order.order_status}`);
+          });
+        }
+        doc.moveDown(1);
+
+        doc.fontSize(13).fillColor('#111').text(`New Customers (${customers.length})`, { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(9).fillColor('#333');
+        if (customers.length === 0) {
+          doc.text('No new customers.');
+        } else {
+          customers.forEach((c: any) => {
+            doc.text(`${c.name}  |  ${c.phone}  |  ${c.customer_type || ''}`);
+          });
+        }
+        doc.moveDown(1);
+
+        doc.fontSize(13).fillColor('#111').text(`Deliveries (${deliveries.length})`, { underline: true });
+        doc.moveDown(0.3);
+        doc.fontSize(9).fillColor('#333');
+        if (deliveries.length === 0) {
+          doc.text('No deliveries scheduled.');
+        } else {
+          deliveries.forEach((d: any) => {
+            doc.text(`${d.order_number}  |  ${d.customer_name}  |  ${d.delivery_type}  |  ${d.scheduled_time_slot || 'Not set'}  |  ${d.delivery_status}`);
+          });
+        }
+      });
+
+      doc.moveDown(2);
+      doc.fontSize(8).fillColor('#999').text(`Generated on ${new Date().toLocaleString('en-GB')}`, { align: 'center' });
+      doc.end();
+    });
+  }
+
+  /**
    * Get all administrator emails
    */
   async getAdminEmails(): Promise<string[]> {
@@ -256,68 +371,78 @@ export class EmailBackupService {
     return result.rows.map(row => row.email);
   }
 
-  /**
-   * Send daily backup email to all administrators
-   */
-  async sendDailyBackup(): Promise<{ success: boolean; message: string; sentTo?: string[] }> {
-    try {
-      console.log('📧 Starting daily backup email generation...');
+  async getRecipientEmails(): Promise<string[]> {
+    const settingResult = await query(
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'business_email'`
+    );
+    const businessEmail = settingResult.rows[0]?.setting_value;
 
-      // Get admin emails
-      const adminEmails = await this.getAdminEmails();
-      
-      if (adminEmails.length === 0) {
-        console.log('⚠️ No administrator emails found');
-        return {
-          success: false,
-          message: 'No administrator emails configured',
-        };
+    if (businessEmail && typeof businessEmail === 'string' && businessEmail.trim()) {
+      const cleaned = businessEmail.replace(/^"|"$/g, '').trim();
+      if (cleaned) return [cleaned];
+    }
+
+    return this.getAdminEmails();
+  }
+
+  /**
+   * Send backup email covering one or more dates (multiple dates = combined catch-up email)
+   */
+  async sendDailyBackup(dates?: string[]): Promise<{ success: boolean; message: string; sentTo?: string[] }> {
+    try {
+      const targetDates = dates && dates.length > 0 ? dates : [new Date().toISOString().split('T')[0]];
+      console.log(`📧 Starting backup email generation for: ${targetDates.join(', ')}`);
+
+      const recipientEmails = await this.getRecipientEmails();
+      if (recipientEmails.length === 0) {
+        console.log('⚠️ No recipient email configured');
+        return { success: false, message: 'No recipient email configured' };
+      }
+      console.log(`📬 Sending to: ${recipientEmails.join(', ')}`);
+
+      const dataList: DailyBackupData[] = [];
+      for (const d of targetDates) {
+        dataList.push(await this.getTransactionsForDate(d));
       }
 
-      console.log(`📬 Found ${adminEmails.length} administrator email(s)`);
+      const latest = dataList[dataList.length - 1];
+      console.log(`📊 Collected data across ${dataList.length} day(s)`);
 
-      // Get today's data
-      const backupData = await this.getTodayTransactions();
-      console.log(`📊 Collected data: ${backupData.summary.totalOrders} orders, ${backupData.summary.newCustomers} customers, ${backupData.summary.deliveriesScheduled} deliveries`);
+      const htmlContent = this.formatEmailHTML(latest);
+      const pdfBuffer = await this.generatePDFBuffer(dataList);
+      const pdfFilename = targetDates.length === 1
+        ? `Lush-Laundry-Backup-${targetDates[0]}.pdf`
+        : `Lush-Laundry-Backup-${targetDates[0]}-to-${targetDates[targetDates.length - 1]}.pdf`;
 
-      // Format email
-      const htmlContent = this.formatEmailHTML(backupData);
+      const subjectDates = targetDates.length === 1
+        ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+        : `${targetDates.length} days (catch-up)`;
 
-      // Send email to all admins
       const mailOptions = {
         from: `"Lush Laundry System" <${process.env.BACKUP_EMAIL_USER || process.env.EMAIL_USER}>`,
-        to: adminEmails.join(', '),
-        subject: `🧺 Daily Backup - ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} - ${backupData.summary.totalOrders} Orders`,
+        to: recipientEmails.join(', '),
+        subject: `🧺 Daily Backup - ${subjectDates}`,
         html: htmlContent,
+        attachments: [
+          { filename: pdfFilename, content: pdfBuffer, contentType: 'application/pdf' },
+        ],
       };
 
       await this.transporter.sendMail(mailOptions);
-      
-      console.log(`✅ Daily backup email sent successfully to: ${adminEmails.join(', ')}`);
+      console.log(`✅ Backup email sent successfully to: ${recipientEmails.join(', ')}`);
 
-      // Send in-app notification to administrators
-      await notifyDailyBackupSent(
-        adminEmails.length,
-        backupData.summary.totalOrders,
-        backupData.summary.newCustomers
-      );
+      await notifyDailyBackupSent(recipientEmails.length, latest.summary.totalOrders, latest.summary.newCustomers);
 
       return {
         success: true,
-        message: `Daily backup email sent to ${adminEmails.length} administrator(s)`,
-        sentTo: adminEmails,
+        message: `Backup email sent to ${recipientEmails.length} recipient(s) covering ${targetDates.length} day(s)`,
+        sentTo: recipientEmails,
       };
     } catch (error) {
-      console.error('❌ Failed to send daily backup email:', error);
-      
-      // Send failure notification to administrators
+      console.error('❌ Failed to send backup email:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to send backup email';
       await notifyDailyBackupFailed(errorMessage);
-      
-      return {
-        success: false,
-        message: errorMessage,
-      };
+      return { success: false, message: errorMessage };
     }
   }
 }
