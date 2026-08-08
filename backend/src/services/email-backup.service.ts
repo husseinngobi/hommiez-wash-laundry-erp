@@ -1,7 +1,9 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { query } from '../config/database';
 import { notifyDailyBackupSent, notifyDailyBackupFailed } from './notification.service';
 import PDFDocument from 'pdfkit';
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface DailyBackupData {
   date: string;
@@ -17,75 +19,14 @@ interface DailyBackupData {
 }
 
 /**
- * Email service for sending automated daily backups
+ * Email service for sending automated daily backups (via Resend API)
  */
 export class EmailBackupService {
-  private transporter: nodemailer.Transporter;
+  constructor() {}
 
-  constructor() {
-    // Configure email transporter
-    this.transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.BACKUP_EMAIL_USER || process.env.EMAIL_USER,
-        pass: process.env.BACKUP_EMAIL_PASSWORD || process.env.EMAIL_PASSWORD,
-      },
-    });
-  }
-
-  /**
-   * Get today's transactions data
-   */
   async getTodayTransactions(): Promise<DailyBackupData> {
     const today = new Date().toISOString().split('T')[0];
-
-    // Get today's orders
-    const ordersResult = await query(
-      `SELECT o.*, c.name as customer_name, c.phone as customer_phone
-       FROM orders o
-       JOIN customers c ON o.customer_id = c.id
-       WHERE DATE(o.created_at) = $1
-       ORDER BY o.created_at DESC`,
-      [today]
-    );
-
-    // Get today's new customers
-    const customersResult = await query(
-      `SELECT * FROM customers 
-       WHERE DATE(created_at) = $1
-       ORDER BY created_at DESC`,
-      [today]
-    );
-
-    // Get today's deliveries
-    const deliveriesResult = await query(
-      `SELECT d.*, o.order_number, c.name as customer_name
-       FROM deliveries d
-       JOIN orders o ON d.order_id = o.id
-       JOIN customers c ON o.customer_id = c.id
-       WHERE d.scheduled_date = $1
-       ORDER BY d.scheduled_time_slot`,
-      [today]
-    );
-
-    // Calculate summary
-    const totalOrders = ordersResult.rows.length;
-    const totalRevenue = ordersResult.rows.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
-    const newCustomers = customersResult.rows.length;
-    const deliveriesScheduled = deliveriesResult.rows.length;
-
-    return {
-      date: today,
-      orders: ordersResult.rows,
-      customers: customersResult.rows,
-      deliveries: deliveriesResult.rows,
-      summary: {
-        totalOrders,
-        totalRevenue,
-        newCustomers,
-        deliveriesScheduled,
-      },
-    };
+    return this.getTransactionsForDate(today);
   }
 
   async getTransactionsForDate(dateStr: string): Promise<DailyBackupData> {
@@ -121,10 +62,6 @@ export class EmailBackupService {
     };
   }
 
-
-  /**
-   * Format daily backup data as HTML email
-   */
   formatEmailHTML(data: DailyBackupData): string {
     const { date, orders, customers, deliveries, summary } = data;
 
@@ -153,46 +90,21 @@ export class EmailBackupService {
     <h1>🧺 Lush Laundry - Daily Backup Report</h1>
     <p>Date: ${new Date(date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
   </div>
-
   <div style="padding: 20px;">
-    <!-- Summary Section -->
     <div class="summary">
       <h2 style="margin-top: 0;">📊 Daily Summary</h2>
       <div class="summary-grid">
-        <div class="summary-item">
-          <div>Total Orders</div>
-          <div class="summary-value">${summary.totalOrders}</div>
-        </div>
-        <div class="summary-item">
-          <div>Revenue</div>
-          <div class="summary-value">${summary.totalRevenue.toLocaleString()} UGX</div>
-        </div>
-        <div class="summary-item">
-          <div>New Customers</div>
-          <div class="summary-value">${summary.newCustomers}</div>
-        </div>
-        <div class="summary-item">
-          <div>Deliveries Scheduled</div>
-          <div class="summary-value">${summary.deliveriesScheduled}</div>
-        </div>
+        <div class="summary-item"><div>Total Orders</div><div class="summary-value">${summary.totalOrders}</div></div>
+        <div class="summary-item"><div>Revenue</div><div class="summary-value">${summary.totalRevenue.toLocaleString()} UGX</div></div>
+        <div class="summary-item"><div>New Customers</div><div class="summary-value">${summary.newCustomers}</div></div>
+        <div class="summary-item"><div>Deliveries Scheduled</div><div class="summary-value">${summary.deliveriesScheduled}</div></div>
       </div>
     </div>
-
-    <!-- Orders Section -->
     <div class="section">
       <h3 class="section-title">📦 Today's Orders (${orders.length})</h3>
       ${orders.length > 0 ? `
         <table>
-          <thead>
-            <tr>
-              <th>Order #</th>
-              <th>Customer</th>
-              <th>Phone</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Time</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Amount</th><th>Status</th><th>Time</th></tr></thead>
           <tbody>
             ${orders.map(order => `
               <tr>
@@ -208,21 +120,11 @@ export class EmailBackupService {
         </table>
       ` : '<p>No orders created today.</p>'}
     </div>
-
-    <!-- Customers Section -->
     <div class="section">
       <h3 class="section-title">👥 New Customers (${customers.length})</h3>
       ${customers.length > 0 ? `
         <table>
-          <thead>
-            <tr>
-              <th>Customer ID</th>
-              <th>Name</th>
-              <th>Phone</th>
-              <th>Type</th>
-              <th>Registered</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Customer ID</th><th>Name</th><th>Phone</th><th>Type</th><th>Registered</th></tr></thead>
           <tbody>
             ${customers.map(customer => `
               <tr>
@@ -237,21 +139,11 @@ export class EmailBackupService {
         </table>
       ` : '<p>No new customers registered today.</p>'}
     </div>
-
-    <!-- Deliveries Section -->
     <div class="section">
       <h3 class="section-title">🚚 Today's Deliveries (${deliveries.length})</h3>
       ${deliveries.length > 0 ? `
         <table>
-          <thead>
-            <tr>
-              <th>Order #</th>
-              <th>Customer</th>
-              <th>Type</th>
-              <th>Time Slot</th>
-              <th>Status</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Order #</th><th>Customer</th><th>Type</th><th>Time Slot</th><th>Status</th></tr></thead>
           <tbody>
             ${deliveries.map(delivery => `
               <tr>
@@ -267,7 +159,6 @@ export class EmailBackupService {
       ` : '<p>No deliveries scheduled for today.</p>'}
     </div>
   </div>
-
   <div class="footer">
     <p><strong>Lush Laundry Management System</strong></p>
     <p>This is an automated daily backup email. Please keep this for your records.</p>
@@ -278,10 +169,6 @@ export class EmailBackupService {
     `;
   }
 
-  /**
-   * Generate a professional, phone-readable PDF summary.
-   * Accepts one or more days' data so failed days can be combined into one send.
-   */
   async generatePDFBuffer(dataList: DailyBackupData[]): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 40, size: 'A4' });
@@ -299,7 +186,6 @@ export class EmailBackupService {
 
       dataList.forEach((data, idx) => {
         const { date, orders, customers, deliveries, summary } = data;
-
         if (idx > 0) doc.addPage();
 
         doc.fontSize(16).fillColor('#111').text(
@@ -358,16 +244,12 @@ export class EmailBackupService {
     });
   }
 
-  /**
-   * Get all administrator emails
-   */
   async getAdminEmails(): Promise<string[]> {
     const result = await query(
       `SELECT email FROM users 
        WHERE role = 'ADMIN' AND email IS NOT NULL AND email != ''
        ORDER BY email`
     );
-    
     return result.rows.map(row => row.email);
   }
 
@@ -385,9 +267,6 @@ export class EmailBackupService {
     return this.getAdminEmails();
   }
 
-  /**
-   * Send backup email covering one or more dates (multiple dates = combined catch-up email)
-   */
   async sendDailyBackup(dates?: string[]): Promise<{ success: boolean; message: string; sentTo?: string[] }> {
     try {
       const targetDates = dates && dates.length > 0 ? dates : [new Date().toISOString().split('T')[0]];
@@ -418,17 +297,23 @@ export class EmailBackupService {
         ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
         : `${targetDates.length} days (catch-up)`;
 
-      const mailOptions = {
-        from: `"Lush Laundry System" <${process.env.BACKUP_EMAIL_USER || process.env.EMAIL_USER}>`,
-        to: recipientEmails.join(', '),
+      const { error: sendError } = await resend.emails.send({
+        from: 'Lush Laundry System <backups@lushlaundromat.com>',
+        to: recipientEmails,
         subject: `🧺 Daily Backup - ${subjectDates}`,
         html: htmlContent,
         attachments: [
-          { filename: pdfFilename, content: pdfBuffer, contentType: 'application/pdf' },
+          {
+            filename: pdfFilename,
+            content: pdfBuffer.toString('base64'),
+          },
         ],
-      };
+      });
 
-      await this.transporter.sendMail(mailOptions);
+      if (sendError) {
+        throw new Error(sendError.message || 'Resend failed to send the email');
+      }
+
       console.log(`✅ Backup email sent successfully to: ${recipientEmails.join(', ')}`);
 
       await notifyDailyBackupSent(recipientEmails.length, latest.summary.totalOrders, latest.summary.newCustomers);
@@ -447,5 +332,4 @@ export class EmailBackupService {
   }
 }
 
-// Export singleton instance
 export const emailBackupService = new EmailBackupService();
