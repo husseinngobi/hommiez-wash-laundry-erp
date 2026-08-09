@@ -1062,7 +1062,7 @@ Don't miss out! ✨`;
         `${API_BASE_URL}/backup/email-settings`,
         {
           enabled: emailBackupEnabled,
-          email: backupEmail,
+          email: businessEmail,
           frequency: backupFrequency,
           categories: backupCategories,
         },
@@ -1071,7 +1071,7 @@ Don't miss out! ✨`;
       toast({
         title: 'Settings Saved',
         description: emailBackupEnabled 
-          ? `Automatic backups will be sent to ${backupEmail} ${backupFrequency} with ${backupCategories.length} categories` 
+          ? `Automatic backups will be sent to ${businessEmail} ${backupFrequency} with ${backupCategories.length} categories` 
           : 'Automatic email backups disabled',
       });
     } catch (error) {
@@ -2332,7 +2332,34 @@ Don't miss out! ✨`;
                     </div>
                     <Switch 
                       checked={emailBackupEnabled} 
-                      onCheckedChange={setEmailBackupEnabled}
+                      onCheckedChange={async (checked) => {
+                        setEmailBackupEnabled(checked);
+                        try {
+                          await axios.post(
+                            `${API_BASE_URL}/backup/email-settings`,
+                            {
+                              enabled: checked,
+                              email: businessEmail,
+                              frequency: backupFrequency,
+                              categories: backupCategories,
+                            },
+                            { headers: { Authorization: `Bearer ${token}` } }
+                          );
+                          toast({
+                            title: checked ? 'Automatic backups enabled' : 'Automatic backups disabled',
+                            description: checked
+                              ? 'This applies system-wide for all administrators, effective immediately.'
+                              : 'Automatic backups will not run until re-enabled.',
+                          });
+                        } catch {
+                          setEmailBackupEnabled(!checked);
+                          toast({
+                            variant: 'destructive',
+                            title: 'Error',
+                            description: 'Failed to update automatic backup setting',
+                          });
+                        }
+                      }}
                     />
                   </div>
 
@@ -2348,7 +2375,7 @@ Don't miss out! ✨`;
                         <div className="flex items-center gap-2 p-2 bg-white dark:bg-gray-900 rounded border border-purple-200 dark:border-purple-700">
                           <Mail className="h-4 w-4 text-purple-500" />
                           <span className="text-sm font-medium text-purple-900 dark:text-purple-100">
-                            {backupEmail || businessEmail || 'No business email configured'}
+                            {businessEmail || 'No business email configured — set it in Business Information above'}
                           </span>
                         </div>
                         <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
@@ -2419,7 +2446,7 @@ Don't miss out! ✨`;
 
                       <Button 
                         onClick={saveEmailBackupSettings}
-                        disabled={savingEmailSettings || !backupEmail || backupCategories.length === 0}
+                        disabled={savingEmailSettings || !businessEmail || backupCategories.length === 0}
                         className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                       >
                         {savingEmailSettings ? 'Saving...' : 'Save Automatic Backup Settings'}
