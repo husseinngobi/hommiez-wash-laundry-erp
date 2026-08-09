@@ -66,7 +66,7 @@ async function fetchOrdersWithItems(range: DateRange) {
 }
 
 async function fetchInventory() {
-  const result = await query(`SELECT * FROM inventory_items ORDER BY name`);
+  const result = await query(`SELECT * FROM inventory_items ORDER BY item_name`);
   return result.rows;
 }
 
@@ -161,7 +161,7 @@ export async function generateBackupPDF(tables: string, range: DateRange = {}): 
         doc.text('No inventory records.');
       } else {
         inventory.forEach((item: any) => {
-          doc.text(`${item.name}  |  Qty: ${item.quantity ?? 'N/A'}  |  Unit: ${item.unit || ''}`);
+          doc.text(`${item.item_name}  |  Qty: ${item.quantity ?? 'N/A'}  |  Unit: ${item.unit || ''}  |  Unit Cost: UGX ${(item.unit_cost || 0).toLocaleString()}${item.is_active === false ? '  |  INACTIVE' : ''}`);
         });
       }
       doc.moveDown(1.5);
