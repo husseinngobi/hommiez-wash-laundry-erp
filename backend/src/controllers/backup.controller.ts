@@ -242,6 +242,12 @@ export const saveEmailBackupSettings = async (req: AuthRequest, res: Response) =
       )
     `);
 
+    // Table may already exist from before this column was added — ensure it's there
+    await query(`
+      ALTER TABLE backup_email_settings 
+      ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '["orders", "customers", "payments"]'::jsonb
+    `);
+
     // Check if settings exist
     const existing = await query('SELECT * FROM backup_email_settings LIMIT 1');
     
@@ -289,6 +295,12 @@ export const getEmailBackupSettings = async (req: AuthRequest, res: Response) =>
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_by VARCHAR(255)
       )
+    `);
+
+    // Table may already exist from before this column was added — ensure it's there
+    await query(`
+      ALTER TABLE backup_email_settings 
+      ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '["orders", "customers", "payments"]'::jsonb
     `);
 
     const result = await query('SELECT * FROM backup_email_settings LIMIT 1');
