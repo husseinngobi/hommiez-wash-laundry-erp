@@ -36,19 +36,33 @@ async function fetchOrdersWithItems(range: DateRange) {
     values
   );
 
-  for (const order of ordersResult.rows) {
-    const itemsResult = await query(
-      `SELECT pi.name as item_name, oi.service_type, oi.quantity, oi.unit_price, oi.total_price
-       FROM order_items oi
-       JOIN price_items pi ON oi.price_item_id = pi.id
-       WHERE oi.order_id = $1
-       ORDER BY oi.id`,
-      [order.id]
-    );
-    order.items = itemsResult.rows;
+  const orders = ordersResult.rows;
+  if (orders.length === 0) return orders;
+
+  // Fetch ALL items for ALL orders in a single query instead of one query per order
+  const orderIds = orders.map((o: any) => o.id);
+  const itemsResult = await query(
+    `SELECT oi.order_id, pi.name as item_name, oi.service_type, oi.quantity, oi.unit_price, oi.total_price
+     FROM order_items oi
+     JOIN price_items pi ON oi.price_item_id = pi.id
+     WHERE oi.order_id = ANY($1::int[])
+     ORDER BY oi.order_id, oi.id`,
+    [orderIds]
+  );
+
+  const itemsByOrderId = new Map<number, any[]>();
+  for (const item of itemsResult.rows) {
+    if (!itemsByOrderId.has(item.order_id)) {
+      itemsByOrderId.set(item.order_id, []);
+    }
+    itemsByOrderId.get(item.order_id)!.push(item);
   }
 
-  return ordersResult.rows;
+  for (const order of orders) {
+    order.items = itemsByOrderId.get(order.id) || [];
+  }
+
+  return orders;
 }
 
 async function fetchInventory() {
