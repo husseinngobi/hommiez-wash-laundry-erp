@@ -10,14 +10,14 @@ import {
 
 /**
  * Automated backup scheduler.
- * Every day at 3:00 AM: checks Settings, and if enabled, sends a backup email
+ * Every day at 12:00 AM: checks Settings, and if enabled, sends a backup email
  * (via emailBackupService) covering today plus any unsent/failed days from the
  * last 7 days, combined into a single catch-up email if there's a backlog.
  */
 export const initializeBackupScheduler = async () => {
   await initializeBackupTracking();
 
-  cron.schedule('0 3 * * *', async () => {
+  cron.schedule('0 0 * * *', async () => {
     console.log('🕐 Checking automated backup settings...');
     const today = new Date().toISOString().split('T')[0];
 
@@ -59,7 +59,9 @@ export const initializeBackupScheduler = async () => {
       console.error('❌ Automated backup check failed:', error);
       await recordBackupAttempt(today, 'FAILED', error.message);
     }
+  }, {
+    timezone: 'Africa/Kampala',
   });
 
-  console.log('📅 Automated backup scheduler initialized (checks daily at 3:00 AM)');
+  console.log('📅 Automated backup scheduler initialized (checks daily at 12:00 AM)');
 };

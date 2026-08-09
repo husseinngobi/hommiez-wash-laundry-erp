@@ -329,6 +329,21 @@ export class EmailBackupService {
       const latest = dataList[dataList.length - 1];
       console.log(`📊 Collected data across ${dataList.length} day(s)`);
 
+      // If literally nothing happened on any of the covered days, skip sending —
+      // but still report success so these dates aren't retried as "failed" forever.
+      const combinedActivity = dataList.reduce(
+        (sum, d) => sum + d.summary.totalOrders + d.summary.newCustomers + d.summary.deliveriesScheduled,
+        0
+      );
+      if (combinedActivity === 0) {
+        console.log('ℹ️ No orders, customers, or deliveries in this period — skipping email');
+        return {
+          success: true,
+          message: `No activity for ${targetDates.join(', ')} — backup skipped`,
+          sentTo: [],
+        };
+      }
+
       const htmlContent = this.formatEmailHTML(latest);
       const pdfBuffer = await this.generatePDFBuffer(dataList);
       const pdfFilename = targetDates.length === 1
