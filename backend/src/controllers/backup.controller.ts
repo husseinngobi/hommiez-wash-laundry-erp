@@ -2,7 +2,6 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import { query } from '../config/database';
 import { emailBackupService } from '../services/email-backup.service';
-import { dailyBackupScheduler } from '../services/daily-backup.scheduler';
 import { notifyBackupSuccess, notifyBackupFailure } from '../services/notification.service';
 import * as fs from 'fs';
 import * as path from 'path';

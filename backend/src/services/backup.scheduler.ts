@@ -19,7 +19,11 @@ export const initializeBackupScheduler = async () => {
 
   cron.schedule('0 0 * * *', async () => {
     console.log('🕐 Checking automated backup settings...');
-    const today = new Date().toISOString().split('T')[0];
+    // At exactly midnight, "today" per the clock is the new day starting —
+    // but we want to report on the day that just ended.
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const today = yesterday.toISOString().split('T')[0];
 
     try {
       const settingsResult = await query('SELECT * FROM backup_email_settings LIMIT 1');

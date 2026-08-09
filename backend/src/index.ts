@@ -12,7 +12,6 @@ import {
 } from './middleware/security.middleware';
 import { initializeBackupScheduler } from './services/backup.scheduler';
 import { cleanupOldReceipts } from './services/pdf.service';
-import { dailyBackupScheduler } from './services/daily-backup.scheduler';
 import path from 'path';
 import dns from 'dns';
 import { ensureDirectories } from './utils/ensureDirectories';
@@ -206,13 +205,12 @@ const startServer = async () => {
       console.log('🚀 ========================================');
       console.log('');
       
-      // Initialize automated backup schedulers (disabled in development due to Supabase timeout issues)
+      // Initialize automated backup scheduler (disabled in development due to Supabase timeout issues)
       if (config.nodeEnv === 'production') {
         initializeBackupScheduler();
-        dailyBackupScheduler.start();
-        console.log('✅ Backup schedulers initialized');
+        console.log('✅ Backup scheduler initialized');
       } else {
-        console.log('⏸️  Backup schedulers disabled in development mode');
+        console.log('⏸️  Backup scheduler disabled in development mode');
       }
       
       // Schedule PDF receipt cleanup (every 24 hours)
