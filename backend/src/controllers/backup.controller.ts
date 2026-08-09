@@ -3,15 +3,49 @@ import { AuthRequest } from '../middleware/auth';
 import { query } from '../config/database';
 import { emailBackupService } from '../services/email-backup.service';
 import { notifyBackupSuccess, notifyBackupFailure } from '../services/notification.service';
+import { generateBackupPDF } from '../services/backup-pdf.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Create database backup (export to JSON)
+ * Create database backup 
  */
 export const createBackup = async (req: AuthRequest, res: Response) => {
   try {
-    const { tables } = req.body; // 'all', 'customers', 'orders,order_items', etc.
+    const { tables, format, from_date, to_date } = req.body; // 'all', 'customers', 'orders,order_items', etc.
+
+    // PDF path — separate branch, returns early
+    if (format === 'pdf') {
+      const pdfBuffer = await generateBackupPDF(tables || 'all', { fromDate: from_date, toDate: to_date });
+      const timestamp = new Date().toISOString().split('T')[0];
+      const typeLabel = tables === 'all' || !tables ? 'full' : String(tables).replace(/,/g, '_');
+      const filename = `lush_laundry_${typeLabel}_backup_${timestamp}.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(pdfBuffer);
+
+      // Log to history the same way the JSON path does
+      try {
+        await query(`
+          CREATE TABLE IF NOT EXISTS backup_history (
+            id SERIAL PRIMARY KEY,
+            type VARCHAR(100),
+            created_by VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            size VARCHAR(50)
+          )
+        `);
+        const sizeKB = (pdfBuffer.length / 1024).toFixed(2);
+        await query(
+          'INSERT INTO backup_history (type, created_by, size) VALUES ($1, $2, $3)',
+          [`PDF: ${typeLabel}`, req.user?.email, `${sizeKB} KB`]
+        );
+      } catch (historyError) {
+        console.error('Failed to log PDF backup to history:', historyError);
+      }
+      return;
+    }
     
     const backupData: any = {
       timestamp: new Date().toISOString(),

@@ -169,6 +169,9 @@ export default function Settings() {
   const [backupStats, setBackupStats] = useState<BackupStats | null>(null);
   const [isDownloadingBackup, setIsDownloadingBackup] = useState(false);
   const [selectedBackupType, setSelectedBackupType] = useState('all');
+  const [backupFormat, setBackupFormat] = useState<'json' | 'pdf'>('pdf');
+  const [backupFromDate, setBackupFromDate] = useState('');
+  const [backupToDate, setBackupToDate] = useState('');
   const [backupHistory, setBackupHistory] = useState<BackupHistoryItem[]>([]);
   
   // Email backup settings
@@ -939,22 +942,26 @@ Don't miss out! ✨`;
       
       const response = await axios.post(
         `${API_BASE_URL}/backup/create`,
-        { tables: selectedBackupType }, // Support different backup types
+        {
+          tables: selectedBackupType,
+          format: backupFormat,
+          from_date: backupFromDate || undefined,
+          to_date: backupToDate || undefined,
+        },
         {
           headers: { Authorization: `Bearer ${token}` },
-          responseType: 'blob', // Important for file download
+          responseType: 'blob',
         }
       );
 
-      // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
       
-      // Set filename with current date and type
       const date = new Date().toISOString().split('T')[0];
       const typeLabel = selectedBackupType === 'all' ? 'full' : selectedBackupType.replace(',', '_');
-      link.setAttribute('download', `lush_laundry_${typeLabel}_backup_${date}.json`);
+      const extension = backupFormat === 'pdf' ? 'pdf' : 'json';
+      link.setAttribute('download', `lush_laundry_${typeLabel}_backup_${date}.${extension}`);
       
       document.body.appendChild(link);
       link.click();
@@ -963,10 +970,9 @@ Don't miss out! ✨`;
 
       toast({
         title: 'Backup Downloaded',
-        description: `Your ${typeLabel} backup has been downloaded successfully`,
+        description: `Your ${typeLabel} ${backupFormat.toUpperCase()} backup has been downloaded successfully`,
       });
       
-      // Refresh backup history
       fetchBackupHistory();
     } catch (error) {
       toast({
@@ -2243,7 +2249,7 @@ Don't miss out! ✨`;
                       <SelectContent>
                         <SelectItem value="all">🗄️ Full Backup (All Data)</SelectItem>
                         <SelectItem value="customers">👥 Customers Only</SelectItem>
-                        <SelectItem value="orders,order_items">📋 Orders Only</SelectItem>
+                        <SelectItem value="orders,order_items">📋 Orders Only (includes item details)</SelectItem>
                         <SelectItem value="inventory_items,inventory_transactions">📦 Inventory Only</SelectItem>
                         <SelectItem value="deliveries">🚚 Deliveries Only</SelectItem>
                         <SelectItem value="customers,orders,order_items">👥📋 Customers + Orders</SelectItem>
@@ -2251,13 +2257,58 @@ Don't miss out! ✨`;
                     </Select>
                   </div>
 
+                  <div>
+                    <Label htmlFor="backupFormat" className="text-sm text-blue-700 dark:text-blue-300">
+                      File format
+                    </Label>
+                    <Select value={backupFormat} onValueChange={(v) => setBackupFormat(v as 'json' | 'pdf')}>
+                      <SelectTrigger id="backupFormat" className="mt-1 bg-white dark:bg-gray-900">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pdf">📄 PDF — readable, printable, good for owners</SelectItem>
+                        <SelectItem value="json">🗂️ JSON — raw data, for technical restore</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="backupFromDate" className="text-sm text-blue-700 dark:text-blue-300">
+                        From date (optional)
+                      </Label>
+                      <Input
+                        id="backupFromDate"
+                        type="date"
+                        value={backupFromDate}
+                        onChange={(e) => setBackupFromDate(e.target.value)}
+                        className="mt-1 bg-white dark:bg-gray-900"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="backupToDate" className="text-sm text-blue-700 dark:text-blue-300">
+                        To date (optional)
+                      </Label>
+                      <Input
+                        id="backupToDate"
+                        type="date"
+                        value={backupToDate}
+                        onChange={(e) => setBackupToDate(e.target.value)}
+                        className="mt-1 bg-white dark:bg-gray-900"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-600 dark:text-blue-400">
+                    Leave dates blank for the complete history — useful for full record-keeping backups.
+                  </p>
+
                   <Button 
                     onClick={handleDownloadBackup}
                     disabled={isDownloadingBackup}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    {isDownloadingBackup ? 'Creating Backup...' : 'Download Backup Now'}
+                    {isDownloadingBackup ? 'Creating Backup...' : `Download Backup Now (${backupFormat.toUpperCase()})`}
                   </Button>
                 </div>
               </div>
