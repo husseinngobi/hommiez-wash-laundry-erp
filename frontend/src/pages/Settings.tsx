@@ -2310,16 +2310,18 @@ Don't miss out! ✨`;
                           📦 What to Include in Backups
                         </Label>
                         <p className="text-xs text-purple-600 dark:text-purple-400 mb-2">
-                          Select which data categories to include in automatic backups
+                          Every automatic backup always includes Orders, Customers, and Deliveries.
+                          Payments, Inventory, and Expenses are not yet included — support for choosing
+                          categories is coming soon.
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white dark:bg-gray-900 p-3 rounded-lg border border-purple-200 dark:border-purple-700">
                           {[
-                            { id: 'orders', label: '📋 Orders & Order Items', desc: 'All order records' },
-                            { id: 'customers', label: '👥 Customers', desc: 'Customer information' },
-                            { id: 'payments', label: '💰 Payments', desc: 'Payment transactions' },
-                            { id: 'inventory', label: '📦 Inventory', desc: 'Inventory items & transactions' },
-                            { id: 'deliveries', label: '🚚 Deliveries', desc: 'Delivery records' },
-                            { id: 'expenses', label: '💸 Expenses', desc: 'Expense records' },
+                            { id: 'orders', label: '📋 Orders & Order Items', desc: 'All order records', active: true },
+                            { id: 'customers', label: '👥 Customers', desc: 'Customer information', active: true },
+                            { id: 'payments', label: '💰 Payments', desc: 'Payment transactions — coming soon', active: false },
+                            { id: 'inventory', label: '📦 Inventory', desc: 'Inventory items & transactions — coming soon', active: false },
+                            { id: 'deliveries', label: '🚚 Deliveries', desc: 'Delivery records', active: true },
+                            { id: 'expenses', label: '💸 Expenses', desc: 'Expense records — coming soon', active: false },
                           ].map(category => (
                             <div key={category.id} className="flex items-start space-x-2 p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded">
                               <input
@@ -2327,7 +2329,8 @@ Don't miss out! ✨`;
                                 id={`backup-${category.id}`}
                                 checked={backupCategories.includes(category.id)}
                                 onChange={() => toggleBackupCategory(category.id)}
-                                className="mt-1 h-4 w-4 text-purple-600 focus:ring-purple-500 rounded"
+                                disabled={!category.active}
+                                className="mt-1 h-4 w-4 text-purple-600 focus:ring-purple-500 rounded disabled:opacity-40 disabled:cursor-not-allowed"
                               />
                               <label htmlFor={`backup-${category.id}`} className="flex-1 cursor-pointer">
                                 <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -2356,9 +2359,9 @@ Don't miss out! ✨`;
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="daily">📅 Daily - Every day at 11:59 PM (EAT)</SelectItem>
-                            <SelectItem value="weekly">📆 Weekly - Every Sunday at 11:59 PM (EAT)</SelectItem>
-                            <SelectItem value="monthly">🗓️ Monthly - 1st of each month at 11:59 PM (EAT)</SelectItem>
+                            <SelectItem value="daily">📅 Daily - Every day at 12:00 AM (EAT)</SelectItem>
+                            <SelectItem value="weekly">📆 Weekly - Not yet supported, sends daily</SelectItem>
+                            <SelectItem value="monthly">🗓️ Monthly - Not yet supported, sends daily</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -2386,7 +2389,7 @@ Don't miss out! ✨`;
                       📧 Daily Transaction Backups
                     </h4>
                     <p className="text-sm text-green-700 dark:text-green-300 mb-4">
-                      Automated daily summaries sent to all administrators at 11:59 PM (EAT)
+                      Automated daily summaries sent to all administrators at 12:00 AM (EAT)
                     </p>
                     
                     <div className="bg-white dark:bg-gray-900 rounded-lg p-3 sm:p-4 space-y-3 border border-green-200 dark:border-green-800">
@@ -2402,7 +2405,7 @@ Don't miss out! ✨`;
                         <div>
                           <span className="text-green-700 dark:text-green-300 font-medium block">Schedule:</span>
                           <div className="mt-1 text-green-600 dark:text-green-400">
-                            11:59 PM daily (EAT)
+                            12:00 AM daily (EAT)
                           </div>
                         </div>
                       </div>
