@@ -321,9 +321,45 @@ function buildBusinessFooterLines(business?: BusinessInfo | null): string[] {
 }
 
 /**
+ * Compact payment summary for ready/delivered messages.
+ * Shows only the key money figures — no per-item breakdown.
+ */
+function buildCompactPaymentLines(
+  order: OrderWhatsAppPayload,
+  paymentModes?: PaymentModeDetails | null
+): string[] {
+  const paid = isFullyPaid(order);
+  const lines: string[] = ['*PAYMENT*'];
+
+  lines.push(`Total charged: *${formatUGX(order.total_amount)}*`);
+  if (Number(order.amount_paid || 0) > 0) {
+    lines.push(`Amount paid: ${formatUGX(order.amount_paid)}`);
+  }
+
+  if (!paid && Number(order.balance || 0) > 0) {
+    lines.push(`*Balance due: ${formatUGX(order.balance)}*`);
+
+    // Show how-to-pay details so the customer can act on it immediately
+    const modes = { ...DEFAULT_PAYMENT_MODES, ...(paymentModes || {}) };
+    lines.push('');
+    lines.push('*HOW TO PAY*');
+    if (modes.centenary_account) lines.push(`Bank (Centenary): ${modes.centenary_account}`);
+    if (modes.mtn_code)         lines.push(`MTN Mobile Money: ${modes.mtn_code}`);
+    if (modes.airtel_merchant)  lines.push(`Airtel Money: ${modes.airtel_merchant}`);
+    lines.push('Kindly clear the balance before collection.');
+  } else {
+    lines.push('Payment: *Fully Settled* ✓');
+  }
+
+  return lines;
+}
+
+/**
  * Single source of truth for every customer-facing order message on WhatsApp.
- * Content adapts to the order status (received / ready / delivered) and to the
- * payment state (paid orders are thanked, unpaid ones are asked to pay).
+ *
+ * Message style by kind:
+ *  confirmation / receipt — full item list + detailed payment breakdown
+ *  ready / delivered      — concise (NO item list), just totals + payment modes if owing
  */
 export function buildOrderWhatsAppMessage(
   order: OrderWhatsAppPayload,
@@ -339,6 +375,9 @@ export function buildOrderWhatsAppMessage(
   const branchName = order.branch_name || business.branch_name;
   const paid = isFullyPaid(order);
 
+  // Whether to include the per-item breakdown (only for confirmation / receipt)
+  const showItemDetail = kind === 'confirmation' || kind === 'receipt';
+
   const lines: string[] = [
     `Hello *${order.customer_name}*!`,
     '',
@@ -352,41 +391,47 @@ export function buildOrderWhatsAppMessage(
   const statusLabel = orderStatusLabel(order);
   if (statusLabel) lines.push(`Status: ${statusLabel}`);
   if (branchName) lines.push(`Branch: ${branchName}`);
+  lines.push('');
+
+  if (showItemDetail) {
+    // Full receipt — item list then detailed payment breakdown
+    lines.push(...buildItemLines(items));
+    lines.push(...buildPaymentSummaryLines(order, items));
+    lines.push(...buildPaymentRequestLines(order, options.paymentModes));
+  } else {
+    // Compact notification — no item list, just money figures + payment modes
+    lines.push(...buildCompactPaymentLines(order, options.paymentModes));
+  }
 
   lines.push('');
-  lines.push(...buildItemLines(items));
-  lines.push(...buildPaymentSummaryLines(order, items));
 
-  // Unpaid / partial / on-account get pay-in details; paid orders get thanked.
-  lines.push(...buildPaymentRequestLines(order, options.paymentModes));
-
-  lines.push('');
   switch (kind) {
     case 'confirmation':
       lines.push('We have received your items and our team is now working on them.');
-      lines.push("We will send you a message as soon as your order is ready for collection.");
+      lines.push('We will notify you as soon as your order is ready for collection.');
       lines.push('');
-      lines.push('Please feel free to contact us if you have any questions.');
+      lines.push('Please contact us if you have any questions.');
       break;
+
     case 'ready':
       lines.push('Great news — your order is ready for collection!');
       lines.push('Please check all items carefully when collecting.');
-      // Collection policy is relevant here: they now know it is ready and the
-      // 3-day clock starts from this notice.
       lines.push(...buildCollectionPolicyLines());
       break;
+
     case 'delivered':
       lines.push('This order has been marked as delivered.');
       lines.push('We hope everything met your expectations.');
       break;
-    default:
+
+    default: // receipt / processing
       lines.push("We'll notify you as soon as your order is ready for pickup.");
       break;
   }
 
   lines.push('');
   if (paid) {
-    lines.push('Thank you for your payment.');
+    lines.push('Thank you for your payment!');
   } else {
     lines.push('Kindly settle the outstanding balance at your earliest convenience.');
   }
