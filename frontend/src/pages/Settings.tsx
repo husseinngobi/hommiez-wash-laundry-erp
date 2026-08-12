@@ -1071,7 +1071,7 @@ Don't miss out! ✨`;
       toast({
         title: 'Settings Saved',
         description: emailBackupEnabled 
-          ? `Automatic backups will be sent to ${businessEmail} ${backupFrequency} with ${backupCategories.length} categories` 
+          ? `${backupFrequency.charAt(0).toUpperCase() + backupFrequency.slice(1)} backup enabled — emails sent to ${businessEmail}` 
           : 'Automatic email backups disabled',
       });
     } catch (error) {
@@ -2437,9 +2437,9 @@ Don't miss out! ✨`;
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="daily">📅 Daily - Every day at 12:00 AM (EAT)</SelectItem>
-                            <SelectItem value="weekly">📆 Weekly - Not yet supported, sends daily</SelectItem>
-                            <SelectItem value="monthly">🗓️ Monthly - Not yet supported, sends daily</SelectItem>
+                            <SelectItem value="daily">📅 Daily — every night, covers the previous day</SelectItem>
+                            <SelectItem value="weekly">📆 Weekly — every Monday, covers Mon–Sun of last week</SelectItem>
+                            <SelectItem value="monthly">🗓️ Monthly — on the 1st, covers the full previous month</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
