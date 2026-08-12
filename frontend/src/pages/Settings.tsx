@@ -225,6 +225,20 @@ export default function Settings() {
     }
   }, [token]);
 
+  // Fetch & persist notification preferences from backend
+  const fetchNotificationPreferences = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/users/preferences/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const prefs = response.data;
+      setEnableNotificationSound(prefs.sound_alerts ?? true);
+      setEnableDesktopNotifications(prefs.desktop_notifications ?? false);
+    } catch (error) {
+      console.error('Failed to fetch notification preferences:', error);
+    }
+  }, [token]);
+
   // Fetch reminder automation settings
   const fetchReminderSettings = useCallback(async () => {
     try {
@@ -1019,7 +1033,8 @@ Don't miss out! ✨`;
     fetchEmailBackupSettings();
     fetchAutomationSettings();
     fetchReminderSettings();
-  }, [fetchBusinessHours, fetchPromotions, fetchBackupStats, fetchBackupHistory, fetchEmailBackupSettings, fetchAutomationSettings, fetchReminderSettings]);
+    fetchNotificationPreferences();
+  }, [fetchBusinessHours, fetchPromotions, fetchBackupStats, fetchBackupHistory, fetchEmailBackupSettings, fetchAutomationSettings, fetchReminderSettings, fetchNotificationPreferences]);
 
   const handleSaveAutomation = async (settingKey: string, value: boolean) => {
     try {
@@ -1489,10 +1504,23 @@ Don't miss out! ✨`;
             <Button 
               onClick={async () => {
                 setSavingNotifications(true);
-                // Here you would save to backend
-                await new Promise(resolve => setTimeout(resolve, 500));
-                setSavingNotifications(false);
-                toast({ title: 'Notification settings saved' });
+                try {
+                  await axios.put(
+                    `${API_BASE_URL}/users/preferences/me`,
+                    {
+                      sound_alerts: enableNotificationSound,
+                      desktop_notifications: enableDesktopNotifications,
+                      in_app_notifications: true,
+                      email_notifications: notifyIncomingPayments,
+                    },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                  );
+                  toast({ title: 'Notification settings saved' });
+                } catch {
+                  toast({ title: 'Failed to save notification settings', variant: 'destructive' });
+                } finally {
+                  setSavingNotifications(false);
+                }
               }}
               disabled={savingNotifications}
               className="w-full"

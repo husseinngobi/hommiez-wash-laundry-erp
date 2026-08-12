@@ -724,7 +724,11 @@ export default function Customers() {
                   </TableRow>
                 ) : (
                   customers.map((customer) => (
-                    <TableRow key={customer.id}>
+                    <TableRow
+                      key={customer.id}
+                      className="cursor-pointer hover:bg-muted/60 transition-colors duration-150"
+                      onClick={() => openViewDialog(customer)}
+                    >
                       <TableCell className="font-mono text-sm">{customer.customer_id}</TableCell>
                       <TableCell className="font-medium">{customer.name}</TableCell>
                       <TableCell>{customer.phone}</TableCell>
@@ -757,7 +761,7 @@ export default function Customers() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => openViewDialog(customer)}
+                            onClick={(e) => { e.stopPropagation(); openViewDialog(customer); }}
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -765,7 +769,7 @@ export default function Customers() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => openEditDialog(customer)}
+                                onClick={(e) => { e.stopPropagation(); openEditDialog(customer); }}
                                 title="Edit customer (Admin only)"
                               >
                                 <Edit className="h-4 w-4" />
@@ -775,7 +779,7 @@ export default function Customers() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => openDeleteDialog(customer)}
+                                onClick={(e) => { e.stopPropagation(); openDeleteDialog(customer); }}
                                 title="Delete customer (Admin only)"
                               >
                                 <Trash2 className="h-4 w-4 text-red-500" />

@@ -831,11 +831,15 @@ const Payments = () => {
                         key={payment.id}
                         ref={isFirstHighlighted ? (el) => { highlightPaymentRowRef.current = el; } : undefined}
                         className={[
-                          'border-b dark:border-gray-700 transition-colors duration-150',
+                          'border-b dark:border-gray-700 transition-colors duration-150 cursor-pointer',
                           isHighlighted
                             ? 'bg-blue-50 dark:bg-blue-950/30 outline outline-2 outline-blue-500 outline-offset-[-2px]'
-                            : 'hover:bg-gray-100 dark:hover:bg-gray-700',
+                            : 'hover:bg-muted/60',
                         ].join(' ')}
+                        onClick={() => {
+                          setSelectedPayment(payment);
+                          setShowDetailsDialog(true);
+                        }}
                       >
                         <td className="px-4 py-3 text-sm dark:text-gray-300">
                           {new Date(payment.payment_date).toLocaleDateString()}
@@ -844,7 +848,7 @@ const Payments = () => {
                           <button
                             type="button"
                             className="text-primary underline-offset-2 hover:underline font-semibold"
-                            onClick={() => openLinkedOrder(payment.order_number)}
+                            onClick={(e) => { e.stopPropagation(); openLinkedOrder(payment.order_number); }}
                             title="Open linked order"
                           >
                             {payment.order_number}
@@ -873,7 +877,8 @@ const Payments = () => {
                               size="sm"
                               variant="outline"
                               title="Payment details"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setSelectedPayment(payment);
                                 setShowDetailsDialog(true);
                               }}
@@ -884,7 +889,10 @@ const Payments = () => {
                               size="sm"
                               variant="outline"
                               title="Open order"
-                              onClick={() => openLinkedOrder(payment.order_number)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openLinkedOrder(payment.order_number);
+                              }}
                             >
                               <ExternalLink className="w-4 h-4" />
                             </Button>
@@ -894,7 +902,10 @@ const Payments = () => {
                                 variant="outline"
                                 title="Cancel this payment"
                                 className="text-destructive border-destructive/40 hover:bg-destructive/10"
-                                onClick={() => setCancelPaymentTarget(payment)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCancelPaymentTarget(payment);
+                                }}
                               >
                                 <XCircle className="w-4 h-4" />
                               </Button>

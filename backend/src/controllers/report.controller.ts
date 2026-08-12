@@ -73,10 +73,12 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 
 export const getRevenueReport = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'week' } = req.query;
+    const { period = 'week', from_date, to_date } = req.query;
     
     let dateFilter = '';
-    if (period === 'day') {
+    if (period === 'custom' && from_date && to_date) {
+      dateFilter = `DATE(payment_date) BETWEEN '${from_date}' AND '${to_date}'`;
+    } else if (period === 'day') {
       dateFilter = "DATE(payment_date) = CURRENT_DATE";
     } else if (period === 'week') {
       dateFilter = "payment_date >= CURRENT_DATE - INTERVAL '7 days'";
@@ -443,13 +445,15 @@ export const downloadPDFReport = async (req: AuthRequest, res: Response) => {
 
 export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'week' } = req.query;
+    const { period = 'week', from_date, to_date } = req.query;
     const userRole = req.user?.role;
     const userId = req.user?.id;
     const hiddenSystemAdminEmails = getSystemAdminEmails();
     
     let dateFilter = '';
-    if (period === 'today' || period === 'day') {
+    if (period === 'custom' && from_date && to_date) {
+      dateFilter = `DATE(p.payment_date) BETWEEN '${from_date}' AND '${to_date}'`;
+    } else if (period === 'today' || period === 'day') {
       dateFilter = "DATE(p.payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi') = DATE(NOW() AT TIME ZONE 'Africa/Nairobi')";
     } else if (period === 'week') {
       dateFilter = "p.payment_date >= NOW() - INTERVAL '7 days'";
@@ -544,10 +548,12 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
 
 export const getVATSummary = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'week' } = req.query;
+    const { period = 'week', from_date, to_date } = req.query;
     
     let dateFilter = '';
-    if (period === 'day') {
+    if (period === 'custom' && from_date && to_date) {
+      dateFilter = `DATE(created_at) BETWEEN '${from_date}' AND '${to_date}'`;
+    } else if (period === 'day') {
       dateFilter = "DATE(created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi') = DATE(NOW() AT TIME ZONE 'Africa/Nairobi')";
     } else if (period === 'week') {
       dateFilter = "created_at >= NOW() - INTERVAL '7 days'";

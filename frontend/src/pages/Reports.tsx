@@ -130,6 +130,8 @@ export default function Reports() {
   const { token, user, isAdmin } = useAuth();
   const { toast } = useToast();
   const [period, setPeriod] = useState('week');
+  const [customFromDate, setCustomFromDate] = useState('');
+  const [customToDate, setCustomToDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [staffPerformance, setStaffPerformance] = useState<StaffPerformanceData | null>(null);
@@ -150,10 +152,18 @@ export default function Reports() {
   // Pie chart colors
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7c7c'];
 
+  const buildPeriodParams = () => {
+    if (period === 'custom' && customFromDate && customToDate) {
+      return `period=custom&from_date=${customFromDate}&to_date=${customToDate}`;
+    }
+    return `period=${period}`;
+  };
+
   const fetchReportData = useCallback(async () => {
+    if (period === 'custom' && (!customFromDate || !customToDate)) return;
     try {
       setLoading(true);
-      const response = await axios.get(`${API_BASE_URL}/reports/revenue?period=${period}`, {
+      const response = await axios.get(`${API_BASE_URL}/reports/revenue?${buildPeriodParams()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setReportData(response.data);
@@ -166,11 +176,13 @@ export default function Reports() {
     } finally {
       setLoading(false);
     }
-  }, [period, token, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, customFromDate, customToDate, token, toast]);
 
   const fetchStaffPerformance = useCallback(async () => {
+    if (period === 'custom' && (!customFromDate || !customToDate)) return;
     try {
-      const response = await axios.get(`${API_BASE_URL}/reports/staff-performance?period=${period}`, {
+      const response = await axios.get(`${API_BASE_URL}/reports/staff-performance?${buildPeriodParams()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setStaffPerformance(response.data);
@@ -185,11 +197,13 @@ export default function Reports() {
       });
       setStaffPerformance(null); // Clear any stale data
     }
-  }, [period, token, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, customFromDate, customToDate, token, toast]);
 
   const fetchVATSummary = useCallback(async () => {
+    if (period === 'custom' && (!customFromDate || !customToDate)) return;
     try {
-      const response = await axios.get(`${API_BASE_URL}/reports/vat-summary?period=${period}`, {
+      const response = await axios.get(`${API_BASE_URL}/reports/vat-summary?${buildPeriodParams()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setVatSummary(response.data);
@@ -204,9 +218,12 @@ export default function Reports() {
       });
       setVatSummary(null);
     }
-  }, [period, token, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, customFromDate, customToDate, token, toast]);
 
   useEffect(() => {
+    // Don't auto-fetch for custom until both dates are set
+    if (period === 'custom' && (!customFromDate || !customToDate)) return;
     // DESKTOP_AGENT only fetches their own performance
     if (isDesktopAgent) {
       setLoading(true);
@@ -217,7 +234,7 @@ export default function Reports() {
       fetchStaffPerformance();
       fetchVATSummary(); // Fetch VAT summary for managers/admins
     }
-  }, [period, token, isDesktopAgent, fetchReportData, fetchStaffPerformance, fetchVATSummary]);
+  }, [period, customFromDate, customToDate, token, isDesktopAgent, fetchReportData, fetchStaffPerformance, fetchVATSummary]);
 
   // Format amount for PDF export
   const formatAmount = (amount: number) => {
@@ -261,8 +278,10 @@ export default function Reports() {
                         period === 'week' ? 'This Week' : 
                         period === 'month' ? 'This Month' : 
                         period === 'year' ? 'This Year' : 
-                        period === 'all' ? 'All Time' : 
-                        `Year ${period}`;
+                        period === 'all' ? 'All Time' :
+                        period === 'custom' && customFromDate && customToDate
+                          ? `${new Date(customFromDate).toLocaleDateString('en-GB')} – ${new Date(customToDate).toLocaleDateString('en-GB')}`
+                          : `Year ${period}`;
       doc.text(`Period: ${periodText}`, pageWidth / 2, yPos, { align: 'center' });
       yPos += 6;
 
@@ -500,8 +519,10 @@ export default function Reports() {
                         period === 'week' ? 'This Week' : 
                         period === 'month' ? 'This Month' : 
                         period === 'year' ? 'This Year' : 
-                        period === 'all' ? 'All Time' : 
-                        `Year ${period}`;
+                        period === 'all' ? 'All Time' :
+                        period === 'custom' && customFromDate && customToDate
+                          ? `${new Date(customFromDate).toLocaleDateString('en-GB')} – ${new Date(customToDate).toLocaleDateString('en-GB')}`
+                          : `Year ${period}`;
       
       csv += `Period: ${periodText}\n`;
       csv += `Generated: ${new Date().toLocaleString('en-UG')}\n\n`;
@@ -634,7 +655,7 @@ export default function Reports() {
     <MainLayout title={pageTitle} subtitle={pageSubtitle}>
       {/* Header with Period Selector and Download Buttons */}
       <div className="mb-6 flex flex-col gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Calendar className="h-5 w-5 text-muted-foreground flex-shrink-0" />
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-full max-w-[200px]">
@@ -646,6 +667,8 @@ export default function Reports() {
               <SelectItem value="month">This Month</SelectItem>
               <SelectItem value="year">This Year</SelectItem>
               <SelectItem value="all">All Time</SelectItem>
+              <SelectItem value="custom">Custom Range</SelectItem>
+              <SelectItem value="2026">Year 2026</SelectItem>
               <SelectItem value="2025">Year 2025</SelectItem>
               <SelectItem value="2024">Year 2024</SelectItem>
               <SelectItem value="2023">Year 2023</SelectItem>
@@ -653,6 +676,32 @@ export default function Reports() {
               <SelectItem value="2021">Year 2021</SelectItem>
             </SelectContent>
           </Select>
+          {period === 'custom' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                className="border rounded px-3 py-1.5 text-sm bg-background text-foreground"
+                value={customFromDate}
+                onChange={(e) => setCustomFromDate(e.target.value)}
+                placeholder="From"
+                max={customToDate || undefined}
+              />
+              <span className="text-muted-foreground text-sm">to</span>
+              <input
+                type="date"
+                className="border rounded px-3 py-1.5 text-sm bg-background text-foreground"
+                value={customToDate}
+                onChange={(e) => setCustomToDate(e.target.value)}
+                placeholder="To"
+                min={customFromDate || undefined}
+              />
+              {customFromDate && customToDate && (
+                <span className="text-xs text-muted-foreground">
+                  {new Date(customFromDate).toLocaleDateString('en-GB')} – {new Date(customToDate).toLocaleDateString('en-GB')}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         
         {/* Export buttons - Hidden for DESKTOP_AGENT */}
