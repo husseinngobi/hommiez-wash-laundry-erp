@@ -178,7 +178,7 @@ export default function NewOrder() {
   const maxDiscountPercent = MAX_DISCOUNT_BY_ROLE[user?.role ?? 'DESKTOP_AGENT'] ?? 10;
   const canChooseBranch = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const isAdminUser = user?.role === 'ADMIN';
-  const canPriceUp = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const canPriceUp = !!user; // All authenticated staff can apply price-up (surcharge)
 
   // URA Compliance state
   const [uraComplianceEnabled, setUraComplianceEnabled] = useState(false);

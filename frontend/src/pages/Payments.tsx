@@ -62,6 +62,7 @@ import {
   ChevronRight,
   Printer,
   XCircle,
+  Trash2,
 } from 'lucide-react';
 
 interface Payment {
@@ -77,6 +78,9 @@ interface Payment {
   customer_name: string;
   customer_phone: string;
   received_by: string;
+  is_cancelled?: boolean;
+  cancelled_at?: string;
+  cancellation_reason?: string;
 }
 
 interface PaymentStats {
@@ -132,6 +136,10 @@ const Payments = () => {
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [cancelPaymentTarget, setCancelPaymentTarget] = useState<Payment | null>(null);
   const [cancellingPayment, setCancellingPayment] = useState(false);
+  const [deletePaymentTarget, setDeletePaymentTarget] = useState<Payment | null>(null);
+  const [deletingPaymentPermanently, setDeletingPaymentPermanently] = useState(false);
+  const [deleteRejectedTarget, setDeleteRejectedTarget] = useState<number | null>(null);
+  const [deletingRejected, setDeletingRejected] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   
@@ -276,13 +284,13 @@ const Payments = () => {
       const newStatus = response.data?.order?.payment_status;
       toast.success(
         newStatus
-          ? `Payment cancelled. Order ${cancelPaymentTarget.order_number} is now ${newStatus}.`
+          ? `Payment cancelled. Order ${cancelPaymentTarget.order_number} is now ${newStatus}. You may now delete it permanently if needed.`
           : 'Payment cancelled.'
       );
 
       setCancelPaymentTarget(null);
-      setShowDetailsDialog(false);
-      setSelectedPayment(null);
+      // Update the selected payment in-place so "Delete Permanently" button appears
+      setSelectedPayment(prev => prev ? { ...prev, is_cancelled: true } : null);
       fetchPayments();
       if (isAdmin) fetchStatistics();
     } catch (error: unknown) {
@@ -294,6 +302,32 @@ const Payments = () => {
       );
     } finally {
       setCancellingPayment(false);
+    }
+  };
+
+  const handleDeletePaymentPermanently = async () => {
+    if (!deletePaymentTarget || !token || deletingPaymentPermanently) return;
+    try {
+      setDeletingPaymentPermanently(true);
+      await axios.delete(
+        `${API_BASE_URL}/payments/${deletePaymentTarget.id}/permanent`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success(`Payment record permanently deleted.`);
+      setDeletePaymentTarget(null);
+      setShowDetailsDialog(false);
+      setSelectedPayment(null);
+      fetchPayments();
+      if (isAdmin) fetchStatistics();
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string; message?: string } } };
+      toast.error(
+        axiosError.response?.data?.message ||
+          axiosError.response?.data?.error ||
+          'Failed to delete payment permanently'
+      );
+    } finally {
+      setDeletingPaymentPermanently(false);
     }
   };
 
@@ -363,19 +397,22 @@ const Payments = () => {
     }
   };
 
-  const handleDeletePayment = async (paymentId: number) => {
-    if (!confirm('⚠️ PERMANENTLY DELETE this payment? This action cannot be undone!')) return;
-
+  const handleDeletePayment = async () => {
+    if (!deleteRejectedTarget) return;
     try {
+      setDeletingRejected(true);
       await axios.delete(
-        `${API_BASE_URL}/pending-payments/${paymentId}/delete`,
+        `${API_BASE_URL}/pending-payments/${deleteRejectedTarget}/delete`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       toast.success('Payment deleted permanently');
+      setDeleteRejectedTarget(null);
       fetchRejectedPayments();
     } catch (error) {
       console.error('Failed to delete payment:', error);
       toast.error('Failed to delete payment');
+    } finally {
+      setDeletingRejected(false);
     }
   };
 
@@ -896,19 +933,8 @@ const Payments = () => {
                             >
                               <ExternalLink className="w-4 h-4" />
                             </Button>
-                            {isAdmin && Number(payment.amount_paid) > 0 && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                title="Cancel this payment"
-                                className="text-destructive border-destructive/40 hover:bg-destructive/10"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCancelPaymentTarget(payment);
-                                }}
-                              >
-                                <XCircle className="w-4 h-4" />
-                              </Button>
+                            {payment.is_cancelled && (
+                              <span className="text-xs font-semibold text-red-600 dark:text-red-400 px-1">VOID</span>
                             )}
                           </div>
                         </td>
@@ -1157,8 +1183,9 @@ const Payments = () => {
                               <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={() => handleDeletePayment(payment.id)}
+                                onClick={() => setDeleteRejectedTarget(payment.id)}
                               >
+                                <Trash2 className="h-3 w-3 mr-1" />
                                 Delete Forever
                               </Button>
                             </div>
@@ -1214,7 +1241,24 @@ const Payments = () => {
               </div>
               <div>
                 <Label className="text-gray-600">Payment Status</Label>
-                <div className="mt-1">{getStatusBadge(selectedPayment.payment_status)}</div>
+                <div className="mt-1 flex items-center gap-2">
+                  {getStatusBadge(selectedPayment.payment_status)}
+                  {selectedPayment.is_cancelled && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                      <XCircle className="w-3 h-3" /> CANCELLED
+                    </span>
+                  )}
+                </div>
+                {selectedPayment.is_cancelled && selectedPayment.cancellation_reason && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Reason: {selectedPayment.cancellation_reason}
+                  </p>
+                )}
+                {selectedPayment.is_cancelled && selectedPayment.cancelled_at && (
+                  <p className="text-xs text-muted-foreground">
+                    Cancelled: {new Date(selectedPayment.cancelled_at).toLocaleString()}
+                  </p>
+                )}
               </div>
               <div>
                 <Label className="text-gray-600">Received By</Label>
@@ -1238,13 +1282,24 @@ const Payments = () => {
                 <ExternalLink className="h-4 w-4 mr-2" />
                 View Order
               </Button>
-              {isAdmin && Number(selectedPayment.amount_paid) > 0 && (
+              {isAdmin && !selectedPayment.is_cancelled && Number(selectedPayment.amount_paid) > 0 && (
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto border-orange-400 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950"
+                  onClick={() => setCancelPaymentTarget(selectedPayment)}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Cancel Payment
+                </Button>
+              )}
+              {isAdmin && selectedPayment.is_cancelled && (
                 <Button
                   variant="destructive"
                   className="w-full sm:w-auto"
-                  onClick={() => setCancelPaymentTarget(selectedPayment)}
+                  onClick={() => setDeletePaymentTarget(selectedPayment)}
                 >
-                  Cancel Payment
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Permanently
                 </Button>
               )}
               <Button onClick={() => setShowDetailsDialog(false)} className="w-full sm:w-auto">
@@ -1264,21 +1319,19 @@ const Payments = () => {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to cancel this payment?</AlertDialogTitle>
+            <AlertDialogTitle>Cancel this payment?</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-2">
+              <div className="space-y-2 text-sm">
+                {cancelPaymentTarget && (
+                  <p>
+                    The payment of <strong>{formatUGX(cancelPaymentTarget.amount_paid)}</strong> on
+                    order <strong>{cancelPaymentTarget.order_number}</strong> will be voided.
+                  </p>
+                )}
                 <p>
-                  {cancelPaymentTarget && (
-                    <>
-                      This will remove the payment of{' '}
-                      <strong>{formatUGX(cancelPaymentTarget.amount_paid)}</strong> from order{' '}
-                      <strong>{cancelPaymentTarget.order_number}</strong>.
-                    </>
-                  )}
-                </p>
-                <p>
-                  The order balance and payment status will be recalculated automatically
-                  (paid, partial or unpaid). This cannot be undone.
+                  The order balance and payment status will be recalculated immediately.
+                  The payment record is kept for audit purposes — you can permanently delete
+                  it afterwards if needed.
                 </p>
               </div>
             </AlertDialogDescription>
@@ -1291,9 +1344,81 @@ const Payments = () => {
                 event.preventDefault();
                 handleCancelPayment();
               }}
+              className="bg-orange-600 text-white hover:bg-orange-700"
+            >
+              {cancellingPayment ? 'Cancelling…' : 'Yes, cancel payment'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Permanently Confirmation (only available after payment is cancelled) */}
+      <AlertDialog
+        open={!!deletePaymentTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeletePaymentTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Permanently delete this payment?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                {deletePaymentTarget && (
+                  <p>
+                    This will permanently remove the cancelled payment of{' '}
+                    <strong>{formatUGX(deletePaymentTarget.amount_paid)}</strong> from order{' '}
+                    <strong>{deletePaymentTarget.order_number}</strong> from all records.
+                  </p>
+                )}
+                <p className="font-semibold text-destructive">
+                  ⚠️ This action cannot be undone. The payment record will be erased permanently.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingPaymentPermanently}>Go back</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingPaymentPermanently}
+              onClick={(event) => {
+                event.preventDefault();
+                handleDeletePaymentPermanently();
+              }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {cancellingPayment ? 'Cancelling…' : 'OK, cancel payment'}
+              {deletingPaymentPermanently ? 'Deleting…' : 'Yes, delete permanently'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Rejected Pending Payment Confirmation */}
+      <AlertDialog
+        open={deleteRejectedTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteRejectedTarget(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Permanently delete this rejected payment?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm">
+              This rejected payment record will be permanently erased. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingRejected}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingRejected}
+              onClick={(e) => { e.preventDefault(); handleDeletePayment(); }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingRejected ? 'Deleting…' : 'Yes, delete permanently'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

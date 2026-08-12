@@ -19,7 +19,7 @@ router.get('/order/:orderId', paymentController.getPaymentsByOrder as any);
 // Get payment by ID (accessible to all authenticated users)
 router.get('/:id', paymentController.getPaymentById as any);
 
-// Cancel (delete) a mistaken payment ledger row — ADMIN only
+// Soft-cancel a payment (marks as cancelled, recalculates order) — ADMIN only
 router.post(
   '/:id/cancel',
   authorize(UserRole.ADMIN) as any,
@@ -27,6 +27,13 @@ router.post(
     body('reason').optional().isString().isLength({ max: 500 }),
   ],
   paymentController.cancelPayment as any
+);
+
+// Permanently hard-delete a payment that has already been soft-cancelled — ADMIN only
+router.delete(
+  '/:id/permanent',
+  authorize(UserRole.ADMIN) as any,
+  paymentController.deletePaymentPermanently as any
 );
 
 // Get payment statistics (Admin only)

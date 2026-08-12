@@ -370,13 +370,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
       const itemDiscount = Math.min(requestedItemDiscount, grossItemTotal);
 
-      // Per-item surcharge (price-up): only ADMIN or MANAGER may apply
+      // Per-item surcharge (price-up): available to all authenticated staff
       const requestedItemSurcharge = Math.round(Number(item.surcharge_amount) || 0);
       if (requestedItemSurcharge < 0) {
         throw new Error(`Item surcharge cannot be negative for ${priceItem.name}`);
-      }
-      if (requestedItemSurcharge > 0 && req.user!.role === 'DESKTOP_AGENT') {
-        throw new Error('Only admins and managers may apply a price-up (surcharge)');
       }
 
       const itemTotal = grossItemTotal + requestedItemSurcharge - itemDiscount;
@@ -469,11 +466,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       throw new Error(`Bargain amount (UGX ${bargainDisplay}) cannot exceed order subtotal (UGX ${subtotalDisplay})`);
     }
     
-    // 2.6. Validate order-level surcharge (price-up)
+    // 2.6. Validate order-level surcharge (price-up) — available to all staff
     const surchargeAmountValue = Math.max(0, parseInt(surcharge_amount.toString()) || 0);
-    if (surchargeAmountValue > 0 && req.user!.role === 'DESKTOP_AGENT') {
-      throw new Error('Only admins and managers may apply a price-up (surcharge)');
-    }
 
     // 3. Calculate tax.
     // VAT is only ever charged when URA compliance is switched on in Settings.

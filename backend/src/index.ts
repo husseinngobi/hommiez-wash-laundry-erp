@@ -28,6 +28,7 @@ import { ensureWeightPricing } from './database/ensureWeightPricing';
 import { ensureDamageClaims } from './database/ensureDamageClaims';
 import { ensureSurcharges } from './database/ensureSurcharges';
 import { ensureNotificationReads } from './database/ensureNotificationReads';
+import { ensurePaymentCancellation } from './database/ensurePaymentCancellation';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -207,6 +208,13 @@ const startServer = async () => {
       await ensureNotificationReads();
     } catch (notifReadsErr) {
       console.error('⚠️ notification_reads migration skipped or failed:', notifReadsErr);
+    }
+
+    // Soft-cancel support for payments (audit trail)
+    try {
+      await ensurePaymentCancellation();
+    } catch (pmtCancelErr) {
+      console.error('⚠️ ensurePaymentCancellation migration skipped or failed:', pmtCancelErr);
     }
 
     // Ensure upload directories exist

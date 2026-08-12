@@ -20,10 +20,11 @@ async function syncOrderPaymentFromLedger(orderId: number | string) {
   const order = orderResult.rows[0];
   const totalAmount = Number(order.total_amount) || 0;
 
+  // Only sum active (non-cancelled) payments for the balance calculation
   const sumResult = await query(
     `SELECT COALESCE(SUM(amount), 0) as net_paid
      FROM payments
-     WHERE order_id = $1`,
+     WHERE order_id = $1 AND (is_cancelled IS NULL OR is_cancelled = FALSE)`,
     [orderId]
   );
   const netPaid = Math.max(0, Number(sumResult.rows[0].net_paid) || 0);
@@ -105,6 +106,12 @@ export const cancelPayment = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    if (payment.is_cancelled === true) {
+      return res.status(400).json({
+        error: 'Payment is already cancelled. You may delete it permanently from the details view.',
+      });
+    }
+
     // Block cancel if linked refunds still reference this payment
     const childRefunds = await query(
       `SELECT id FROM payments WHERE refunded_payment_id = $1 LIMIT 1`,
@@ -116,11 +123,21 @@ export const cancelPayment = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    await query(`DELETE FROM payments WHERE id = $1`, [id]);
+    // Soft-cancel: mark as cancelled but keep the record for audit trail
+    await query(
+      `UPDATE payments
+       SET is_cancelled = TRUE,
+           cancelled_at = CURRENT_TIMESTAMP,
+           cancelled_by = $1,
+           cancellation_reason = $2
+       WHERE id = $3`,
+      [req.user.id, reason || 'Admin cancelled payment entry', id]
+    );
 
+    // Recalculate order payment status (sync ignores cancelled payments)
     const updatedOrder = await syncOrderPaymentFromLedger(payment.order_id);
     if (!updatedOrder) {
-      return res.status(500).json({ error: 'Payment deleted but order sync failed' });
+      return res.status(500).json({ error: 'Payment cancelled but order sync failed' });
     }
 
     await logDelete(
@@ -131,11 +148,12 @@ export const cancelPayment = async (req: AuthRequest, res: Response) => {
       'payment',
       parseInt(id, 10),
       {
+        action: 'soft_cancel',
         cancelled_amount: payment.amount,
         payment_method: payment.payment_method,
         order_id: payment.order_id,
         order_number: payment.order_number,
-        reason: reason || 'Admin cancelled mistaken payment entry',
+        reason: reason || 'Admin cancelled payment entry',
         resulting_payment_status: updatedOrder.payment_status,
         resulting_amount_paid: updatedOrder.amount_paid,
         resulting_balance: updatedOrder.balance,
@@ -144,16 +162,17 @@ export const cancelPayment = async (req: AuthRequest, res: Response) => {
     );
 
     console.log(
-      `🗑️ Admin ${req.user.email} cancelled payment #${id} (UGX ${Number(payment.amount).toLocaleString()}) on ${payment.order_number} → ${updatedOrder.payment_status}`
+      `🚫 Admin ${req.user.email} soft-cancelled payment #${id} (UGX ${Number(payment.amount).toLocaleString()}) on ${payment.order_number} → ${updatedOrder.payment_status}`
     );
 
     res.json({
-      message: 'Payment cancelled successfully',
+      message: 'Payment cancelled successfully. You may now delete it permanently if needed.',
       cancelled_payment: {
         id: payment.id,
         amount: payment.amount,
         payment_method: payment.payment_method,
         order_number: payment.order_number,
+        is_cancelled: true,
       },
       order: {
         id: updatedOrder.id,
@@ -167,6 +186,61 @@ export const cancelPayment = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Cancel payment error:', error);
     res.status(500).json({ error: 'Failed to cancel payment' });
+  }
+};
+
+/**
+ * ADMIN only: permanently delete a payment that has already been soft-cancelled.
+ * A payment must be cancelled first before it can be permanently deleted.
+ */
+export const deletePaymentPermanently = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user || req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'Access denied',
+        message: 'Only administrators can permanently delete payment records',
+      });
+    }
+
+    const { id } = req.params;
+
+    const paymentResult = await query(
+      `SELECT p.*, o.order_number, o.id as order_id
+       FROM payments p
+       JOIN orders o ON p.order_id = o.id
+       WHERE p.id = $1`,
+      [id]
+    );
+
+    if (paymentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const payment = paymentResult.rows[0];
+
+    if (!payment.is_cancelled) {
+      return res.status(400).json({
+        error: 'Payment must be cancelled before it can be permanently deleted. Cancel it first.',
+      });
+    }
+
+    await query(`DELETE FROM payments WHERE id = $1`, [id]);
+
+    console.log(
+      `🗑️ Admin ${req.user.email} permanently deleted cancelled payment #${id} (UGX ${Number(payment.amount).toLocaleString()}) on ${payment.order_number}`
+    );
+
+    res.json({
+      message: 'Payment permanently deleted from records.',
+      deleted_payment: {
+        id: payment.id,
+        amount: payment.amount,
+        order_number: payment.order_number,
+      },
+    });
+  } catch (error) {
+    console.error('Delete payment permanently error:', error);
+    res.status(500).json({ error: 'Failed to permanently delete payment' });
   }
 };
 
@@ -252,7 +326,10 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
         c.name as customer_name,
         c.phone as customer_phone,
         u.full_name as received_by,
-        p.notes
+        p.notes,
+        p.is_cancelled,
+        p.cancelled_at,
+        p.cancellation_reason
        FROM payments p
        LEFT JOIN orders o ON p.order_id = o.id
        LEFT JOIN customers c ON p.customer_id = c.id
