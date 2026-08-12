@@ -61,6 +61,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Printer,
+  XCircle,
 } from 'lucide-react';
 
 interface Payment {
@@ -887,6 +888,17 @@ const Payments = () => {
                             >
                               <ExternalLink className="w-4 h-4" />
                             </Button>
+                            {isAdmin && Number(payment.amount_paid) > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                title="Cancel this payment"
+                                className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                                onClick={() => setCancelPaymentTarget(payment)}
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>
