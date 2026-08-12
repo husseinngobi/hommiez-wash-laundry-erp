@@ -26,6 +26,8 @@ import { ensureDeliveryPaymentColumns } from './database/ensureDeliveryPaymentCo
 import { ensureItemBargainLimit } from './database/ensureItemBargainLimit';
 import { ensureWeightPricing } from './database/ensureWeightPricing';
 import { ensureDamageClaims } from './database/ensureDamageClaims';
+import { ensureSurcharges } from './database/ensureSurcharges';
+import { ensureNotificationReads } from './database/ensureNotificationReads';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -191,6 +193,20 @@ const startServer = async () => {
       await ensureDamageClaims();
     } catch (claimsErr) {
       console.error('⚠️ damage claims migration skipped or failed:', claimsErr);
+    }
+
+    // Surcharge (price-up) columns on order_items + orders
+    try {
+      await ensureSurcharges();
+    } catch (surchargeErr) {
+      console.error('⚠️ surcharge columns migration skipped or failed:', surchargeErr);
+    }
+
+    // Per-user notification read tracking
+    try {
+      await ensureNotificationReads();
+    } catch (notifReadsErr) {
+      console.error('⚠️ notification_reads migration skipped or failed:', notifReadsErr);
     }
 
     // Ensure upload directories exist

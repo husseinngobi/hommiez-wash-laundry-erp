@@ -33,6 +33,7 @@ export type OrderWhatsAppPayload = {
   discount_percentage?: number;
   discount_amount?: number;
   bargain_amount?: number;
+  surcharge_amount?: number;
   tax_rate?: number;
   tax_amount?: number;
   total_amount: number;
@@ -51,6 +52,7 @@ export type OrderWhatsAppItem = {
   quantity: number;
   total_price: number;
   discount_amount?: number;
+  surcharge_amount?: number;
 };
 
 /** Business pay-in details shown on unpaid / partial / on-account receipts */
@@ -187,12 +189,16 @@ function buildItemLines(items: OrderWhatsAppItem[]): string[] {
   const lines = ['*ITEMS:*'];
   items.forEach((item, index) => {
     const discount = Number(item.discount_amount || 0);
-    const gross = Number(item.total_price || 0) + discount;
-    if (discount > 0) {
+    const surcharge = Number(item.surcharge_amount || 0);
+    const hasAdj = discount > 0 || surcharge > 0;
+    const gross = Number(item.total_price || 0) + discount - surcharge;
+    if (hasAdj) {
       lines.push(
         `${index + 1}. ${item.item_name} (${item.service_type}) x ${item.quantity} — ${formatUGX(gross)}`
       );
-      lines.push(`   Discount: -${formatUGX(discount)} → ${formatUGX(item.total_price)}`);
+      if (discount > 0) lines.push(`   Discount: -${formatUGX(discount)}`);
+      if (surcharge > 0) lines.push(`   Price up: +${formatUGX(surcharge)}`);
+      lines.push(`   → ${formatUGX(item.total_price)}`);
     } else {
       lines.push(
         `${index + 1}. ${item.item_name} (${item.service_type}) x ${item.quantity} — ${formatUGX(item.total_price)}`
@@ -231,6 +237,16 @@ function buildPaymentSummaryLines(
   }
   if (bargainDiscount > 0) {
     lines.push(`Bargain discount: -${formatUGX(bargainDiscount)}`);
+  }
+
+  const surcharge = Number(order.surcharge_amount || 0);
+  const itemSurchargeTotal = items.reduce((sum, item) => sum + Number((item as any).surcharge_amount || 0), 0);
+  const totalSurcharge = surcharge + itemSurchargeTotal;
+  if (itemSurchargeTotal > 0) {
+    lines.push(`Item price-ups: +${formatUGX(itemSurchargeTotal)}`);
+  }
+  if (surcharge > 0) {
+    lines.push(`Order price up: +${formatUGX(surcharge)}`);
   }
 
   const totalDiscount = itemDiscountTotal + orderDiscount + bargainDiscount;

@@ -103,7 +103,9 @@ interface OrderItem {
   discount_basis_amount?: number;
   /** Whether the line bargain should scale as quantity changes */
   discount_scales_with_quantity?: boolean;
-  /** Net line total: quantity × unit price − item discount */
+  /** Per-item price-up (surcharge) for stains, special handling, etc. */
+  surcharge_amount?: number;
+  /** Net line total: quantity × unit price + surcharge − discount */
   subtotal: number;
   unit?: string;
   /** Internal garment description (colour, brand, marks). Never on receipts. */
@@ -121,10 +123,12 @@ interface Branch {
   is_default: boolean;
 }
 
-/** Net line total, never below zero */
-function computeLineSubtotal(quantity: number, unitPrice: number, discount = 0): number {
+/** Net line total: gross + surcharge − discount, never below zero */
+function computeLineSubtotal(quantity: number, unitPrice: number, discount = 0, surcharge = 0): number {
   const gross = Math.round(Number(quantity) * Number(unitPrice));
-  return Math.max(0, gross - Math.max(0, Math.round(Number(discount) || 0)));
+  return Math.max(0, gross
+    + Math.max(0, Math.round(Number(surcharge) || 0))
+    - Math.max(0, Math.round(Number(discount) || 0)));
 }
 
 function getScaledLineDiscount(
@@ -174,6 +178,7 @@ export default function NewOrder() {
   const maxDiscountPercent = MAX_DISCOUNT_BY_ROLE[user?.role ?? 'DESKTOP_AGENT'] ?? 10;
   const canChooseBranch = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const isAdminUser = user?.role === 'ADMIN';
+  const canPriceUp = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
   // URA Compliance state
   const [uraComplianceEnabled, setUraComplianceEnabled] = useState(false);
@@ -185,6 +190,12 @@ export default function NewOrder() {
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
   const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
   const [openNoteIndexes, setOpenNoteIndexes] = useState<number[]>([]);
+  /** Per-item adjustment mode: 'bargain' = reduce price, 'priceup' = increase price */
+  const [itemAdjModes, setItemAdjModes] = useState<Record<number, 'bargain' | 'priceup'>>({});
+  const getItemAdjMode = (index: number) => itemAdjModes[index] ?? 'bargain';
+  const setItemAdjMode = (index: number, mode: 'bargain' | 'priceup') => {
+    setItemAdjModes(prev => ({ ...prev, [index]: mode }));
+  };
 
   // After create: offer WhatsApp Messenger
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
@@ -212,6 +223,7 @@ export default function NewOrder() {
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [transactionDiscount, setTransactionDiscount] = useState(0);
   const [bargainAmount, setBargainAmount] = useState(0);
+  const [orderSurchargeAmount, setOrderSurchargeAmount] = useState(0);
   const [maxBargainAmount, setMaxBargainAmount] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'UNPAID' | 'PARTIAL'>('UNPAID');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'ON_ACCOUNT'>('ON_ACCOUNT');
@@ -392,7 +404,8 @@ export default function NewOrder() {
         subtotal: computeLineSubtotal(
           nextQty,
           Number(updated[existingIndex].unit_price),
-          nextDiscount
+          nextDiscount,
+          updated[existingIndex].surcharge_amount || 0
         ),
       };
       setOrderItems(updated);
@@ -439,14 +452,16 @@ export default function NewOrder() {
       : Math.max(1, Math.round(normalizedQuantity));
 
     const updated = [...orderItems];
+    const nextDiscount = getScaledLineDiscount(updated[index], normalizedQuantity);
     updated[index] = {
       ...updated[index],
       quantity: normalizedQuantity,
-      discount_amount: getScaledLineDiscount(updated[index], normalizedQuantity),
+      discount_amount: nextDiscount,
       subtotal: computeLineSubtotal(
         normalizedQuantity,
         Number(updated[index].unit_price),
-        getScaledLineDiscount(updated[index], normalizedQuantity)
+        nextDiscount,
+        updated[index].surcharge_amount || 0
       ),
     };
     setOrderItems(updated);
@@ -485,7 +500,8 @@ export default function NewOrder() {
       subtotal: computeLineSubtotal(
         quantity,
         Number(updated[index].unit_price),
-        nextDiscount
+        nextDiscount,
+        updated[index].surcharge_amount || 0
       ),
     };
     setOrderItems(updated);
@@ -516,7 +532,26 @@ export default function NewOrder() {
       discount_basis_quantity: current.quantity,
       discount_basis_amount: discount,
       discount_scales_with_quantity: current.quantity === 1,
-      subtotal: computeLineSubtotal(current.quantity, current.unit_price, discount),
+      subtotal: computeLineSubtotal(current.quantity, current.unit_price, discount, current.surcharge_amount || 0),
+    };
+    setOrderItems(updated);
+  };
+
+  /** Per-item price-up (surcharge) — admin/manager only */
+  const updateItemSurcharge = (index: number, rawValue: string) => {
+    const current = orderItems[index];
+    if (!current) return;
+    const parsed = Math.max(0, Math.round(Number(rawValue) || 0));
+    const updated = [...orderItems];
+    updated[index] = {
+      ...updated[index],
+      surcharge_amount: parsed,
+      subtotal: computeLineSubtotal(
+        current.quantity,
+        current.unit_price,
+        current.discount_amount || 0,
+        parsed
+      ),
     };
     setOrderItems(updated);
   };
@@ -563,6 +598,9 @@ export default function NewOrder() {
   const itemDiscountTotal = Math.round(
     orderItems.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0)
   );
+  const itemSurchargeTotal = Math.round(
+    orderItems.reduce((sum, item) => sum + Number(item.surcharge_amount || 0), 0)
+  );
   const discountAmount = Math.round((itemsSubtotal * transactionDiscount) / 100);
   const bargainLimitRemaining = Math.max(0, maxBargainAmount - itemDiscountTotal);
   const safeBargain = Math.min(
@@ -570,7 +608,8 @@ export default function NewOrder() {
     Math.max(0, itemsSubtotal - discountAmount),
     bargainLimitRemaining
   );
-  const subtotalAfterDiscount = Math.max(0, itemsSubtotal - discountAmount - safeBargain);
+  const safeOrderSurcharge = Math.max(0, Math.round(orderSurchargeAmount));
+  const subtotalAfterDiscount = Math.max(0, itemsSubtotal - discountAmount - safeBargain + safeOrderSurcharge);
   const taxAmount = vatApplies ? Math.round((subtotalAfterDiscount * VAT_RATE) / 100) : 0;
   const total = subtotalAfterDiscount + taxAmount;
   const balance = Math.max(0, total - amountPaid);
@@ -692,8 +731,10 @@ export default function NewOrder() {
     setSelectedCustomer(null);
     setOrderItems([]);
     setQuantityDrafts({});
+    setItemAdjModes({});
     setTransactionDiscount(0);
     setBargainAmount(0);
+    setOrderSurchargeAmount(0);
     setApplyVatToOrder(false);
     setPaymentStatus('UNPAID');
     setPaymentMethod('ON_ACCOUNT');
@@ -770,6 +811,7 @@ export default function NewOrder() {
         discount_percentage: transactionDiscount,
         discount_amount: discountAmount,
         bargain_amount: safeBargain,
+        surcharge_amount: safeOrderSurcharge,
         total_amount: total,
         payment_status: paymentStatus,
         payment_method: paymentMethod === 'MOBILE_MONEY' ? `${paymentMethod}_${mobileProvider}` : paymentMethod,
@@ -801,6 +843,7 @@ export default function NewOrder() {
           discount_percentage: Number(order.discount_percentage ?? transactionDiscount),
           discount_amount: Number(order.discount_amount ?? discountAmount),
           bargain_amount: Number(order.bargain_amount ?? bargainAmount),
+          surcharge_amount: Number(order.surcharge_amount ?? safeOrderSurcharge),
           tax_rate: Number(order.tax_rate ?? VAT_RATE),
           tax_amount: Number(order.tax_amount ?? taxAmount),
           total_amount: Number(order.total_amount ?? total),
@@ -821,6 +864,7 @@ export default function NewOrder() {
           quantity: item.quantity,
           total_price: item.subtotal,
           discount_amount: item.discount_amount,
+          surcharge_amount: item.surcharge_amount,
         })),
         businessInfo || (businessPhone ? { phone: businessPhone } : null),
         paymentModes
@@ -1120,25 +1164,80 @@ export default function NewOrder() {
                         </Button>
                       </div>
 
-                      <div className="flex items-center justify-between gap-2">
-                        <Label
-                          htmlFor={`item-discount-${index}`}
-                          className="text-[11px] text-muted-foreground whitespace-nowrap"
-                        >
-                          Item bargain (UGX)
-                        </Label>
+                      {/* Adjustment row: toggle between Bargain (deduct) and Price Up (add) */}
+                      <div className="flex items-center gap-2">
+                        {canPriceUp ? (
+                          /* Admin/Manager: toggle between bargain and price-up */
+                          <div className="flex rounded-md border overflow-hidden shrink-0 h-9 lg:h-7">
+                            <button
+                              type="button"
+                              onClick={() => setItemAdjMode(index, 'bargain')}
+                              className={`px-2 text-[10px] font-semibold transition-colors ${
+                                getItemAdjMode(index) === 'bargain'
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'bg-background text-muted-foreground hover:bg-muted'
+                              }`}
+                              title="Apply a bargain (reduce price)"
+                            >
+                              ▼ Bargain
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setItemAdjMode(index, 'priceup')}
+                              className={`px-2 text-[10px] font-semibold transition-colors border-l ${
+                                getItemAdjMode(index) === 'priceup'
+                                  ? 'bg-amber-500 text-white'
+                                  : 'bg-background text-muted-foreground hover:bg-muted'
+                              }`}
+                              title="Apply a price up (stains, special treatment)"
+                            >
+                              ▲ Price Up
+                            </button>
+                          </div>
+                        ) : (
+                          <Label className="text-[11px] text-muted-foreground whitespace-nowrap">
+                            Bargain (UGX)
+                          </Label>
+                        )}
                         <Input
-                          id={`item-discount-${index}`}
+                          id={canPriceUp ? `item-adj-${index}` : `item-discount-${index}`}
                           type="number"
                           inputMode="numeric"
                           min={0}
                           step={500}
-                          value={item.discount_amount ? String(item.discount_amount) : ''}
+                          value={
+                            canPriceUp
+                              ? getItemAdjMode(index) === 'bargain'
+                                ? (item.discount_amount ? String(item.discount_amount) : '')
+                                : (item.surcharge_amount ? String(item.surcharge_amount) : '')
+                              : (item.discount_amount ? String(item.discount_amount) : '')
+                          }
                           placeholder="0"
-                          onChange={(e) => updateItemDiscount(index, e.target.value)}
-                          className="h-9 lg:h-7 w-28 text-right text-xs"
-                          title={`Max ${maxDiscountPercent}% of this line`}
+                          onChange={(e) => {
+                            if (canPriceUp && getItemAdjMode(index) === 'priceup') {
+                              updateItemSurcharge(index, e.target.value);
+                            } else {
+                              updateItemDiscount(index, e.target.value);
+                            }
+                          }}
+                          className={`h-9 lg:h-7 flex-1 text-right text-xs ${
+                            canPriceUp && getItemAdjMode(index) === 'priceup'
+                              ? 'border-amber-400 focus-visible:ring-amber-400'
+                              : ''
+                          }`}
+                          title={
+                            canPriceUp && getItemAdjMode(index) === 'priceup'
+                              ? 'Surcharge for stains, special treatment, etc.'
+                              : `Max ${maxDiscountPercent}% of this line`
+                          }
                         />
+                        {/* Show the sign badge when amount > 0 */}
+                        {canPriceUp && getItemAdjMode(index) === 'priceup' && Number(item.surcharge_amount || 0) > 0 && (
+                          <span className="text-[10px] font-bold text-amber-600 shrink-0">+{formatUGX(item.surcharge_amount!)}</span>
+                        )}
+                        {(getItemAdjMode(index) === 'bargain' || !canPriceUp) && Number(item.discount_amount || 0) > 0 && (
+                          <span className="text-[10px] font-bold text-primary shrink-0">-{formatUGX(item.discount_amount!)}</span>
+                        )}
                       </div>
 
                       {/* Garment description: opened on demand, or kept open
@@ -1178,6 +1277,12 @@ export default function NewOrder() {
                     <span>-{formatUGX(itemDiscountTotal)}</span>
                   </div>
                 )}
+                {itemSurchargeTotal > 0 && (
+                  <div className="flex justify-between text-amber-600">
+                    <span>Item price-ups</span>
+                    <span>+{formatUGX(itemSurchargeTotal)}</span>
+                  </div>
+                )}
                 {!isAdminUser && (
                   <div className="flex justify-between text-muted-foreground text-xs">
                     <span>Bargain budget left</span>
@@ -1198,6 +1303,12 @@ export default function NewOrder() {
                   <div className="flex justify-between text-orange-600">
                     <span>Bargain</span>
                     <span>-{formatUGX(safeBargain)}</span>
+                  </div>
+                )}
+                {safeOrderSurcharge > 0 && (
+                  <div className="flex justify-between text-amber-600 font-medium">
+                    <span>Price up</span>
+                    <span>+{formatUGX(safeOrderSurcharge)}</span>
                   </div>
                 )}
                 {(uraComplianceEnabled || applyVatToOrder) && taxAmount > 0 && (
@@ -1270,6 +1381,23 @@ export default function NewOrder() {
                     disabled={!isAdminUser && bargainLimitRemaining === 0}
                   />
                 </div>
+
+                {canPriceUp && (
+                  <div>
+                    <Label className="text-xs text-amber-600 font-medium">
+                      Price Up <span className="text-muted-foreground/70 font-normal">(surcharge)</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={orderSurchargeAmount || ''}
+                      onChange={(e) => setOrderSurchargeAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                      placeholder="0"
+                      className="h-10 lg:h-8 text-sm mt-1 border-amber-300 focus-visible:ring-amber-400"
+                      title="Add an order-level surcharge (e.g. stain treatment fee)"
+                    />
+                  </div>
+                )}
                 <div className="col-span-2 lg:col-span-1">
                   <Label className="text-xs text-muted-foreground">Amount Paid</Label>
                   <Input

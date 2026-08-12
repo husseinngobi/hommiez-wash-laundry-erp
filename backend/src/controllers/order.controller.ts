@@ -129,6 +129,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
         o.amount_paid, o.total_amount, o.balance, o.due_date, o.pickup_date,
         o.transaction_reference, o.invoice_number,
         o.discount_percentage, o.discount_amount, o.bargain_amount,
+        COALESCE(o.surcharge_amount, 0) as surcharge_amount,
         o.tax_rate, o.tax_amount,
         c.name as customer_name,
         c.phone as customer_phone,
@@ -175,6 +176,7 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
         o.amount_paid, o.total_amount, o.balance, o.due_date, o.pickup_date,
         o.transaction_reference, o.invoice_number,
         o.discount_percentage, o.discount_amount, o.bargain_amount,
+        COALESCE(o.surcharge_amount, 0) as surcharge_amount,
         o.tax_rate, o.tax_amount,
         c.name as customer_name, 
         c.phone as customer_phone,
@@ -230,6 +232,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       items, 
       discount_percentage = 0,
       bargain_amount = 0,
+      surcharge_amount = 0,
       payment_status = 'UNPAID',
       payment_method = 'CASH',
       amount_paid = 0,
@@ -366,7 +369,17 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       }
 
       const itemDiscount = Math.min(requestedItemDiscount, grossItemTotal);
-      const itemTotal = grossItemTotal - itemDiscount;
+
+      // Per-item surcharge (price-up): only ADMIN or MANAGER may apply
+      const requestedItemSurcharge = Math.round(Number(item.surcharge_amount) || 0);
+      if (requestedItemSurcharge < 0) {
+        throw new Error(`Item surcharge cannot be negative for ${priceItem.name}`);
+      }
+      if (requestedItemSurcharge > 0 && req.user!.role === 'DESKTOP_AGENT') {
+        throw new Error('Only admins and managers may apply a price-up (surcharge)');
+      }
+
+      const itemTotal = grossItemTotal + requestedItemSurcharge - itemDiscount;
       calculatedSubtotal += itemTotal;
       totalItemDiscount += itemDiscount;
       
@@ -383,6 +396,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         quantity: normalizedQuantity,
         unit_price: actualUnitPrice, // Use actual DB price, not frontend
         discount_amount: itemDiscount,
+        surcharge_amount: requestedItemSurcharge,
         total_price: itemTotal,
         notes: itemNotes
       });
@@ -455,6 +469,12 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       throw new Error(`Bargain amount (UGX ${bargainDisplay}) cannot exceed order subtotal (UGX ${subtotalDisplay})`);
     }
     
+    // 2.6. Validate order-level surcharge (price-up)
+    const surchargeAmountValue = Math.max(0, parseInt(surcharge_amount.toString()) || 0);
+    if (surchargeAmountValue > 0 && req.user!.role === 'DESKTOP_AGENT') {
+      throw new Error('Only admins and managers may apply a price-up (surcharge)');
+    }
+
     // 3. Calculate tax.
     // VAT is only ever charged when URA compliance is switched on in Settings.
     // The client's tax values are never trusted — they only signal intent; the
@@ -473,10 +493,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
 
         if (clientWantsVat) {
           tax_rate = vatConfig.rate;
-          // Uganda standard: VAT on the amount after discount and bargain
-          const amountAfterDiscountAndBargain =
-            calculatedSubtotal - discount_amount - bargainAmountValue;
-          tax_amount = Math.round(Math.max(0, amountAfterDiscountAndBargain) * (tax_rate / 100));
+          // VAT on the amount after discount, bargain, plus any surcharge
+          const taxableAmount =
+            calculatedSubtotal - discount_amount - bargainAmountValue + surchargeAmountValue;
+          tax_amount = Math.round(Math.max(0, taxableAmount) * (tax_rate / 100));
         }
       } else if (parseFloat(String(frontendTaxRate ?? 0)) > 0) {
         console.warn('⚠️ VAT requested but URA compliance is off — charging no VAT');
@@ -488,8 +508,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     }
     
     // 4. Calculate final total
-    // Formula: subtotal - discount - bargain + tax
-    const total_amount = calculatedSubtotal - discount_amount - bargainAmountValue + tax_amount;
+    // Formula: subtotal - discount - bargain + surcharge + tax
+    const total_amount = calculatedSubtotal - discount_amount - bargainAmountValue + surchargeAmountValue + tax_amount;
     
     // Use backend-calculated subtotal
     const subtotal = calculatedSubtotal;
@@ -570,6 +590,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         discount_percentage,
         discount_amount,
         bargain_amount,
+        surcharge_amount,
         total_amount, 
         payment_status,
         payment_method,
@@ -581,7 +602,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         notes,
         branch_id
       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING *`,
       [
         order_number, 
@@ -593,17 +614,17 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         discount_percentage,
         discount_amount,
         bargainAmountValue,
+        surchargeAmountValue,
         total_amount, 
         finalPaymentStatus,
-        finalPaymentMethod, // Use auto-set payment method for unpaid/on-account orders
+        finalPaymentMethod,
         finalAmountPaidValue,
         balance,
-        'pending', // Initial status (lowercase to match enum: pending, processing, ready, delivered, cancelled)
+        'pending',
         transaction_reference || null,
         invoice_number,
         notes,
         branchId
-        // NOTE: pickup_date is NULL initially, only set when status = DELIVERED
       ]
     );
     
@@ -619,18 +640,20 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           quantity, 
           unit_price, 
           discount_amount,
+          surcharge_amount,
           total_price,
           notes
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           orderId, 
           item.price_item_id, 
           item.service_type.toUpperCase(), 
           item.quantity, 
-          item.unit_price,  // Backend-verified price from database
+          item.unit_price,
           item.discount_amount || 0,
-          item.total_price,  // Backend-calculated total (net of the item discount)
+          item.surcharge_amount || 0,
+          item.total_price,
           item.notes
         ]
       );

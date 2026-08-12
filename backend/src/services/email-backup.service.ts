@@ -354,7 +354,7 @@ export class EmailBackupService {
         ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
         : `${targetDates.length} days (catch-up)`;
 
-      const { error: sendError } = await resend.emails.send({
+      const emailPayload = {
         from: 'Lush Laundry System <backups@lushlaundromat.com>',
         to: recipientEmails,
         subject: `🧺 Daily Backup - ${subjectDates}`,
@@ -365,10 +365,24 @@ export class EmailBackupService {
             content: pdfBuffer.toString('base64'),
           },
         ],
-      });
+      };
+
+      // Retry up to 3 times with a 3-second pause between attempts to absorb
+      // momentary network blips (especially around the midnight cron window).
+      let sendError: { message?: string } | null = null;
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const result = await resend.emails.send(emailPayload);
+        sendError = result.error ?? null;
+        if (!sendError) break;
+        console.warn(`⚠️ Resend attempt ${attempt}/${maxAttempts} failed: ${sendError.message}`);
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+      }
 
       if (sendError) {
-        throw new Error(sendError.message || 'Resend failed to send the email');
+        throw new Error(sendError.message || 'Resend failed to send the email after multiple attempts');
       }
 
       console.log(`✅ Backup email sent successfully to: ${recipientEmails.join(', ')}`);

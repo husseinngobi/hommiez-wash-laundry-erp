@@ -72,6 +72,7 @@ interface Order {
   discount_percentage: number;
   discount_amount: number;
   bargain_amount: number;
+  surcharge_amount: number;
   tax_rate: number;
   tax_amount: number;
   total_amount: number;
@@ -94,6 +95,7 @@ interface OrderItem {
   unit_price: number;
   total_price: number;
   discount_amount?: number;
+  surcharge_amount?: number;
   /** Internal garment description — staff only, never printed for customers */
   notes?: string | null;
 }
@@ -499,6 +501,12 @@ const printReceipt = (
           <div class="total-row">
             <span>Bargain Discount:</span>
             <span>-${formatUGX(order.bargain_amount)}</span>
+          </div>
+        ` : ''}
+        ${Number(order.surcharge_amount) > 0 ? `
+          <div class="total-row" style="color:#b45309;">
+            <span>Price Up (Surcharge):</span>
+            <span>+${formatUGX(order.surcharge_amount)}</span>
           </div>
         ` : ''}
         ${(itemDiscountTotal + Number(order.discount_amount || 0) + Number(order.bargain_amount || 0)) > 0 ? `
@@ -1987,6 +1995,11 @@ export default function Orders() {
                             Discount -{formatUGX(item.discount_amount)}
                           </span>
                         )}
+                        {Number(item.surcharge_amount || 0) > 0 && (
+                          <span className="text-amber-600 font-medium">
+                            Price up +{formatUGX(item.surcharge_amount)}
+                          </span>
+                        )}
                       </div>
                       {item.notes?.trim() && (
                         <div className="flex items-start gap-1.5 border-t pt-2 mt-1">
@@ -2008,7 +2021,7 @@ export default function Orders() {
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Service</TableHead>
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Quantity</TableHead>
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Unit Price</TableHead>
-                        <TableHead className="whitespace-nowrap px-2 sm:px-4">Discount</TableHead>
+                        <TableHead className="whitespace-nowrap px-2 sm:px-4">Adj.</TableHead>
                         <TableHead className="whitespace-nowrap px-2 sm:px-4">Total</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2037,10 +2050,14 @@ export default function Orders() {
                           </TableCell>
                           <TableCell className="px-2 sm:px-4 align-top">{item.quantity}</TableCell>
                           <TableCell className="px-2 sm:px-4 align-top whitespace-nowrap">{formatUGX(item.unit_price)}</TableCell>
-                          <TableCell className="px-2 sm:px-4 align-top whitespace-nowrap text-primary">
-                            {Number(item.discount_amount || 0) > 0
-                              ? `-${formatUGX(item.discount_amount)}`
-                              : '—'}
+                          <TableCell className="px-2 sm:px-4 align-top whitespace-nowrap">
+                            {Number(item.discount_amount || 0) > 0 && (
+                              <span className="block text-primary">-{formatUGX(item.discount_amount)}</span>
+                            )}
+                            {Number(item.surcharge_amount || 0) > 0 && (
+                              <span className="block text-amber-600">+{formatUGX(item.surcharge_amount)}</span>
+                            )}
+                            {!Number(item.discount_amount || 0) && !Number(item.surcharge_amount || 0) && '—'}
                           </TableCell>
                           <TableCell className="font-semibold px-2 sm:px-4 align-top whitespace-nowrap">{formatUGX(item.total_price)}</TableCell>
                         </TableRow>
@@ -2279,6 +2296,20 @@ export default function Orders() {
                     <div className="flex justify-between text-orange-600">
                       <span>Bargain Discount:</span>
                       <span className="font-medium">-{formatUGX(selectedOrder.bargain_amount)}</span>
+                    </div>
+                  )}
+                  {orderItems.some((item) => Number(item.surcharge_amount || 0) > 0) && (
+                    <div className="flex justify-between text-amber-600">
+                      <span>Item Price-Ups:</span>
+                      <span className="font-medium">
+                        +{formatUGX(orderItems.reduce((sum, item) => sum + Number(item.surcharge_amount || 0), 0))}
+                      </span>
+                    </div>
+                  )}
+                  {Number(selectedOrder.surcharge_amount) > 0 && (
+                    <div className="flex justify-between text-amber-600">
+                      <span>Order Price Up:</span>
+                      <span className="font-medium">+{formatUGX(selectedOrder.surcharge_amount)}</span>
                     </div>
                   )}
                   {(orderItems.reduce((sum, item) => sum + Number(item.discount_amount || 0), 0) +
