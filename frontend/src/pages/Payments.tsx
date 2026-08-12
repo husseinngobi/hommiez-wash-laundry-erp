@@ -1265,7 +1265,7 @@ const Payments = () => {
                 <p className="font-medium">{selectedPayment.received_by}</p>
               </div>
             </div>
-            <DialogFooter className="mt-4 flex-col sm:flex-row gap-2">
+            <DialogFooter className="mt-4 flex-col sm:flex-row sm:flex-wrap gap-2">
               <Button
                 variant="outline"
                 className="w-full sm:w-auto"

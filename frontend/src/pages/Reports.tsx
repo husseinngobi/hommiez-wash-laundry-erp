@@ -677,29 +677,27 @@ export default function Reports() {
             </SelectContent>
           </Select>
           {period === 'custom' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="date"
-                className="border rounded px-3 py-1.5 text-sm bg-background text-foreground"
-                value={customFromDate}
-                onChange={(e) => setCustomFromDate(e.target.value)}
-                placeholder="From"
-                max={customToDate || undefined}
-              />
-              <span className="text-muted-foreground text-sm">to</span>
-              <input
-                type="date"
-                className="border rounded px-3 py-1.5 text-sm bg-background text-foreground"
-                value={customToDate}
-                onChange={(e) => setCustomToDate(e.target.value)}
-                placeholder="To"
-                min={customFromDate || undefined}
-              />
-              {customFromDate && customToDate && (
-                <span className="text-xs text-muted-foreground">
-                  {new Date(customFromDate).toLocaleDateString('en-GB')} – {new Date(customToDate).toLocaleDateString('en-GB')}
-                </span>
-              )}
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-muted-foreground text-xs whitespace-nowrap">From</span>
+                <input
+                  type="date"
+                  className="border rounded px-3 py-1.5 text-sm bg-background text-foreground flex-1 sm:flex-none sm:w-[155px]"
+                  value={customFromDate}
+                  onChange={(e) => setCustomFromDate(e.target.value)}
+                  max={customToDate || undefined}
+                />
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-muted-foreground text-xs whitespace-nowrap">To</span>
+                <input
+                  type="date"
+                  className="border rounded px-3 py-1.5 text-sm bg-background text-foreground flex-1 sm:flex-none sm:w-[155px]"
+                  value={customToDate}
+                  onChange={(e) => setCustomToDate(e.target.value)}
+                  min={customFromDate || undefined}
+                />
+              </div>
             </div>
           )}
         </div>
