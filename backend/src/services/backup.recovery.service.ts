@@ -15,12 +15,12 @@ interface BackupAttempt {
 }
 
 /**
- * Initialize the backup_attempts table
+ * Initialize the automated_backup_dates table
  */
 export const initializeBackupTracking = async () => {
   try {
     await query(`
-      CREATE TABLE IF NOT EXISTS backup_attempts (
+      CREATE TABLE IF NOT EXISTS automated_backup_dates (
         id SERIAL PRIMARY KEY,
         backup_date DATE NOT NULL,
         attempt_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -45,24 +45,21 @@ export const recordBackupAttempt = async (
   errorMessage?: string
 ) => {
   try {
-    // Check if this date already has an entry
     const existing = await query(
-      'SELECT * FROM backup_attempts WHERE backup_date = $1',
+      'SELECT * FROM automated_backup_dates WHERE backup_date = $1',
       [backupDate]
     );
 
     if (existing.rows.length > 0) {
-      // Update existing entry
       await query(
-        `UPDATE backup_attempts 
+        `UPDATE automated_backup_dates 
          SET status = $1, error_message = $2, attempt_date = CURRENT_TIMESTAMP, retry_count = retry_count + 1
          WHERE backup_date = $3`,
         [status, errorMessage, backupDate]
       );
     } else {
-      // Insert new entry
       await query(
-        `INSERT INTO backup_attempts (backup_date, status, error_message, retry_count)
+        `INSERT INTO automated_backup_dates (backup_date, status, error_message, retry_count)
          VALUES ($1, $2, $3, 0)`,
         [backupDate, status, errorMessage]
       );
@@ -78,7 +75,7 @@ export const recordBackupAttempt = async (
 export const getFailedBackups = async (): Promise<BackupAttempt[]> => {
   try {
     const result = await query(`
-      SELECT * FROM backup_attempts 
+      SELECT * FROM automated_backup_dates 
       WHERE status IN ('FAILED', 'PENDING')
         AND backup_date >= CURRENT_DATE - INTERVAL '7 days'
         AND retry_count < 3
@@ -98,7 +95,7 @@ export const isTodayBackupComplete = async (): Promise<boolean> => {
   try {
     const today = new Date().toISOString().split('T')[0];
     const result = await query(
-      `SELECT * FROM backup_attempts 
+      `SELECT * FROM automated_backup_dates 
        WHERE backup_date = $1 AND status = 'SUCCESS'`,
       [today]
     );
@@ -120,7 +117,7 @@ export const getBackupStats = async () => {
         COUNT(CASE WHEN status = 'SUCCESS' THEN 1 END) as successful,
         COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed,
         COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending
-      FROM backup_attempts
+      FROM automated_backup_dates
       WHERE backup_date >= CURRENT_DATE - INTERVAL '30 days'
     `);
     return result.rows[0];
@@ -136,7 +133,7 @@ export const getBackupStats = async () => {
 export const markBackupPending = async (backupDate: string) => {
   try {
     await query(
-      `INSERT INTO backup_attempts (backup_date, status)
+      `INSERT INTO automated_backup_dates (backup_date, status)
        VALUES ($1, 'PENDING')
        ON CONFLICT (backup_date) DO NOTHING`,
       [backupDate]
