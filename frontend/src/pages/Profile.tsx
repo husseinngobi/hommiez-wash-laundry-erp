@@ -59,7 +59,7 @@ const Profile = () => {
       if (profileData.phone && !/^\+\d{10,15}$/.test(profileData.phone)) {
         toast({
           title: 'Invalid Phone Number',
-          description: 'Phone number must include country code (e.g., +256700000000 for Uganda)',
+          description: 'Phone number must include country code (e.g., +256 *** *** *** for Uganda)',
           variant: 'destructive',
         });
         setLoading(false);
@@ -420,7 +420,7 @@ const Profile = () => {
                   id="phone"
                   value={profileData.phone}
                   onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
-                  placeholder="+256700000000"
+                  placeholder="+256 *** *** ***"
                 />
                 <p className="text-xs text-gray-500">Include country code (e.g., +256 for Uganda)</p>
               </div>

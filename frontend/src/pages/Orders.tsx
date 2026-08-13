@@ -2912,7 +2912,7 @@ export default function Orders() {
                         type="tel"
                         value={senderPhone}
                         onChange={(e) => setSenderPhone(e.target.value)}
-                        placeholder="e.g., 0772123456 or 256772123456"
+                        placeholder="+256 *** *** ***"
                         className="mt-2"
                       />
                       <p className="text-xs text-muted-foreground mt-1">
@@ -3264,7 +3264,7 @@ export default function Orders() {
                   id="wa-compose-phone"
                   value={whatsAppComposePhone}
                   onChange={(e) => setWhatsAppComposePhone(e.target.value)}
-                  placeholder="07xxxxxxxx or +256..."
+                  placeholder="+256 *** *** ***"
                 />
               </div>
 

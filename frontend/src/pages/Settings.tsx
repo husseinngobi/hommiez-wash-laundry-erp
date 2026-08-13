@@ -1215,7 +1215,7 @@ Don't miss out! ✨`;
                   id="phone"
                   value={businessPhone}
                   onChange={(e) => setBusinessPhone(e.target.value)}
-                  placeholder="+256700123456"
+                  placeholder="+256 *** *** ***"
                   className="mt-2"
                 />
               </div>
@@ -1365,7 +1365,7 @@ Don't miss out! ✨`;
                     id="new-branch-phone"
                     value={newBranch.phone}
                     onChange={(e) => setNewBranch({ ...newBranch, phone: e.target.value })}
-                    placeholder="+256700123456"
+                    placeholder="+256 *** *** ***"
                     className="mt-2"
                   />
                 </div>
@@ -1918,7 +1918,7 @@ Don't miss out! ✨`;
                     <Label htmlFor="business-phone">Business Phone / WhatsApp *</Label>
                     <Input
                       id="business-phone"
-                      placeholder="+256700000000"
+                      placeholder="+256 *** *** ***"
                       value={businessPhone}
                       onChange={(e) => setBusinessPhone(e.target.value)}
                       className="mt-2"

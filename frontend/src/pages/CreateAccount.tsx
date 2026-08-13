@@ -253,7 +253,7 @@ export default function CreateAccount() {
                   <Input
                     id="phone"
                     type="tel"
-                    placeholder="+2567XXXXXXXX"
+                    placeholder="+256 *** *** ***"
                     value={formData.phone}
                     onChange={(e) => handleChange('phone', e.target.value)}
                     className="pl-10 h-11"

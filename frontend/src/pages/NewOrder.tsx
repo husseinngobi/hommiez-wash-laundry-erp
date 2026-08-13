@@ -1816,7 +1816,7 @@ export default function NewOrder() {
                   id="new-phone"
                   value={newCustomerForm.phone}
                   onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })}
-                  placeholder="+256700123456"
+                  placeholder="+256 *** *** ***"
                 />
               </div>
             </div>
