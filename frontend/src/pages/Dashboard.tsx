@@ -227,12 +227,27 @@ export default function Dashboard() {
   }, [businessHours, TODAY_KEY]);
 
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
+  const formatOrderDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const isToday =
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday =
+      date.getFullYear() === yesterday.getFullYear() &&
+      date.getMonth() === yesterday.getMonth() &&
+      date.getDate() === yesterday.getDate();
+
+    const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+    if (isToday) return `Today, ${time}`;
+    if (isYesterday) return `Yesterday, ${time}`;
+    // Older / backdated — show full date + time
+    const dateLabel = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `${dateLabel} · ${time}`;
   };
 
   const mapOrderStatus = (dbStatus: string): 'pending' | 'processing' | 'ready' | 'delivered' => {
@@ -799,7 +814,7 @@ export default function Dashboard() {
                       <div className="text-left sm:text-right shrink-0 w-full sm:w-auto">
                         <p className="font-semibold text-foreground">{formatUGX(order.total_amount)}</p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-muted-foreground">{formatTime(order.created_at)}</span>
+                          <span className="text-xs text-muted-foreground">{formatOrderDate(order.created_at)}</span>
                           <OrderStatusBadge status={order.order_status} />
                         </div>
                       </div>
