@@ -639,10 +639,11 @@ export default function Orders() {
   const [branchCount, setBranchCount] = useState(0);
   // Branch details stay hidden while the business runs a single branch
   const multiBranch = branchCount > 1;
-  /** Full branch records so we can inject branch-specific contact into receipts */
+  /** Full branch records — include payment_modes for per-branch WhatsApp receipts */
   const [branchList, setBranchList] = useState<Array<{
     id: number; name: string; phone?: string; email?: string;
     location?: string; address?: string;
+    payment_modes?: { centenary_account?: string; mtn_code?: string; airtel_merchant?: string };
   }>>([]);
   const [additionalPayment, setAdditionalPayment] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER'>('CASH');
@@ -894,11 +895,21 @@ export default function Orders() {
   ): string => {
     const effectiveBusiness = resolveBusinessInfoForOrder(order);
     const effectivePhone = effectiveBusiness?.phone || businessPhone || undefined;
+
+    // Resolve payment modes: use branch-specific modes if set, else fall back to global
+    const orderBranch = order.branch_id
+      ? branchList.find((b) => b.id === order.branch_id)
+      : null;
+    const branchModes = orderBranch?.payment_modes;
+    const effectivePaymentModes: PaymentModeDetails = branchModes
+      ? { ...DEFAULT_PAYMENT_MODES, ...branchModes }
+      : paymentModes;
+
     switch (kind) {
       case 'receipt':
-        return generateOrderReceiptMessage(order, items, paymentModes, effectiveBusiness, multiBranch);
+        return generateOrderReceiptMessage(order, items, effectivePaymentModes, effectiveBusiness, multiBranch);
       case 'ready':
-        return generateOrderReadyMessage(order, items, paymentModes, effectiveBusiness, multiBranch);
+        return generateOrderReadyMessage(order, items, effectivePaymentModes, effectiveBusiness, multiBranch);
       case 'reminder':
         return generateReminderMessage(order, effectivePhone);
       case 'custom':

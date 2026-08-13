@@ -45,5 +45,11 @@ export async function ensureBranchSupport(): Promise<void> {
   await query(`CREATE INDEX IF NOT EXISTS idx_orders_branch_id ON orders (branch_id)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_users_branch_id ON users (branch_id)`);
 
+  // Per-branch payment mode details (centenary_account, mtn_code, airtel_merchant)
+  await query(`
+    ALTER TABLE branches
+      ADD COLUMN IF NOT EXISTS payment_modes JSONB DEFAULT '{}'::jsonb
+  `);
+
   console.log('✅ Branch support ready');
 }

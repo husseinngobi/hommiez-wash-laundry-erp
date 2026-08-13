@@ -3,7 +3,9 @@ import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 
 const BRANCH_COLUMNS = `
-  id, name, code, phone, email, location, address, is_active, is_default, created_at, updated_at
+  id, name, code, phone, email, location, address, is_active, is_default,
+  COALESCE(payment_modes, '{}'::jsonb) AS payment_modes,
+  created_at, updated_at
 `;
 
 function normalizeCode(name: string, code?: string): string {
@@ -163,7 +165,7 @@ export const createBranch = async (req: AuthRequest, res: Response) => {
 export const updateBranch = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, code, phone, email, location, address, is_active, is_default } = req.body;
+    const { name, code, phone, email, location, address, is_active, is_default, payment_modes } = req.body;
 
     const existing = await query('SELECT id FROM branches WHERE id = $1', [id]);
     if (existing.rows.length === 0) {
@@ -218,6 +220,15 @@ export const updateBranch = async (req: AuthRequest, res: Response) => {
       await query('UPDATE branches SET is_default = FALSE WHERE is_default = TRUE');
       updates.push(`is_default = $${paramCount++}`);
       values.push(true);
+    }
+
+    if (payment_modes !== undefined) {
+      // Accept an object with centenary_account, mtn_code, airtel_merchant
+      const modes = typeof payment_modes === 'object' && payment_modes !== null
+        ? payment_modes
+        : {};
+      updates.push(`payment_modes = $${paramCount++}`);
+      values.push(JSON.stringify(modes));
     }
 
     if (updates.length === 0) {

@@ -34,6 +34,12 @@ interface BusinessHoursDay {
   closed: boolean;
 }
 
+interface BranchPaymentModes {
+  centenary_account?: string;
+  mtn_code?: string;
+  airtel_merchant?: string;
+}
+
 interface BranchRecord {
   id: number;
   name: string;
@@ -44,6 +50,7 @@ interface BranchRecord {
   address?: string | null;
   is_active: boolean;
   is_default: boolean;
+  payment_modes?: BranchPaymentModes;
 }
 
 interface BusinessHours {
@@ -89,6 +96,12 @@ interface BackupHistoryItem {
   created_by: number;
   file_size?: number;
 }
+
+const DEFAULT_BRANCH_PAYMENT_MODES: BranchPaymentModes = {
+  centenary_account: '',
+  mtn_code: '',
+  airtel_merchant: '',
+};
 
 export default function Settings() {
   const { token, user, isAdmin, isCashier } = useAuth();
@@ -151,6 +164,11 @@ export default function Settings() {
   const [mtnCode, setMtnCode] = useState('30353491');
   const [airtelMerchant, setAirtelMerchant] = useState('4403961');
   const [savingPaymentAccounts, setSavingPaymentAccounts] = useState(false);
+
+  // Per-branch payment modes editor
+  const [branchPaymentExpanded, setBranchPaymentExpanded] = useState<number | null>(null);
+  const [branchPaymentDraft, setBranchPaymentDraft] = useState<Record<number, BranchPaymentModes>>({});
+  const [savingBranchPayment, setSavingBranchPayment] = useState<number | null>(null);
 
   // Promotions state
   const [promotions, setPromotions] = useState<Promotion[]>([]);
@@ -444,6 +462,32 @@ export default function Settings() {
       });
     } finally {
       setSavingBranch(false);
+    }
+  };
+
+  const saveBranchPaymentModes = async (branchId: number) => {
+    const modes = branchPaymentDraft[branchId] || {};
+    try {
+      setSavingBranchPayment(branchId);
+      await axios.put(
+        `${API_BASE_URL}/branches/${branchId}`,
+        { payment_modes: modes },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({
+        title: 'Payment modes saved',
+        description: 'These details will appear on WhatsApp receipts for this branch.',
+      });
+      fetchBranches();
+      setBranchPaymentExpanded(null);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: branchErrorMessage(error, 'Failed to save branch payment modes'),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingBranchPayment(null);
     }
   };
 
@@ -1284,53 +1328,136 @@ Don't miss out! ✨`;
                 branches.map((branch) => (
                   <div
                     key={branch.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-border p-4"
+                    className="rounded-lg border border-border overflow-hidden"
                   >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium">{branch.name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">{branch.code}</span>
-                        {branch.is_default && (
-                          <span className="text-xs rounded bg-primary/10 text-primary px-2 py-0.5">Default</span>
-                        )}
-                        {!branch.is_active && (
-                          <span className="text-xs rounded bg-muted text-muted-foreground px-2 py-0.5">Inactive</span>
-                        )}
+                    {/* Branch header row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{branch.name}</span>
+                          <span className="text-xs text-muted-foreground font-mono">{branch.code}</span>
+                          {branch.is_default && (
+                            <span className="text-xs rounded bg-primary/10 text-primary px-2 py-0.5">Default</span>
+                          )}
+                          {!branch.is_active && (
+                            <span className="text-xs rounded bg-muted text-muted-foreground px-2 py-0.5">Inactive</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {[branch.location, branch.phone].filter(Boolean).join(' · ') || 'No location set'}
+                        </p>
                       </div>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {[branch.location, branch.phone].filter(Boolean).join(' · ') || 'No location set'}
-                      </p>
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      {!branch.is_default && (
+                      <div className="flex gap-2 shrink-0 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setBranchPaymentExpanded(branchPaymentExpanded === branch.id ? null : branch.id);
+                            if (branchPaymentExpanded !== branch.id) {
+                              setBranchPaymentDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...DEFAULT_BRANCH_PAYMENT_MODES, ...(branch.payment_modes || {}) },
+                              }));
+                            }
+                          }}
+                        >
+                          {branchPaymentExpanded === branch.id ? 'Hide Payment Modes' : 'Payment Modes'}
+                        </Button>
+                        {!branch.is_default && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={savingBranch}
+                            onClick={() => updateBranch(branch.id, { is_default: true })}
+                          >
+                            Make default
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
                           disabled={savingBranch}
-                          onClick={() => updateBranch(branch.id, { is_default: true })}
+                          onClick={() => updateBranch(branch.id, { is_active: !branch.is_active })}
                         >
-                          Make default
+                          {branch.is_active ? 'Deactivate' : 'Activate'}
                         </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={savingBranch}
-                        onClick={() => updateBranch(branch.id, { is_active: !branch.is_active })}
-                      >
-                        {branch.is_active ? 'Deactivate' : 'Activate'}
-                      </Button>
-                      {!branch.is_default && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={savingBranch}
-                          onClick={() => deleteBranch(branch.id, branch.name)}
-                        >
-                          Delete
-                        </Button>
-                      )}
+                        {!branch.is_default && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={savingBranch}
+                            onClick={() => deleteBranch(branch.id, branch.name)}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Collapsible per-branch payment modes */}
+                    {branchPaymentExpanded === branch.id && (
+                      <div className="border-t border-border bg-muted/30 p-4 space-y-3">
+                        <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <CreditCard className="h-4 w-4" />
+                          Payment mode details for <strong>{branch.name}</strong>
+                          <span className="ml-1 text-xs font-normal">— appear on WhatsApp receipts for this branch</span>
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <Label className="text-xs">Centenary Account No</Label>
+                            <Input
+                              value={branchPaymentDraft[branch.id]?.centenary_account ?? ''}
+                              onChange={(e) => setBranchPaymentDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...(prev[branch.id] || {}), centenary_account: e.target.value },
+                              }))}
+                              placeholder="e.g. 3205564146"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">MTN Code No</Label>
+                            <Input
+                              value={branchPaymentDraft[branch.id]?.mtn_code ?? ''}
+                              onChange={(e) => setBranchPaymentDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...(prev[branch.id] || {}), mtn_code: e.target.value },
+                              }))}
+                              placeholder="e.g. 30353491"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Airtel Merchant No</Label>
+                            <Input
+                              value={branchPaymentDraft[branch.id]?.airtel_merchant ?? ''}
+                              onChange={(e) => setBranchPaymentDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...(prev[branch.id] || {}), airtel_merchant: e.target.value },
+                              }))}
+                              placeholder="e.g. 4403961"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => saveBranchPaymentModes(branch.id)}
+                            disabled={savingBranchPayment === branch.id}
+                          >
+                            {savingBranchPayment === branch.id ? 'Saving…' : 'Save Payment Modes'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setBranchPaymentExpanded(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
