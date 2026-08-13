@@ -245,10 +245,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       order_date,          // optional back-date (ADMIN / MANAGER only)
     } = req.body;
 
-    // Validate optional back-date: only ADMIN/MANAGER, must be a real past/today date
-    const canBackdate = req.user!.role === 'ADMIN' || req.user!.role === 'MANAGER';
+    // Validate optional back-date: any authenticated staff may record a historical order,
+    // but the date must be today or in the past (cannot be future-dated).
     let customOrderDate: string | null = null;
-    if (order_date && canBackdate) {
+    if (order_date) {
       const parsed = new Date(order_date);
       const today = new Date();
       today.setHours(23, 59, 59, 999);

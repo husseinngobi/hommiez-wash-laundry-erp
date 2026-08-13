@@ -179,7 +179,7 @@ export default function NewOrder() {
   const canChooseBranch = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const isAdminUser = user?.role === 'ADMIN';
   const canPriceUp = !!user; // All authenticated staff can apply price-up (surcharge)
-  const canBackdate = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const canBackdate = !!user; // All staff can record historical (past-date) orders
 
   // URA Compliance state
   const [uraComplianceEnabled, setUraComplianceEnabled] = useState(false);

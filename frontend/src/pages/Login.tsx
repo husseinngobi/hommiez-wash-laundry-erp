@@ -119,7 +119,7 @@ export default function Login() {
 
   return (
     <div 
-      className="h-screen overflow-hidden flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-secondary/10 p-2 sm:p-4 overscroll-none"
+      className="auth-page-enter h-screen overflow-hidden flex items-center justify-center bg-gradient-to-br from-primary/10 via-background to-secondary/10 p-2 sm:p-4 overscroll-none"
       style={{ touchAction: 'manipulation' }}
     >
       {/* Animated background elements */}

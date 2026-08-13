@@ -39,6 +39,35 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
+/**
+ * Skeleton shown while auth pages (Login / CreateAccount / ForgotPassword) load.
+ * Matches the gradient background + card layout so there is no jarring flash.
+ */
+const authFallback = (
+  <div className="h-screen flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-primary/10 via-background to-secondary/10">
+    {/* Logo placeholder */}
+    <div className="w-16 h-16 rounded-2xl bg-card border border-border shadow-lg animate-pulse" />
+    {/* Brand text skeletons */}
+    <div className="space-y-2 text-center">
+      <div className="h-5 w-52 rounded bg-muted animate-pulse mx-auto" />
+      <div className="h-3 w-36 rounded bg-muted animate-pulse mx-auto" />
+    </div>
+    {/* Card skeleton */}
+    <div className="w-full max-w-md mt-2 px-4">
+      <div className="rounded-xl border-2 border-border bg-card shadow-2xl p-6 space-y-4">
+        <div className="h-5 w-32 rounded bg-muted animate-pulse mx-auto" />
+        <div className="h-10 w-full rounded-lg bg-muted animate-pulse" />
+        <div className="h-10 w-full rounded-lg bg-muted animate-pulse" />
+        <div className="h-10 w-full rounded-lg bg-muted/60 animate-pulse" />
+      </div>
+    </div>
+  </div>
+);
+
+/**
+ * Skeleton shown while inner app pages (Dashboard / Orders / etc.) load.
+ * Mirrors the app shell so the layout never jumps.
+ */
 const routeFallback = (
   <div className="min-h-screen bg-background">
     <Sidebar isOpen={true} hasInteracted={false} />
@@ -82,200 +111,62 @@ const App = () => (
         <BrowserRouter>
           <ScrollToTop />
           <AuthProvider>
-            <Suspense fallback={routeFallback}>
-              <Routes>
-                {/* Public Routes */}
-                <Route path="/login" element={<Login />} />
-                <Route path="/create-account" element={<CreateAccount />} />
-                <Route path="/forgot-password" element={<ForgotPassword />} />
-                
-                {/* Protected Route - Change Password (requires authentication) */}
-                <Route 
-                  path="/change-password" 
-                  element={
-                    <ProtectedRoute>
-                      <ChangePassword />
-                    </ProtectedRoute>
-                  } 
-                />
-                
-                {/* Protected Routes - Admin Only */}
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route
-                  path="/dashboard"
-                  element={
-                    <ProtectedRoute>
-                      <Dashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/customers"
-                  element={
-                    <ProtectedRoute>
-                      <Customers />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/prices"
-                  element={
-                    <ProtectedRoute>
-                      <PriceList />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/inventory"
-                  element={
-                    <ProtectedRoute>
-                      <Inventory />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/deliveries"
-                  element={
-                    <ProtectedRoute>
-                      <Deliveries />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/messages"
-                  element={
-                    <ProtectedRoute>
-                      <Messages />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/campaigns"
-                  element={
-                    <ProtectedRoute>
-                      <Campaigns />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/reports"
-                  element={
-                    <ProtectedRoute>
-                      <Reports />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/settings"
-                  element={
-                    <ProtectedRoute requireAdmin>
-                      <Settings />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/user-management"
-                  element={
-                    <ProtectedRoute requireAdmin>
-                      <UserManagement />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/password-reset-requests"
-                  element={
-                    <ProtectedRoute requireAdmin>
-                      <PasswordResetRequests />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/financial"
-                  element={
-                    <ProtectedRoute requireAdmin>
-                      <FinancialDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/accounting"
-                  element={
-                    <ProtectedRoute requireAdmin>
-                      <Accounting />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/payments"
-                  element={
-                    <ProtectedRoute>
-                      <Payments />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/refund-requests"
-                  element={
-                    <ProtectedRoute requireAdmin>
-                      <RefundRequests />
-                    </ProtectedRoute>
-                  }
-                />
-                
-                {/* Protected Routes - Both Admin and Cashier */}
-                <Route
-                  path="/orders"
-                  element={
-                    <ProtectedRoute>
-                      <Orders />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/orders/new"
-                  element={
-                    <ProtectedRoute>
-                      <NewOrder />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/expenses"
-                  element={
-                    <ProtectedRoute>
-                      <Expenses />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/help"
-                  element={
-                    <ProtectedRoute>
-                      <Help />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/profile"
-                  element={
-                    <ProtectedRoute>
-                      <Profile />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/payroll"
-                  element={
-                    <ProtectedRoute requireAdmin>
-                      <Payroll />
-                    </ProtectedRoute>
-                  }
-                />
-                
-                {/* Catch-all */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
+            <Routes>
+              {/* ── Public / auth routes — clean skeleton, no app shell ── */}
+              <Route
+                path="/login"
+                element={<Suspense fallback={authFallback}><Login /></Suspense>}
+              />
+              <Route
+                path="/create-account"
+                element={<Suspense fallback={authFallback}><CreateAccount /></Suspense>}
+              />
+              <Route
+                path="/forgot-password"
+                element={<Suspense fallback={authFallback}><ForgotPassword /></Suspense>}
+              />
+
+              {/* ── Protected: Change Password ── */}
+              <Route
+                path="/change-password"
+                element={
+                  <Suspense fallback={routeFallback}>
+                    <ProtectedRoute><ChangePassword /></ProtectedRoute>
+                  </Suspense>
+                }
+              />
+
+              {/* ── Root redirect ── */}
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+              {/* ── Protected: General staff ── */}
+              <Route path="/dashboard" element={<Suspense fallback={routeFallback}><ProtectedRoute><Dashboard /></ProtectedRoute></Suspense>} />
+              <Route path="/orders" element={<Suspense fallback={routeFallback}><ProtectedRoute><Orders /></ProtectedRoute></Suspense>} />
+              <Route path="/orders/new" element={<Suspense fallback={routeFallback}><ProtectedRoute><NewOrder /></ProtectedRoute></Suspense>} />
+              <Route path="/customers" element={<Suspense fallback={routeFallback}><ProtectedRoute><Customers /></ProtectedRoute></Suspense>} />
+              <Route path="/prices" element={<Suspense fallback={routeFallback}><ProtectedRoute><PriceList /></ProtectedRoute></Suspense>} />
+              <Route path="/inventory" element={<Suspense fallback={routeFallback}><ProtectedRoute><Inventory /></ProtectedRoute></Suspense>} />
+              <Route path="/deliveries" element={<Suspense fallback={routeFallback}><ProtectedRoute><Deliveries /></ProtectedRoute></Suspense>} />
+              <Route path="/messages" element={<Suspense fallback={routeFallback}><ProtectedRoute><Messages /></ProtectedRoute></Suspense>} />
+              <Route path="/campaigns" element={<Suspense fallback={routeFallback}><ProtectedRoute><Campaigns /></ProtectedRoute></Suspense>} />
+              <Route path="/reports" element={<Suspense fallback={routeFallback}><ProtectedRoute><Reports /></ProtectedRoute></Suspense>} />
+              <Route path="/expenses" element={<Suspense fallback={routeFallback}><ProtectedRoute><Expenses /></ProtectedRoute></Suspense>} />
+              <Route path="/payments" element={<Suspense fallback={routeFallback}><ProtectedRoute><Payments /></ProtectedRoute></Suspense>} />
+              <Route path="/help" element={<Suspense fallback={routeFallback}><ProtectedRoute><Help /></ProtectedRoute></Suspense>} />
+              <Route path="/profile" element={<Suspense fallback={routeFallback}><ProtectedRoute><Profile /></ProtectedRoute></Suspense>} />
+
+              {/* ── Protected: Admin only ── */}
+              <Route path="/settings" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><Settings /></ProtectedRoute></Suspense>} />
+              <Route path="/user-management" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><UserManagement /></ProtectedRoute></Suspense>} />
+              <Route path="/password-reset-requests" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><PasswordResetRequests /></ProtectedRoute></Suspense>} />
+              <Route path="/financial" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><FinancialDashboard /></ProtectedRoute></Suspense>} />
+              <Route path="/accounting" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><Accounting /></ProtectedRoute></Suspense>} />
+              <Route path="/refund-requests" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><RefundRequests /></ProtectedRoute></Suspense>} />
+              <Route path="/payroll" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><Payroll /></ProtectedRoute></Suspense>} />
+
+              {/* ── Catch-all ── */}
+              <Route path="*" element={<Suspense fallback={routeFallback}><NotFound /></Suspense>} />
+            </Routes>
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
