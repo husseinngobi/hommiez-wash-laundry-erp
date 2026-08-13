@@ -170,6 +170,11 @@ export default function Settings() {
   const [branchPaymentDraft, setBranchPaymentDraft] = useState<Record<number, BranchPaymentModes>>({});
   const [savingBranchPayment, setSavingBranchPayment] = useState<number | null>(null);
 
+  // Per-branch info editor (name, phone, location, email)
+  const [branchEditExpanded, setBranchEditExpanded] = useState<number | null>(null);
+  const [branchEditDraft, setBranchEditDraft] = useState<Record<number, { name: string; phone: string; email: string; location: string; address: string }>>({});
+  const [savingBranchInfo, setSavingBranchInfo] = useState<number | null>(null);
+
   // Promotions state
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [promoName, setPromoName] = useState('');
@@ -488,6 +493,43 @@ export default function Settings() {
       });
     } finally {
       setSavingBranchPayment(null);
+    }
+  };
+
+  const saveBranchInfo = async (branchId: number) => {
+    const draft = branchEditDraft[branchId];
+    if (!draft) return;
+    if (!draft.name.trim()) {
+      toast({ title: 'Branch name required', variant: 'destructive' });
+      return;
+    }
+    try {
+      setSavingBranchInfo(branchId);
+      await axios.put(
+        `${API_BASE_URL}/branches/${branchId}`,
+        {
+          name: draft.name.trim(),
+          phone: draft.phone.trim() || null,
+          email: draft.email.trim() || null,
+          location: draft.location.trim() || null,
+          address: draft.address.trim() || null,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({
+        title: 'Branch updated',
+        description: 'Branch information saved successfully.',
+      });
+      fetchBranches();
+      setBranchEditExpanded(null);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: branchErrorMessage(error, 'Failed to update branch'),
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingBranchInfo(null);
     }
   };
 
@@ -1348,12 +1390,39 @@ Don't miss out! ✨`;
                         </p>
                       </div>
                       <div className="flex gap-2 shrink-0 flex-wrap">
+                        {/* Edit branch info */}
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            setBranchPaymentExpanded(branchPaymentExpanded === branch.id ? null : branch.id);
-                            if (branchPaymentExpanded !== branch.id) {
+                            const opening = branchEditExpanded !== branch.id;
+                            setBranchEditExpanded(opening ? branch.id : null);
+                            setBranchPaymentExpanded(null); // close payment panel
+                            if (opening) {
+                              setBranchEditDraft(prev => ({
+                                ...prev,
+                                [branch.id]: {
+                                  name: branch.name,
+                                  phone: branch.phone || '',
+                                  email: branch.email || '',
+                                  location: branch.location || '',
+                                  address: branch.address || '',
+                                },
+                              }));
+                            }
+                          }}
+                        >
+                          {branchEditExpanded === branch.id ? 'Cancel Edit' : 'Edit Info'}
+                        </Button>
+                        {/* Payment modes */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const opening = branchPaymentExpanded !== branch.id;
+                            setBranchPaymentExpanded(opening ? branch.id : null);
+                            setBranchEditExpanded(null); // close info panel
+                            if (opening) {
                               setBranchPaymentDraft(prev => ({
                                 ...prev,
                                 [branch.id]: { ...DEFAULT_BRANCH_PAYMENT_MODES, ...(branch.payment_modes || {}) },
@@ -1377,6 +1446,9 @@ Don't miss out! ✨`;
                           variant="outline"
                           size="sm"
                           disabled={savingBranch}
+                          title={branch.is_active
+                            ? 'Deactivate: new orders will not be assigned to this branch. Existing orders and their history are unaffected.'
+                            : 'Activate this branch so staff can create orders under it.'}
                           onClick={() => updateBranch(branch.id, { is_active: !branch.is_active })}
                         >
                           {branch.is_active ? 'Deactivate' : 'Activate'}
@@ -1393,6 +1465,95 @@ Don't miss out! ✨`;
                         )}
                       </div>
                     </div>
+
+                    {/* Collapsible branch info editor */}
+                    {branchEditExpanded === branch.id && (
+                      <div className="border-t border-border bg-muted/30 p-4 space-y-3">
+                        <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                          <Building className="h-4 w-4" />
+                          Edit information for <strong>{branch.name}</strong>
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs">Branch Name *</Label>
+                            <Input
+                              value={branchEditDraft[branch.id]?.name ?? ''}
+                              onChange={(e) => setBranchEditDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...(prev[branch.id] || { name: '', phone: '', email: '', location: '', address: '' }), name: e.target.value },
+                              }))}
+                              placeholder="Branch name"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Location</Label>
+                            <Input
+                              value={branchEditDraft[branch.id]?.location ?? ''}
+                              onChange={(e) => setBranchEditDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...(prev[branch.id] || { name: '', phone: '', email: '', location: '', address: '' }), location: e.target.value },
+                              }))}
+                              placeholder="e.g. Ntinda, Kampala"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Phone</Label>
+                            <Input
+                              value={branchEditDraft[branch.id]?.phone ?? ''}
+                              onChange={(e) => setBranchEditDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...(prev[branch.id] || { name: '', phone: '', email: '', location: '', address: '' }), phone: e.target.value },
+                              }))}
+                              placeholder="+256 *** *** ***"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Email</Label>
+                            <Input
+                              type="email"
+                              value={branchEditDraft[branch.id]?.email ?? ''}
+                              onChange={(e) => setBranchEditDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...(prev[branch.id] || { name: '', phone: '', email: '', location: '', address: '' }), email: e.target.value },
+                              }))}
+                              placeholder="branch@lushdrycleaners.ug"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <Label className="text-xs">Address / Additional Details</Label>
+                            <Input
+                              value={branchEditDraft[branch.id]?.address ?? ''}
+                              onChange={(e) => setBranchEditDraft(prev => ({
+                                ...prev,
+                                [branch.id]: { ...(prev[branch.id] || { name: '', phone: '', email: '', location: '', address: '' }), address: e.target.value },
+                              }))}
+                              placeholder="Street, building, floor…"
+                              className="mt-1 h-8 text-sm"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => saveBranchInfo(branch.id)}
+                            disabled={savingBranchInfo === branch.id}
+                          >
+                            {savingBranchInfo === branch.id ? 'Saving…' : 'Save Branch Info'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setBranchEditExpanded(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Collapsible per-branch payment modes */}
                     {branchPaymentExpanded === branch.id && (
