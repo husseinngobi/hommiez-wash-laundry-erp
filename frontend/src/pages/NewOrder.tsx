@@ -179,6 +179,7 @@ export default function NewOrder() {
   const canChooseBranch = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const isAdminUser = user?.role === 'ADMIN';
   const canPriceUp = !!user; // All authenticated staff can apply price-up (surcharge)
+  const canBackdate = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
   // URA Compliance state
   const [uraComplianceEnabled, setUraComplianceEnabled] = useState(false);
@@ -190,6 +191,8 @@ export default function NewOrder() {
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
   const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
   const [openNoteIndexes, setOpenNoteIndexes] = useState<number[]>([]);
+  const [useBackdate, setUseBackdate] = useState(false);
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   /** Per-item adjustment mode: 'bargain' = reduce price, 'priceup' = increase price */
   const [itemAdjModes, setItemAdjModes] = useState<Record<number, 'bargain' | 'priceup'>>({});
   const getItemAdjMode = (index: number) => itemAdjModes[index] ?? 'bargain';
@@ -742,6 +745,8 @@ export default function NewOrder() {
     setAmountPaid(0);
     setNotes('');
     setItemSearch('');
+    setUseBackdate(false);
+    setOrderDate(new Date().toISOString().split('T')[0]);
   };
 
   const sendOrderViaWhatsApp = (phone: string, message: string) => {
@@ -819,6 +824,7 @@ export default function NewOrder() {
         transaction_reference: transactionRef || null,
         notes,
         branch_id: selectedBranchId ? Number(selectedBranchId) : undefined,
+        ...(canBackdate && useBackdate ? { order_date: orderDate } : {}),
       };
 
       const response = await axios.post(`${API_BASE_URL}/orders`, orderData, {
@@ -1586,6 +1592,34 @@ export default function NewOrder() {
               {amountPaid >= total && total > 0 && (
                 <div className="text-center text-sm font-medium text-green-600 bg-green-50 dark:bg-green-950 rounded py-1">
                   ✓ Fully paid
+                </div>
+              )}
+
+              {/* Backdate toggle — admin / manager only */}
+              {canBackdate && (
+                <div className="border border-dashed border-amber-400 rounded-lg px-3 py-2 bg-amber-50 dark:bg-amber-950/30">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="use-backdate"
+                      checked={useBackdate}
+                      onCheckedChange={(v) => setUseBackdate(!!v)}
+                    />
+                    <label htmlFor="use-backdate" className="text-xs font-medium text-amber-700 dark:text-amber-300 cursor-pointer select-none">
+                      Record for a past date (historical entry)
+                    </label>
+                  </div>
+                  {useBackdate && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <label className="text-xs text-amber-600 dark:text-amber-400 whitespace-nowrap">Order Date:</label>
+                      <input
+                        type="date"
+                        value={orderDate}
+                        max={new Date().toISOString().split('T')[0]}
+                        onChange={(e) => setOrderDate(e.target.value)}
+                        className="text-xs border rounded px-2 py-1 h-7 bg-background text-foreground flex-1"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -213,12 +213,22 @@ const Expenses = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'APPROVED':
-        return 'bg-green-500';
-      case 'REJECTED':
-        return 'bg-red-500';
-      default:
-        return 'bg-yellow-500';
+      case 'APPROVED': return 'bg-green-500';
+      case 'REJECTED': return 'bg-red-500';
+      default: return 'bg-yellow-500';
+    }
+  };
+
+  const formatPaymentMethod = (method: string) => {
+    switch (method) {
+      case 'CASH': return 'Cash';
+      case 'MTN_MOBILE_MONEY': return 'MTN Mobile Money';
+      case 'AIRTEL_MONEY': return 'Airtel Money';
+      case 'MOBILE_MONEY': return 'Mobile Money';
+      case 'BANK_TRANSFER': return 'Bank Transfer';
+      case 'CENTENARY': return 'Centenary Bank';
+      case 'CARD': return 'Card / Bancroft';
+      default: return method?.replace(/_/g, ' ') || '-';
     }
   };
 
@@ -388,6 +398,7 @@ const Expenses = () => {
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Category</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Description</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">Amount</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Method</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Status</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Recorded By</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100">Actions</th>
@@ -396,19 +407,23 @@ const Expenses = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                       Loading...
                     </td>
                   </tr>
                 ) : expenses.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                       No expenses found
                     </td>
                   </tr>
                 ) : (
                   expenses.map((expense) => (
-                    <tr key={expense.id} className="border-b dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-150">
+                    <tr
+                      key={expense.id}
+                      className="border-b dark:border-gray-700 hover:bg-muted/60 dark:hover:bg-gray-700 transition-colors duration-150 cursor-pointer"
+                      onClick={() => { setSelectedExpense(expense); setShowDetailsDialog(true); }}
+                    >
                       <td className="px-4 py-3 text-sm dark:text-gray-300">
                         {new Date(expense.expense_date).toLocaleDateString()}
                       </td>
@@ -417,11 +432,14 @@ const Expenses = () => {
                           {expense.category_name}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-sm max-w-xs truncate dark:text-gray-300">
-                        {expense.description}
+                      <td className="px-4 py-3 text-sm max-w-xs dark:text-gray-300">
+                        <p className="truncate">{expense.description}</p>
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-sm dark:text-gray-200">
                         {formatUGX(expense.amount)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-xs text-muted-foreground">{formatPaymentMethod(expense.payment_method)}</div>
                       </td>
                       <td className="px-4 py-3">
                         <Badge className={getStatusColor(expense.status)}>
@@ -434,10 +452,8 @@ const Expenses = () => {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setSelectedExpense(expense);
-                              setShowDetailsDialog(true);
-                            }}
+                            title="View details"
+                            onClick={(e) => { e.stopPropagation(); setSelectedExpense(expense); setShowDetailsDialog(true); }}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -446,14 +462,16 @@ const Expenses = () => {
                               <Button
                                 size="sm"
                                 className="bg-green-500 hover:bg-green-600"
-                                onClick={() => handleApprove(expense.id, 'APPROVED')}
+                                title="Approve"
+                                onClick={(e) => { e.stopPropagation(); handleApprove(expense.id, 'APPROVED'); }}
                               >
                                 <Check className="w-4 h-4" />
                               </Button>
                               <Button
                                 size="sm"
                                 className="bg-red-500 hover:bg-red-600"
-                                onClick={() => handleApprove(expense.id, 'REJECTED')}
+                                title="Reject"
+                                onClick={(e) => { e.stopPropagation(); handleApprove(expense.id, 'REJECTED'); }}
                               >
                                 <X className="w-4 h-4" />
                               </Button>
@@ -567,9 +585,11 @@ const Expenses = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="CASH">Cash</SelectItem>
-                    <SelectItem value="MOBILE_MONEY">Mobile Money</SelectItem>
+                    <SelectItem value="MTN_MOBILE_MONEY">MTN Mobile Money</SelectItem>
+                    <SelectItem value="AIRTEL_MONEY">Airtel Money</SelectItem>
                     <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                    <SelectItem value="CARD">Card</SelectItem>
+                    <SelectItem value="CENTENARY">Centenary Bank</SelectItem>
+                    <SelectItem value="CARD">Card / Bancroft</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -622,15 +642,17 @@ const Expenses = () => {
                 </div>
                 <div>
                   <Label className="text-gray-600">Payment Method</Label>
-                  <p className="font-medium">{selectedExpense.payment_method}</p>
+                  <p className="font-medium">{formatPaymentMethod(selectedExpense.payment_method)}</p>
                 </div>
                 <div>
-                  <Label className="text-gray-600">Receipt Number</Label>
-                  <p className="font-medium">{selectedExpense.receipt_number || '-'}</p>
+                  <Label className="text-gray-600">Receipt / Ref #</Label>
+                  <p className="font-medium">{selectedExpense.receipt_number || '—'}</p>
                 </div>
                 <div className="col-span-2">
                   <Label className="text-gray-600">Description</Label>
-                  <p className="font-medium">{selectedExpense.description}</p>
+                  <p className="mt-1 text-sm leading-relaxed bg-muted/50 rounded p-3 whitespace-pre-wrap">
+                    {selectedExpense.description}
+                  </p>
                 </div>
                 <div>
                   <Label className="text-gray-600">Recorded By</Label>

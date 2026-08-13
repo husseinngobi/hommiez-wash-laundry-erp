@@ -241,8 +241,21 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       notes,
       branch_id: requestedBranchId,
       tax_rate: frontendTaxRate,
-      tax_amount: frontendTaxAmount
+      tax_amount: frontendTaxAmount,
+      order_date,          // optional back-date (ADMIN / MANAGER only)
     } = req.body;
+
+    // Validate optional back-date: only ADMIN/MANAGER, must be a real past/today date
+    const canBackdate = req.user!.role === 'ADMIN' || req.user!.role === 'MANAGER';
+    let customOrderDate: string | null = null;
+    if (order_date && canBackdate) {
+      const parsed = new Date(order_date);
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      if (!isNaN(parsed.getTime()) && parsed <= today) {
+        customOrderDate = parsed.toISOString();
+      }
+    }
 
     // Branch: staff always book against their own branch; only ADMIN/MANAGER may
     // choose another one, and it must be an active branch.
@@ -574,52 +587,35 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     
     // Create order
     const orderResult = await client.query(
-      `INSERT INTO orders (
-        order_number, 
-        customer_id, 
-        user_id, 
-        subtotal, 
-        tax_rate,
-        tax_amount,
-        discount_percentage,
-        discount_amount,
-        bargain_amount,
-        surcharge_amount,
-        total_amount, 
-        payment_status,
-        payment_method,
-        amount_paid,
-        balance,
-        status,
-        transaction_reference,
-        invoice_number,
-        notes,
-        branch_id
-      )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
-       RETURNING *`,
-      [
-        order_number, 
-        customer_id, 
-        req.user!.id, 
-        subtotal, 
-        tax_rate,
-        tax_amount,
-        discount_percentage,
-        discount_amount,
-        bargainAmountValue,
-        surchargeAmountValue,
-        total_amount, 
-        finalPaymentStatus,
-        finalPaymentMethod,
-        finalAmountPaidValue,
-        balance,
-        'pending',
-        transaction_reference || null,
-        invoice_number,
-        notes,
-        branchId
-      ]
+      customOrderDate
+        ? `INSERT INTO orders (
+            order_number, customer_id, user_id, subtotal, tax_rate, tax_amount,
+            discount_percentage, discount_amount, bargain_amount, surcharge_amount,
+            total_amount, payment_status, payment_method, amount_paid, balance,
+            status, transaction_reference, invoice_number, notes, branch_id, created_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+          RETURNING *`
+        : `INSERT INTO orders (
+            order_number, customer_id, user_id, subtotal, tax_rate, tax_amount,
+            discount_percentage, discount_amount, bargain_amount, surcharge_amount,
+            total_amount, payment_status, payment_method, amount_paid, balance,
+            status, transaction_reference, invoice_number, notes, branch_id
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+          RETURNING *`,
+      customOrderDate
+        ? [
+            order_number, customer_id, req.user!.id, subtotal, tax_rate, tax_amount,
+            discount_percentage, discount_amount, bargainAmountValue, surchargeAmountValue,
+            total_amount, finalPaymentStatus, finalPaymentMethod, finalAmountPaidValue,
+            balance, 'pending', transaction_reference || null, invoice_number, notes, branchId,
+            customOrderDate,
+          ]
+        : [
+            order_number, customer_id, req.user!.id, subtotal, tax_rate, tax_amount,
+            discount_percentage, discount_amount, bargainAmountValue, surchargeAmountValue,
+            total_amount, finalPaymentStatus, finalPaymentMethod, finalAmountPaidValue,
+            balance, 'pending', transaction_reference || null, invoice_number, notes, branchId,
+          ]
     );
     
     const orderId = orderResult.rows[0].id;
