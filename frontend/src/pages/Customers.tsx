@@ -926,7 +926,7 @@ export default function Customers() {
                   id="phone"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+256700123456"
+                  placeholder="+256 *** *** ***"
                 />
                 <p className="text-xs text-muted-foreground">
                   Include country code (e.g. +256…). Local 07… numbers are saved as +256…
@@ -1056,7 +1056,7 @@ export default function Customers() {
                   id="edit-phone"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="+256700123456"
+                  placeholder="+256 *** *** ***"
                 />
                 <p className="text-xs text-muted-foreground">
                   Include country code (e.g. +256…). Local 07… numbers are saved as +256…
