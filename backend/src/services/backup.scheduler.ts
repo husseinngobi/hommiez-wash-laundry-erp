@@ -21,7 +21,17 @@ async function getSettings(): Promise<{ frequency: Frequency } | null> {
     return null;
   }
 }
-
+/** Returns "yesterday" as a Date, correctly computed in Africa/Kampala (UTC+3) local time,
+ *  regardless of what moment this is called (cron fire time, server boot time, etc). */
+function getKampalaYesterday(): Date {
+  const now = new Date();
+  const kampalaNow = new Date(now.getTime() + 3 * 60 * 60 * 1000); // shift to UTC+3
+  return new Date(Date.UTC(
+    kampalaNow.getUTCFullYear(),
+    kampalaNow.getUTCMonth(),
+    kampalaNow.getUTCDate() - 1
+  ));
+}
 /**
  * Given a frequency and a reference "yesterday" Date, return:
  *  - reportDate: the canonical ID for this period (last day of the period), used
@@ -105,8 +115,7 @@ export const initializeBackupScheduler = async () => {
   // ── Midnight cron (fires every night; frequency logic decides whether to send) ──
   cron.schedule('0 0 * * *', async () => {
     console.log('🕐 Midnight backup cron fired');
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterday = getKampalaYesterday();
 
     try {
       const settings = await getSettings();
