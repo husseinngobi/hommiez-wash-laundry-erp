@@ -192,16 +192,18 @@ function buildItemLines(items: OrderWhatsAppItem[]): string[] {
     const surcharge = Number(item.surcharge_amount || 0);
     const hasAdj = discount > 0 || surcharge > 0;
     const gross = Number(item.total_price || 0) + discount - surcharge;
+    // Service type (wash / iron / express) is an internal workflow detail —
+    // customers only see the item name and the price charged.
     if (hasAdj) {
       lines.push(
-        `${index + 1}. ${item.item_name} (${item.service_type}) x ${item.quantity} — ${formatUGX(gross)}`
+        `${index + 1}. ${item.item_name} x${item.quantity} — ${formatUGX(gross)}`
       );
       if (discount > 0) lines.push(`   Discount: -${formatUGX(discount)}`);
       if (surcharge > 0) lines.push(`   Price up: +${formatUGX(surcharge)}`);
-      lines.push(`   → ${formatUGX(item.total_price)}`);
+      lines.push(`   Total: ${formatUGX(item.total_price)}`);
     } else {
       lines.push(
-        `${index + 1}. ${item.item_name} (${item.service_type}) x ${item.quantity} — ${formatUGX(item.total_price)}`
+        `${index + 1}. ${item.item_name} x${item.quantity} — ${formatUGX(item.total_price)}`
       );
     }
   });
