@@ -165,6 +165,12 @@ export const orderValidation = {
       .withMessage('Item note cannot exceed 200 characters'),
     body('discount').optional().isInt({ min: 0 }),
     body('notes').optional().trim(),
+    body('order_date').optional({ nullable: true, checkFalsy: true })
+      .matches(/^\d{4}-\d{2}-\d{2}/)
+      .withMessage('Order date must be YYYY-MM-DD'),
+    body('payment_date').optional({ nullable: true, checkFalsy: true })
+      .matches(/^\d{4}-\d{2}-\d{2}/)
+      .withMessage('Payment date must be YYYY-MM-DD'),
   ],
   
   update: [
@@ -173,6 +179,9 @@ export const orderValidation = {
     body('due_date').optional().isISO8601(),
     body('discount').optional().isInt({ min: 0 }),
     body('notes').optional().trim(),
+    body('payment_date').optional({ nullable: true, checkFalsy: true })
+      .matches(/^\d{4}-\d{2}-\d{2}/)
+      .withMessage('Payment date must be YYYY-MM-DD'),
   ],
   
   updateStatus: [

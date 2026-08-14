@@ -1,6 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
+import { kampalaTodayYmd } from '@/lib/businessDate';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -192,7 +193,7 @@ export default function NewOrder() {
   const [paymentModes, setPaymentModes] = useState<PaymentModeDetails>(DEFAULT_PAYMENT_MODES);
   const [openNoteIndexes, setOpenNoteIndexes] = useState<number[]>([]);
   const [useBackdate, setUseBackdate] = useState(false);
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
+  const [orderDate, setOrderDate] = useState(kampalaTodayYmd());
   /** Per-item adjustment mode: 'bargain' = reduce price, 'priceup' = increase price */
   const [itemAdjModes, setItemAdjModes] = useState<Record<number, 'bargain' | 'priceup'>>({});
   const getItemAdjMode = (index: number) => itemAdjModes[index] ?? 'bargain';
@@ -746,7 +747,7 @@ export default function NewOrder() {
     setNotes('');
     setItemSearch('');
     setUseBackdate(false);
-    setOrderDate(new Date().toISOString().split('T')[0]);
+    setOrderDate(kampalaTodayYmd());
   };
 
   const sendOrderViaWhatsApp = (phone: string, message: string) => {
@@ -824,7 +825,9 @@ export default function NewOrder() {
         transaction_reference: transactionRef || null,
         notes,
         branch_id: selectedBranchId ? Number(selectedBranchId) : undefined,
-        ...(canBackdate && useBackdate ? { order_date: orderDate } : {}),
+        ...(canBackdate && useBackdate && orderDate < kampalaTodayYmd()
+          ? { order_date: orderDate, payment_date: orderDate }
+          : {}),
       };
 
       const response = await axios.post(`${API_BASE_URL}/orders`, orderData, {
@@ -1614,7 +1617,7 @@ export default function NewOrder() {
                       <input
                         type="date"
                         value={orderDate}
-                        max={new Date().toISOString().split('T')[0]}
+                        max={kampalaTodayYmd()}
                         onChange={(e) => setOrderDate(e.target.value)}
                         className="text-xs border rounded px-2 py-1 h-7 bg-background text-foreground flex-1"
                       />

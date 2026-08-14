@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
+import { formatKampalaDate, formatKampalaDateTime } from '@/lib/businessDate';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -568,7 +569,7 @@ const Payments = () => {
       <div class="sub">Payment Receipt</div>
       <div class="row"><span>Order</span><strong>${payment.order_number}</strong></div>
       <div class="row"><span>Customer</span><strong>${payment.customer_name}</strong></div>
-      <div class="row"><span>Date</span><span>${new Date(payment.payment_date).toLocaleString()}</span></div>
+      <div class="row"><span>Date</span><span>${formatKampalaDateTime(payment.payment_date)}</span></div>
       <div class="row"><span>Method</span><span>${payment.payment_method.replace(/_/g, ' ')}</span></div>
       ${payment.transaction_reference ? `<div class="row"><span>Reference</span><span>${payment.transaction_reference}</span></div>` : ''}
       <div class="row"><span>Order total</span><span>${formatUGX(payment.total_amount)}</span></div>
@@ -880,7 +881,7 @@ const Payments = () => {
                         }}
                       >
                         <td className="px-4 py-3 text-sm dark:text-gray-300">
-                          {new Date(payment.payment_date).toLocaleDateString()}
+                          {formatKampalaDate(payment.payment_date)}
                         </td>
                         <td className="px-4 py-3 text-sm font-medium dark:text-gray-200">
                           <button
@@ -1218,7 +1219,7 @@ const Payments = () => {
               </div>
               <div>
                 <Label className="text-gray-600">Payment Date</Label>
-                <p className="font-medium">{new Date(selectedPayment.payment_date).toLocaleString()}</p>
+                <p className="font-medium">{formatKampalaDateTime(selectedPayment.payment_date)}</p>
               </div>
               <div>
                 <Label className="text-gray-600">Payment Method</Label>

@@ -11,6 +11,7 @@ import { logCreate, logUpdate, logDelete } from '../utils/activityLogger';
 import { getEffectiveBargainLimit, getMaxDiscountForRole } from '../utils/roleLimits';
 import { resolveListBranchId, forbiddenIfOutsideBranch } from '../utils/branchScope';
 import { notifyAdministrators } from './notifications.controller';
+import { calendarDateToTimestamp, kampalaTodayYmd, toKampalaYmd } from '../utils/businessDate';
 import fs from 'fs';
 
 type SettingsQuerier = { query: (text: string) => Promise<any> };
@@ -114,7 +115,17 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
     }
 
     if (is_backdated === 'true' || is_backdated === true) {
-      whereClause += ` AND o.is_backdated = TRUE`;
+      // Historical filter: flagged past-date orders, plus any order whose
+      // business date is strictly before it was entered. Same-day orders
+      // (created_at and recorded_at on the same Kampala day) stay out.
+      whereClause += ` AND (
+        COALESCE(o.is_backdated, FALSE) = TRUE
+        OR (
+          o.recorded_at IS NOT NULL
+          AND (o.created_at AT TIME ZONE 'Africa/Nairobi')::date
+            < (o.recorded_at AT TIME ZONE 'Africa/Nairobi')::date
+        )
+      )`;
     }
     
     // Get total count
@@ -262,18 +273,19 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       branch_id: requestedBranchId,
       tax_rate: frontendTaxRate,
       tax_amount: frontendTaxAmount,
-      order_date,          // optional back-date (ADMIN / MANAGER only)
+      order_date,          // optional back-date
+      payment_date: requestedCreatePaymentDate,
     } = req.body;
 
-    // Validate optional back-date: any authenticated staff may record a historical order,
-    // but the date must be today or in the past (cannot be future-dated).
+    // Past-date (historical) orders only. Same-day orders stay unmarked even if
+    // the backdate checkbox is left on with today's date.
     let customOrderDate: string | null = null;
+    let isBackdated = false;
     if (order_date) {
-      const parsed = new Date(order_date);
-      const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      if (!isNaN(parsed.getTime()) && parsed <= today) {
+      const parsed = calendarDateToTimestamp(order_date);
+      if (parsed && toKampalaYmd(parsed) < kampalaTodayYmd()) {
         customOrderDate = parsed.toISOString();
+        isBackdated = true;
       }
     }
 
@@ -621,7 +633,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         total_amount, finalPaymentStatus, finalPaymentMethod, finalAmountPaidValue,
         balance, 'pending', transaction_reference || null, invoice_number, notes, branchId,
         customOrderDate || new Date().toISOString(),
-        !!customOrderDate,
+        isBackdated,
       ]
     );
     
@@ -658,7 +670,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     
     // Always create a payments ledger row when money was received (links order ↔ Payments ↔ accounting)
     if (finalAmountPaidValue > 0 && finalPaymentMethod !== 'ON_ACCOUNT') {
-      const initialPaymentDate = customOrderDate || new Date().toISOString();
+      const parsedPaymentDate = calendarDateToTimestamp(requestedCreatePaymentDate);
+      const initialPaymentDate = (parsedPaymentDate || (customOrderDate ? new Date(customOrderDate) : new Date())).toISOString();
       await client.query(
         `INSERT INTO payments (
           order_id,
@@ -1120,15 +1133,14 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       const userId = req.user?.id;
 
       try {
-        let paymentTs = new Date();
-        if (requestedPaymentDate) {
-          const parsed = new Date(requestedPaymentDate);
-          const today = new Date();
-          today.setHours(23, 59, 59, 999);
-          if (!isNaN(parsed.getTime()) && parsed <= today) {
-            paymentTs = parsed;
-          }
-        }
+        // Chosen payment date wins. For historical orders with no date sent,
+        // fall back to the order's business date instead of "now".
+        const parsedPaymentDate = calendarDateToTimestamp(requestedPaymentDate);
+        const orderBusinessDate = calendarDateToTimestamp(currentOrder.created_at);
+        const paymentTs =
+          parsedPaymentDate ||
+          (currentOrder.is_backdated ? orderBusinessDate : null) ||
+          new Date();
 
         await query(`
           INSERT INTO payments (

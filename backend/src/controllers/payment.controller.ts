@@ -273,7 +273,7 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
 
     // Date range filter
     if (from_date && to_date) {
-      whereConditions.push(`p.payment_date::date BETWEEN $${paramCount} AND $${paramCount + 1}`);
+      whereConditions.push(`(p.payment_date AT TIME ZONE 'Africa/Nairobi')::date BETWEEN $${paramCount} AND $${paramCount + 1}`);
       values.push(from_date, to_date);
       paramCount += 2;
     }
@@ -349,7 +349,10 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
        LEFT JOIN customers c ON p.customer_id = c.id
        LEFT JOIN users u ON p.created_by = u.id
        WHERE ${whereClause}
-       ORDER BY p.payment_date DESC, p.id DESC
+       ORDER BY
+         CASE WHEN o.payment_status IN ('UNPAID', 'PARTIAL') THEN 0 ELSE 1 END,
+         p.payment_date DESC,
+         p.id DESC
        LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
       [...values, limit, offset]
     );
@@ -380,7 +383,7 @@ export const getPaymentStatistics = async (req: AuthRequest, res: Response) => {
     const values: any[] = [];
 
     if (from_date && to_date) {
-      dateFilter = 'WHERE payment_date::date BETWEEN $1 AND $2';
+      dateFilter = "WHERE (payment_date AT TIME ZONE 'Africa/Nairobi')::date BETWEEN $1 AND $2";
       values.push(from_date, to_date);
     } else {
       // Default to all time so the summary cards reflect the full payment ledger
@@ -555,7 +558,7 @@ export const exportPayments = async (req: AuthRequest, res: Response) => {
     let paramCount = 1;
 
     if (from_date && to_date) {
-      whereConditions.push(`p.payment_date::date BETWEEN $${paramCount} AND $${paramCount + 1}`);
+      whereConditions.push(`(p.payment_date AT TIME ZONE 'Africa/Nairobi')::date BETWEEN $${paramCount} AND $${paramCount + 1}`);
       values.push(from_date, to_date);
       paramCount += 2;
     }
@@ -641,7 +644,7 @@ export const exportPaymentsPDF = async (req: AuthRequest, res: Response) => {
     let paramCount = 1;
 
     if (from_date && to_date) {
-      whereConditions.push(`p.payment_date::date BETWEEN $${paramCount} AND $${paramCount + 1}`);
+      whereConditions.push(`(p.payment_date AT TIME ZONE 'Africa/Nairobi')::date BETWEEN $${paramCount} AND $${paramCount + 1}`);
       values.push(from_date, to_date);
       paramCount += 2;
     }

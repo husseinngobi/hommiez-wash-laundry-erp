@@ -31,6 +31,7 @@ import { ensureNotificationReads } from './database/ensureNotificationReads';
 import { ensurePaymentCancellation } from './database/ensurePaymentCancellation';
 import { ensureBranchScopedData } from './database/ensureBranchScopedData';
 import { ensureGhostStaffRemoved } from './database/ensureGhostStaffRemoved';
+import { ensureBackdatedPaymentDates } from './database/ensureBackdatedPaymentDates';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -230,6 +231,12 @@ const startServer = async () => {
       await ensureGhostStaffRemoved();
     } catch (ghostStaffErr) {
       console.error('⚠️ ghost staff cleanup skipped or failed:', ghostStaffErr);
+    }
+
+    try {
+      await ensureBackdatedPaymentDates();
+    } catch (backdatedPayErr) {
+      console.error('⚠️ backdated payment date repair skipped or failed:', backdatedPayErr);
     }
 
     // Ensure upload directories exist

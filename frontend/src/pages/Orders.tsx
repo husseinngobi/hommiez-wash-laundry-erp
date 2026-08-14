@@ -1,6 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
+import { kampalaTodayYmd, toKampalaYmd, formatKampalaDateTime } from '@/lib/businessDate';
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge';
 import { RefundDialog } from '@/components/orders/RefundDialog';
 import Invoice from '@/components/Invoice';
@@ -168,15 +169,7 @@ const formatDate = (dateString: string | null | undefined) => {
   });
 };
 
-const formatDateTime = (dateString: string) => {
-  return new Date(dateString).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
+const formatDateTime = (dateString: string) => formatKampalaDateTime(dateString);
 
 const getDaysOld = (createdAt: string): string => {
   const created = new Date(createdAt);
@@ -652,7 +645,7 @@ export default function Orders() {
     payment_modes?: { centenary_account?: string; mtn_code?: string; airtel_merchant?: string };
   }>>([]);
   const [additionalPayment, setAdditionalPayment] = useState(0);
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState(kampalaTodayYmd());
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER'>('CASH');
   const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
   const [paymentChannel, setPaymentChannel] = useState<'MANUAL' | 'MERCHANT' | 'P2P' | 'DEPOSIT' | 'API_PUSH'>('MANUAL');
@@ -1179,7 +1172,7 @@ export default function Orders() {
       setRecipientAccount('');
       setSenderPhone('');
       setTransactionReference('');
-      setPaymentDate(new Date().toISOString().split('T')[0]);
+      setPaymentDate(kampalaTodayYmd());
       fetchOrders();
       if (selectedOrder) viewOrderDetails(selectedOrder);
     } catch (error) {
@@ -1564,9 +1557,12 @@ export default function Orders() {
         <Button
           variant={backdatedFilter ? 'default' : 'outline'}
           className="w-full sm:w-auto"
-          onClick={() => setBackdatedFilter((v) => !v)}
+          onClick={() => {
+            setCurrentPage(1);
+            setBackdatedFilter((v) => !v);
+          }}
         >
-          {backdatedFilter ? 'Historical entries' : 'Past-date entries'}
+          {backdatedFilter ? 'Showing historical orders' : 'Historical orders'}
         </Button>
 
         {/* Column Visibility Menu */}
@@ -2289,8 +2285,8 @@ export default function Orders() {
                       setPaymentMethod('CASH');
                       setPaymentDate(
                         selectedOrder.is_backdated && selectedOrder.created_at
-                          ? String(selectedOrder.created_at).slice(0, 10)
-                          : new Date().toISOString().split('T')[0]
+                          ? toKampalaYmd(selectedOrder.created_at)
+                          : kampalaTodayYmd()
                       );
                       setShowPaymentDialog(true);
                     }}
@@ -2684,8 +2680,8 @@ export default function Orders() {
                       );
                       setPaymentDate(
                         selectedOrder.is_backdated && selectedOrder.created_at
-                          ? String(selectedOrder.created_at).slice(0, 10)
-                          : new Date().toISOString().split('T')[0]
+                          ? toKampalaYmd(selectedOrder.created_at)
+                          : kampalaTodayYmd()
                       );
                       setShowPaymentDialog(true);
                     }}
@@ -2864,7 +2860,7 @@ export default function Orders() {
                 <Input
                   id="payment-date"
                   type="date"
-                  max={new Date().toISOString().split('T')[0]}
+                  max={kampalaTodayYmd()}
                   value={paymentDate}
                   onChange={(e) => setPaymentDate(e.target.value)}
                   className="mt-2"
