@@ -3,8 +3,9 @@ import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import { createSystemNotification, notifyAdministrators } from './notifications.controller';
-import { forbiddenIfOutsideBranch } from '../utils/branchScope';
+import { forbiddenIfOutsideBranch, resolveListBranchId } from '../utils/branchScope';
 import { extractYmd, kampalaTodayYmd, ymdToPgTimestamp } from '../utils/businessDate';
+import { logDelete } from '../utils/activityLogger';
 
 /**
  * Recalculate order payment totals from remaining payments ledger rows.
