@@ -653,6 +653,89 @@ export const updateUserBranch = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const updateUserDetails = async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { full_name, phone, email } = req.body;
+
+    const userCheck = await query(
+      'SELECT id, email, full_name, phone, role FROM users WHERE id = $1',
+      [userId]
+    );
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const target = userCheck.rows[0];
+    const visibilityBlock = enforceTargetVisibility(req, target.email);
+    if (visibilityBlock) {
+      return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
+
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    let paramCount = 1;
+
+    if (typeof full_name === 'string' && full_name.trim()) {
+      updates.push(`full_name = $${paramCount++}`);
+      values.push(full_name.trim());
+    }
+    if (typeof phone === 'string' && phone.trim()) {
+      updates.push(`phone = $${paramCount++}`);
+      values.push(phone.trim());
+    }
+    if (typeof email === 'string' && email.trim()) {
+      const nextEmail = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+        return res.status(400).json({ error: 'Enter a valid email address' });
+      }
+      const taken = await query(
+        'SELECT id FROM users WHERE LOWER(email) = $1 AND id <> $2',
+        [nextEmail, userId]
+      );
+      if (taken.rows.length > 0) {
+        return res.status(409).json({ error: 'That email is already used by another account' });
+      }
+      updates.push(`email = $${paramCount++}`);
+      values.push(nextEmail);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    values.push(userId);
+    const result = await query(
+      `UPDATE users SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $${paramCount}
+       RETURNING id, email, full_name, phone, role, status, branch_id, last_login, created_at, updated_at`,
+      values
+    );
+
+    const updated = result.rows[0];
+    if (email && String(email).trim().toLowerCase() !== String(target.email || '').toLowerCase()) {
+      await notifyAdministrators(
+        'user',
+        'Login email changed',
+        `${req.user?.full_name} changed ${updated.full_name}'s login email to ${updated.email}.`,
+        '/user-management'
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'User details updated. The login email is the one they will use to sign in.',
+      user: updated,
+    });
+  } catch (error: any) {
+    if (error?.message?.includes('duplicate key')) {
+      return res.status(409).json({ error: 'That email is already used by another account' });
+    }
+    console.error('Update user details error:', error);
+    res.status(500).json({ error: 'Failed to update user details' });
+  }
+};
+
 // Delete user (Admin only)
 export const deleteUser = async (req: AuthRequest, res: Response) => {
   try {

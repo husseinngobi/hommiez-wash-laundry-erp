@@ -427,7 +427,7 @@ const Profile = () => {
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
                 <Input id="email" value={profileData.email} disabled className="bg-gray-50 dark:bg-gray-900" />
-                <p className="text-xs text-gray-500">Email cannot be changed</p>
+                <p className="text-xs text-gray-500">Email is your login. Only an administrator can change it in User Management.</p>
               </div>
               <div className="space-y-2">
                 <Label>Role</Label>

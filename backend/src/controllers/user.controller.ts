@@ -66,8 +66,13 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
     let paramCount = 1;
     
     if (email) {
+      if (req.user!.role !== UserRole.ADMIN) {
+        return res.status(403).json({
+          error: 'Only an administrator can change a login email',
+        });
+      }
       updates.push(`email = $${paramCount++}`);
-      values.push(email);
+      values.push(String(email).trim().toLowerCase());
     }
     if (full_name) {
       updates.push(`full_name = $${paramCount++}`);

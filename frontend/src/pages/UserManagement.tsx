@@ -56,7 +56,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
   Users, UserCheck, UserX, UserPlus, Shield, Activity, 
   Search, CheckCircle2, XCircle, AlertCircle, Ban, 
-  RotateCcw, Trash2, Eye, Clock, Calendar, History 
+  RotateCcw, Trash2, Eye, Clock, Calendar, History, Pencil
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -151,6 +151,9 @@ const UserManagement = () => {
   // Dialogs
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editForm, setEditForm] = useState({ full_name: '', phone: '', email: '' });
+  const [savingDetails, setSavingDetails] = useState(false);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showSuspendDialog, setShowSuspendDialog] = useState(false);
@@ -451,6 +454,48 @@ const UserManagement = () => {
         description: axiosError.response?.data?.error || 'Failed to update branch assignment',
         variant: 'destructive',
       });
+    }
+  };
+
+  const openEditUser = (user: User) => {
+    setSelectedUser(user);
+    setEditForm({
+      full_name: user.full_name || '',
+      phone: user.phone || '',
+      email: user.email || '',
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleSaveUserDetails = async () => {
+    if (!selectedUser || !token) return;
+    try {
+      setSavingDetails(true);
+      const response = await axios.put(
+        `${API_BASE_URL}/admin/users/${selectedUser.id}/details`,
+        {
+          full_name: editForm.full_name.trim(),
+          phone: editForm.phone.trim(),
+          email: editForm.email.trim(),
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({
+        title: 'User updated',
+        description: response.data.message || 'Details saved. They will use this email to log in.',
+      });
+      setShowEditDialog(false);
+      setShowDetailsDialog(false);
+      fetchUsers();
+    } catch (error) {
+      const axiosError = error as AxiosError<{ error?: string }>;
+      toast({
+        title: 'Error',
+        description: axiosError.response?.data?.error || 'Failed to update user details',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingDetails(false);
     }
   };
 
@@ -811,6 +856,16 @@ const UserManagement = () => {
                               >
                                 <Eye className="h-4 w-4" />
                               </Button>
+                              {isAdmin && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openEditUser(user)}
+                                  title="Edit name, phone, or login email"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              )}
 
                               <Button
                                 variant="ghost"
@@ -1114,12 +1169,21 @@ const UserManagement = () => {
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-muted/50 p-4 rounded-lg">
                     <div>
-                      <label className="text-sm font-medium text-muted-foreground">Email Address</label>
+                      <label className="text-sm font-medium text-muted-foreground">Login email</label>
                       <p className="text-base mt-1 break-all">{selectedUser.email}</p>
+                      <p className="text-xs text-muted-foreground mt-1">This is the address they use to sign in.</p>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Phone Number</label>
-                      <p className="text-base mt-1 break-all">{selectedUser.phone}</p>
+                      <p className="text-base mt-1 break-all">{selectedUser.phone || '—'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Branch</label>
+                      <p className="text-base mt-1">{selectedUser.branch_name || 'Unassigned'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Role</label>
+                      <p className="text-base mt-1">{selectedUser.role.replace('_', ' ')}</p>
                     </div>
                   </div>
                 </div>
@@ -1192,6 +1256,20 @@ const UserManagement = () => {
 
                 {/* Quick Actions */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-4 border-t">
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setShowDetailsDialog(false);
+                        openEditUser(selectedUser);
+                      }}
+                      className="gap-2 w-full sm:w-auto"
+                    >
+                      <Pencil className="h-4 w-4 flex-shrink-0" />
+                      Edit details
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -1238,6 +1316,56 @@ const UserManagement = () => {
             )}
             <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button onClick={() => setShowDetailsDialog(false)} className="w-full sm:w-auto">Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+          <DialogContent className="max-w-[95vw] sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit user details</DialogTitle>
+              <DialogDescription>
+                Change name, phone, or login email. The email is what they use to sign in.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-full-name">Full name</Label>
+                <Input
+                  id="edit-full-name"
+                  value={editForm.full_name}
+                  onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-phone">Phone</Label>
+                <Input
+                  id="edit-phone"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  placeholder="+256..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-email">Login email</Label>
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Staff cannot change this themselves. After you save, they sign in with the new email.
+                </p>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setShowEditDialog(false)} disabled={savingDetails}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveUserDetails} disabled={savingDetails}>
+                {savingDetails ? 'Saving…' : 'Save'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
