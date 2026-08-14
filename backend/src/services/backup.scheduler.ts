@@ -45,18 +45,6 @@ function getKampalaTodayYmd(): string {
   )));
 }
 
-/**
- * Returns "yesterday" as a Date, correctly computed in Africa/Kampala (UTC+3)
- * local time, regardless of when this is called (cron, boot, etc).
- *
- * At Kampala midnight the UTC clock is still the previous calendar day.
- * Using server-local `setDate(getDate() - 1)` therefore skipped a day and
- * treated the just-ended Kampala day as already sent.
- */
-function getKampalaYesterday(): Date {
-  return new Date(`${addUtcDays(getKampalaTodayYmd(), -1)}T00:00:00.000Z`);
-}
-
 function getKampalaYesterdayYmd(): string {
   return addUtcDays(getKampalaTodayYmd(), -1);
 }
@@ -74,56 +62,42 @@ function lastCompletedKampalaDays(n: number): string[] {
   return dates;
 }
 
-/**
- * Given a frequency and a reference "yesterday" Date, return:
- *  - reportDate: the canonical ID for this period (last day of the period), used
- *                for dedup in automated_backup_dates
- *  - dates: every individual date in the period to include in the PDF
- *  - shouldSend: whether today is the right day to trigger this frequency
- */
-function getPeriod(
-  frequency: Frequency,
-  yesterday: Date
-): { reportDate: string; dates: string[]; shouldSend: boolean } {
-  const fmt = (d: Date) => d.toISOString().split('T')[0];
-
-  if (frequency === 'daily') {
-    return { reportDate: fmt(yesterday), dates: [fmt(yesterday)], shouldSend: true };
-  }
-
-  if (frequency === 'weekly') {
-    // Send on Monday midnight (yesterday = Sunday, getUTCDay() === 0 — Date is UTC midnight)
-    const isSendDay = yesterday.getUTCDay() === 0;
-    const dates: string[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(yesterday);
-      d.setUTCDate(yesterday.getUTCDate() - i);
-      dates.push(fmt(d));
-    }
-    return { reportDate: fmt(yesterday), dates, shouldSend: isSendDay };
-  }
-
-  // monthly — send on the 1st (yesterday = last day of prev month)
-  const y = yesterday.getUTCFullYear();
-  const m = yesterday.getUTCMonth();
-  const lastDayOfPrevMonth = new Date(Date.UTC(y, m + 1, 0));
-  const isSendDay = yesterday.getUTCDate() === lastDayOfPrevMonth.getUTCDate();
+/** Most recent completed Mon–Sun week in Kampala (Sunday ≤ yesterday). */
+function lastCompletedWeekDates(): string[] {
+  const yesterday = getKampalaYesterdayYmd();
+  const dow = new Date(`${yesterday}T00:00:00.000Z`).getUTCDay(); // 0 = Sunday
+  const sunday = addUtcDays(yesterday, -dow);
   const dates: string[] = [];
-  const cur = new Date(Date.UTC(y, m, 1));
-  while (cur <= yesterday) {
-    dates.push(fmt(cur));
-    cur.setUTCDate(cur.getUTCDate() + 1);
+  for (let i = 6; i >= 0; i--) {
+    dates.push(addUtcDays(sunday, -i));
   }
-  return { reportDate: fmt(yesterday), dates, shouldSend: isSendDay };
+  return dates;
 }
 
-/** Check if a reportDate is already recorded as SUCCESS. */
-async function isAlreadySent(reportDate: string): Promise<boolean> {
-  const r = await query(
-    `SELECT 1 FROM automated_backup_dates WHERE backup_date = $1 AND status = 'SUCCESS'`,
-    [reportDate]
-  );
-  return r.rows.length > 0;
+/** All days of the last completed calendar month in Kampala. */
+function lastCompletedMonthDates(): string[] {
+  const yesterday = getKampalaYesterdayYmd();
+  const d = new Date(`${yesterday}T00:00:00.000Z`);
+  const lastDayOfThatMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+  const monthEnd = yesterday === ymd(lastDayOfThatMonth)
+    ? yesterday
+    : ymd(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0)));
+  const end = new Date(`${monthEnd}T00:00:00.000Z`);
+  const cursor = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+  const dates: string[] = [];
+  while (cursor <= end) {
+    dates.push(ymd(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+/** True at Kampala 1st of month midnight (yesterday = last day of previous month). */
+function isMonthlySendDay(): boolean {
+  const yesterday = getKampalaYesterdayYmd();
+  const d = new Date(`${yesterday}T00:00:00.000Z`);
+  const lastDay = ymd(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)));
+  return yesterday === lastDay;
 }
 
 /**
@@ -146,6 +120,22 @@ async function getUnsentDatesInWindow(days: number): Promise<string[]> {
   );
 
   return window.filter((d) => !success.has(d));
+}
+
+async function getUnsentAmong(dates: string[]): Promise<string[]> {
+  if (dates.length === 0) return [];
+  const result = await query(
+    `SELECT backup_date::text AS backup_date, status
+     FROM automated_backup_dates
+     WHERE backup_date = ANY($1::date[])`,
+    [dates]
+  );
+  const success = new Set(
+    result.rows
+      .filter((row: { status: string }) => row.status === 'SUCCESS')
+      .map((row: { backup_date: string }) => String(row.backup_date).slice(0, 10))
+  );
+  return dates.filter((d) => !success.has(d));
 }
 
 async function recordBatch(dates: string[], status: 'SUCCESS' | 'FAILED', errorMessage?: string): Promise<void> {
@@ -172,9 +162,10 @@ async function sendBackup(dates: string[]): Promise<void> {
 }
 
 /**
- * Daily: look back 7 completed Kampala days and send one combined PDF
- * for every date that is missing or not SUCCESS.
- * Weekly / monthly: send the current period if it is the send day and not yet SUCCESS.
+ * Daily: last 7 unsent days → one PDF.
+ * Weekly: last completed Mon–Sun → one PDF (missed daily days are pages in that week).
+ *         If you switch mid-week, leftover unsent days in the last 7 also go out as one PDF.
+ * Monthly: last completed calendar month → one PDF.
  */
 async function runBackupCheck(source: 'cron' | 'startup'): Promise<void> {
   const settings = await getSettings();
@@ -192,38 +183,65 @@ async function runBackupCheck(source: 'cron' | 'startup'): Promise<void> {
       return;
     }
     console.log(
-      `🔁 ${source}: ${missing.length} day(s) not yet SUCCESS — sending one combined backup (${missing.join(', ')})`
+      `🔁 ${source}: daily — ${missing.length} day(s) not SUCCESS — one combined PDF (${missing.join(', ')})`
     );
     await sendBackup(missing);
     return;
   }
 
-  const yesterday = getKampalaYesterday();
-  const { reportDate, dates, shouldSend } = getPeriod(settings.frequency, yesterday);
+  if (settings.frequency === 'weekly') {
+    const week = lastCompletedWeekDates();
+    const missingInWeek = await getUnsentAmong(week);
+    const missingRecent = await getUnsentDatesInWindow(CATCH_UP_DAYS);
 
-  if (source === 'cron' && !shouldSend) {
-    console.log(`⏭️  ${settings.frequency} backup: not the send day — skipping`);
+    if (missingInWeek.length > 0) {
+      console.log(
+        `🔁 ${source}: weekly — one PDF for ${week[0]} to ${week[6]} (missed daily days are pages in this week)`
+      );
+      await sendBackup(week);
+      return;
+    }
+
+    if (source === 'startup' && missingRecent.length > 0) {
+      console.log(
+        `🔁 ${source}: weekly (after schedule change) — one PDF for leftover days (${missingRecent.join(', ')})`
+      );
+      await sendBackup(missingRecent);
+      return;
+    }
+
+    console.log(`✅ ${source}: weekly — last week ${week[0]} to ${week[6]} already complete`);
     return;
   }
 
-  if (await isAlreadySent(reportDate)) {
-    console.log(`✅ ${source}: ${settings.frequency} backup for ${reportDate} already sent`);
+  const month = lastCompletedMonthDates();
+  const missingInMonth = await getUnsentAmong(month);
+  const sendDay = isMonthlySendDay();
+
+  if (sendDay && (source === 'cron' || missingInMonth.length > 0)) {
+    console.log(`🔁 ${source}: monthly digest — one PDF for ${month[0]} to ${month[month.length - 1]}`);
+    await sendBackup(month);
     return;
   }
 
-  if (source === 'cron' || shouldSend || !(await isAlreadySent(reportDate))) {
-    console.log(`🔁 ${source}: ${settings.frequency} backup for ${reportDate} was missed — sending now`);
-    await sendBackup(dates);
+  if (missingInMonth.length > 0) {
+    console.log(
+      `🔁 ${source}: monthly catch-up — one PDF for ${month[0]} to ${month[month.length - 1]} (includes missed days)`
+    );
+    await sendBackup(month);
+    return;
   }
+
+  console.log(`✅ ${source}: monthly period already complete`);
 }
 
 /**
  * Automated backup scheduler.
  *
  * Respects the frequency saved in backup_email_settings:
- *   daily   → email every night at midnight covering missed days in the last 7
- *   weekly  → email every Monday midnight covering Mon–Sun of the past week
- *   monthly → email on the 1st of each month covering the full previous month
+ *   daily   → one PDF covering any unsent days in the last 7
+ *   weekly  → one PDF for the last completed Mon–Sun (missed daily days are pages in that week)
+ *   monthly → one PDF for the last completed calendar month
  *
  * STARTUP RECOVERY: Render's free tier puts the server to sleep, so the
  * midnight cron may never fire.  45 s after every server boot we check the
