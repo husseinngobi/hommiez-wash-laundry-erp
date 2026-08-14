@@ -309,7 +309,7 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
     }
 
     // Payment / ledger status filter
-    if (payment_status && payment_status !== 'ALL') {
+    if (payment_status && payment_status !== 'ALL' && payment_status !== 'UNPAID') {
       if (payment_status === 'CANCELLED') {
         whereConditions.push(`p.is_cancelled = TRUE`);
       } else {

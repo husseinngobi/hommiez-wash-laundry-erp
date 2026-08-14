@@ -542,13 +542,14 @@ const Payments = () => {
     return <Badge>{method}</Badge>;
   };
 
-  const getStatusBadge = (status: string) => {
-    const styles = {
-      PAID: 'bg-green-500 hover:bg-green-600',
-      PARTIAL: 'bg-yellow-500 hover:bg-yellow-600',
-      UNPAID: 'bg-red-500 hover:bg-red-600',
-    };
-    return <Badge className={styles[status as keyof typeof styles] || ''}>{status}</Badge>;
+  const getStatusBadge = (status: string, isCancelled?: boolean) => {
+    if (isCancelled) {
+      return <Badge className="bg-red-600 hover:bg-red-700">Cancelled</Badge>;
+    }
+    if (status === 'PARTIAL') {
+      return <Badge className="bg-yellow-500 hover:bg-yellow-600">Partial</Badge>;
+    }
+    return <Badge className="bg-green-500 hover:bg-green-600">Paid</Badge>;
   };
 
   const openLinkedOrder = (orderNumber?: string) => {
@@ -795,7 +796,6 @@ const Payments = () => {
                     <SelectItem value="ALL">All Statuses</SelectItem>
                     <SelectItem value="PAID">Paid</SelectItem>
                     <SelectItem value="PARTIAL">Partial</SelectItem>
-                    <SelectItem value="UNPAID">Unpaid</SelectItem>
                     <SelectItem value="CANCELLED">Cancelled</SelectItem>
                   </SelectContent>
                 </Select>
@@ -937,7 +937,7 @@ const Payments = () => {
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3">{getStatusBadge(payment.payment_status)}</td>
+                        <td className="px-4 py-3">{getStatusBadge(payment.payment_status, payment.is_cancelled)}</td>
                         <td className="px-4 py-3 text-sm dark:text-gray-300">
                           {payment.transaction_reference || '-'}
                         </td>
@@ -1295,7 +1295,7 @@ const Payments = () => {
               <div>
                 <Label className="text-gray-600">Payment Status</Label>
                 <div className="mt-1 flex items-center gap-2">
-                  {getStatusBadge(selectedPayment.payment_status)}
+                  {getStatusBadge(selectedPayment.payment_status, selectedPayment.is_cancelled)}
                   {selectedPayment.is_cancelled && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
                       <XCircle className="w-3 h-3" /> CANCELLED
