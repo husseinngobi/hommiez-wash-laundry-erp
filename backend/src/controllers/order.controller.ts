@@ -11,7 +11,7 @@ import { logCreate, logUpdate, logDelete } from '../utils/activityLogger';
 import { getEffectiveBargainLimit, getMaxDiscountForRole } from '../utils/roleLimits';
 import { resolveListBranchId, forbiddenIfOutsideBranch } from '../utils/branchScope';
 import { notifyAdministrators } from './notifications.controller';
-import { calendarDateToTimestamp, kampalaTodayYmd, toKampalaYmd } from '../utils/businessDate';
+import { calendarDateToTimestamp, extractYmd, kampalaTodayYmd, toKampalaYmd, ymdToPgTimestamp } from '../utils/businessDate';
 import fs from 'fs';
 
 type SettingsQuerier = { query: (text: string) => Promise<any> };
@@ -58,7 +58,7 @@ export async function resolveVatConfig(
 
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
   try {
-    const { status, payment_status, customer_id, from_date, to_date, search, page = 1, limit = 15, is_backdated, branch_id } = req.query;
+    const { status, payment_status, customer_id, from_date, to_date, search, page = 1, limit = 15, is_backdated, historical, branch_id } = req.query;
     const userRole = req.user?.role;
     
     // Build WHERE clause
@@ -114,18 +114,11 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       values.push(listBranchId);
     }
 
-    if (is_backdated === 'true' || is_backdated === true) {
-      // Historical filter: flagged past-date orders, plus any order whose
-      // business date is strictly before it was entered. Same-day orders
-      // (created_at and recorded_at on the same Kampala day) stay out.
-      whereClause += ` AND (
-        COALESCE(o.is_backdated, FALSE) = TRUE
-        OR (
-          o.recorded_at IS NOT NULL
-          AND (o.created_at AT TIME ZONE 'Africa/Nairobi')::date
-            < (o.recorded_at AT TIME ZONE 'Africa/Nairobi')::date
-        )
-      )`;
+    const historicalFilterOn = ['true', '1', 'yes'].includes(
+      String(historical ?? is_backdated ?? '').toLowerCase()
+    );
+    if (historicalFilterOn) {
+      whereClause += ` AND COALESCE(o.is_backdated, FALSE) = TRUE`;
     }
     
     // Get total count
@@ -632,7 +625,9 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         discount_percentage, discount_amount, bargainAmountValue, surchargeAmountValue,
         total_amount, finalPaymentStatus, finalPaymentMethod, finalAmountPaidValue,
         balance, 'pending', transaction_reference || null, invoice_number, notes, branchId,
-        customOrderDate || new Date().toISOString(),
+        customOrderDate
+          ? ymdToPgTimestamp(extractYmd(customOrderDate) || toKampalaYmd(new Date(customOrderDate)))
+          : new Date().toISOString(),
         isBackdated,
       ]
     );
@@ -670,8 +665,10 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     
     // Always create a payments ledger row when money was received (links order ↔ Payments ↔ accounting)
     if (finalAmountPaidValue > 0 && finalPaymentMethod !== 'ON_ACCOUNT') {
-      const parsedPaymentDate = calendarDateToTimestamp(requestedCreatePaymentDate);
-      const initialPaymentDate = (parsedPaymentDate || (customOrderDate ? new Date(customOrderDate) : new Date())).toISOString();
+      const paymentYmd =
+        extractYmd(requestedCreatePaymentDate) ||
+        extractYmd(customOrderDate) ||
+        kampalaTodayYmd();
       await client.query(
         `INSERT INTO payments (
           order_id,
@@ -682,14 +679,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           payment_date,
           notes,
           created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6::timestamp, $7, $8)`,
         [
           orderId,
           customer_id,
           finalAmountPaidValue,
           finalPaymentMethod,
           transaction_reference || null,
-          initialPaymentDate,
+          ymdToPgTimestamp(paymentYmd),
           `Initial payment for order ${order_number}`,
           req.user!.id
         ]
@@ -1133,14 +1130,10 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       const userId = req.user?.id;
 
       try {
-        // Chosen payment date wins. For historical orders with no date sent,
-        // fall back to the order's business date instead of "now".
-        const parsedPaymentDate = calendarDateToTimestamp(requestedPaymentDate);
-        const orderBusinessDate = calendarDateToTimestamp(currentOrder.created_at);
-        const paymentTs =
-          parsedPaymentDate ||
-          (currentOrder.is_backdated ? orderBusinessDate : null) ||
-          new Date();
+        const paymentYmd =
+          extractYmd(requestedPaymentDate) ||
+          (currentOrder.is_backdated ? extractYmd(currentOrder.created_at) : null) ||
+          kampalaTodayYmd();
 
         await query(`
           INSERT INTO payments (
@@ -1152,22 +1145,22 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
             payment_date,
             notes,
             created_by
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ) VALUES ($1, $2, $3, $4, $5, $6::timestamp, $7, $8)
         `, [
           id,
           updatedOrder.customer_id,
           paymentAmount,
           payment_method || currentOrder.payment_method || 'CASH',
           transaction_reference || null,
-          paymentTs.toISOString(),
+          ymdToPgTimestamp(paymentYmd),
           notes ? `Manual payment: ${notes}` : 'Manual payment added to order',
           userId
         ]);
 
-        console.log(`✅ Payment transaction record created: ${paymentAmount} for order ${id}`);
+        console.log(`✅ Payment transaction record created: ${paymentAmount} for order ${id} on ${paymentYmd}`);
       } catch (paymentError) {
         console.error('Error creating payment record:', paymentError);
-        // Don't fail the order update if payment record fails
+        throw paymentError;
       }
     }
     

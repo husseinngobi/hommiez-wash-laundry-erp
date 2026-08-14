@@ -61,6 +61,8 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Printer,
   XCircle,
   Trash2,
@@ -954,6 +956,16 @@ const Payments = () => {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="w-full sm:w-auto"
+                >
+                  <ChevronsLeft className="h-4 w-4 sm:mr-1" />
+                  First
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                   className="w-full sm:w-auto"
@@ -975,6 +987,16 @@ const Payments = () => {
                   <span className="sm:hidden">Next</span>
                   <span className="hidden sm:inline">Next</span>
                   <ChevronRight className="h-4 w-4 sm:ml-1" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="w-full sm:w-auto"
+                >
+                  Last
+                  <ChevronsRight className="h-4 w-4 sm:ml-1" />
                 </Button>
               </div>
             )}

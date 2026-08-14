@@ -3,6 +3,8 @@ import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import { createSystemNotification, notifyAdministrators } from './notifications.controller';
+import { forbiddenIfOutsideBranch } from '../utils/branchScope';
+import { extractYmd, kampalaTodayYmd, ymdToPgTimestamp } from '../utils/businessDate';
 
 /**
  * Recalculate order payment totals from remaining payments ledger rows.
@@ -803,6 +805,88 @@ export const exportPaymentsPDF = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Export payments PDF error:', error);
     res.status(500).json({ error: 'Failed to export payments to PDF' });
+  }
+};
+
+/**
+ * Record a payment against an order. The assigned payment_date (YYYY-MM-DD)
+ * is stored as that calendar day — not "now".
+ */
+export const addOrderPayment = async (req: AuthRequest, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const {
+      amount,
+      payment_method,
+      payment_date,
+      transaction_reference,
+      notes,
+    } = req.body || {};
+
+    const paymentAmount = parseFloat(String(amount));
+    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+      return res.status(400).json({ error: 'Payment amount must be greater than zero' });
+    }
+
+    const orderRow = await query(
+      `SELECT * FROM orders WHERE id = $1`,
+      [orderId]
+    );
+    if (orderRow.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    const order = orderRow.rows[0];
+    if (forbiddenIfOutsideBranch(req, res, order.branch_id)) {
+      return;
+    }
+
+    const paymentYmd =
+      extractYmd(payment_date) ||
+      (order.is_backdated ? extractYmd(order.created_at) : null) ||
+      kampalaTodayYmd();
+
+    const inserted = await query(
+      `INSERT INTO payments (
+        order_id,
+        customer_id,
+        amount,
+        payment_method,
+        transaction_reference,
+        payment_date,
+        notes,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6::timestamp, $7, $8)
+      RETURNING *`,
+      [
+        order.id,
+        order.customer_id,
+        paymentAmount,
+        payment_method || order.payment_method || 'CASH',
+        transaction_reference || null,
+        ymdToPgTimestamp(paymentYmd),
+        notes ? `Manual payment: ${notes}` : 'Manual payment added to order',
+        req.user?.id || null,
+      ]
+    );
+
+    if (payment_method) {
+      await query(
+        `UPDATE orders SET payment_method = $1 WHERE id = $2`,
+        [payment_method, order.id]
+      );
+    }
+
+    const updatedOrder = await syncOrderPaymentFromLedger(order.id);
+
+    res.json({
+      message: 'Payment recorded',
+      payment: inserted.rows[0],
+      order: updatedOrder,
+      payment_date: paymentYmd,
+    });
+  } catch (error) {
+    console.error('Add order payment error:', error);
+    res.status(500).json({ error: 'Failed to record payment' });
   }
 };
 

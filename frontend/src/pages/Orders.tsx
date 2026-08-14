@@ -39,7 +39,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare, StickyNote, X, ShieldAlert } from 'lucide-react';
+import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare, StickyNote, X, ShieldAlert } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -170,6 +170,9 @@ const formatDate = (dateString: string | null | undefined) => {
 };
 
 const formatDateTime = (dateString: string) => formatKampalaDateTime(dateString);
+
+const defaultPaymentYmd = (order: { is_backdated?: boolean; created_at?: string }) =>
+  order.is_backdated && order.created_at ? toKampalaYmd(order.created_at) : kampalaTodayYmd();
 
 const getDaysOld = (createdAt: string): string => {
   const created = new Date(createdAt);
@@ -778,6 +781,7 @@ export default function Orders() {
         params.payment_status = paymentFilter;
       }
       if (backdatedFilter) {
+        params.historical = '1';
         params.is_backdated = 'true';
       }
       if (branchFilter !== 'ALL') {
@@ -1127,7 +1131,6 @@ export default function Orders() {
       
       const newAmountPaid = currentPaid + additionalPayment;
       const newBalance = Math.max(0, totalAmount - newAmountPaid);
-      const newPaymentStatus = newBalance <= 0 ? 'PAID' : newBalance < totalAmount ? 'PARTIAL' : 'UNPAID';
 
       // Build payment method string with provider for mobile money
       let finalPaymentMethod: string = paymentMethod;
@@ -1135,18 +1138,13 @@ export default function Orders() {
         finalPaymentMethod = `MOBILE_MONEY_${mobileMoneyProvider}`;
       }
 
-      await axios.put(
-        `${API_BASE_URL}/orders/${selectedOrder.id}`,
+      await axios.post(
+        `${API_BASE_URL}/payments/order/${selectedOrder.id}`,
         {
-          amount_paid: newAmountPaid,
-          balance: newBalance,
-          payment_status: newPaymentStatus,
+          amount: additionalPayment,
           payment_method: finalPaymentMethod,
-          payment_channel: paymentChannel,
-          recipient_account: recipientAccount || null,
-          sender_phone: senderPhone || null,
+          payment_date: paymentDate,
           transaction_reference: transactionReference || null,
-          payment_date: paymentDate || undefined,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -2231,28 +2229,50 @@ export default function Orders() {
                     {/* Pagination for Payment Transactions */}
                     {paymentTransactions.length > paymentTransactionsPerPage && (
                       <div className="flex flex-col sm:flex-row items-center justify-between p-2 sm:p-3 border-t bg-muted/50 gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setPaymentTransactionsPage(p => Math.max(1, p - 1))}
-                          disabled={paymentTransactionsPage === 1}
-                        >
-                          <ChevronLeft className="h-4 w-4 sm:mr-1" />
-                          <span className="hidden sm:inline">Previous</span>
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setPaymentTransactionsPage(1)}
+                            disabled={paymentTransactionsPage === 1}
+                          >
+                            <ChevronsLeft className="h-4 w-4 sm:mr-1" />
+                            <span className="hidden sm:inline">First</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setPaymentTransactionsPage(p => Math.max(1, p - 1))}
+                            disabled={paymentTransactionsPage === 1}
+                          >
+                            <ChevronLeft className="h-4 w-4 sm:mr-1" />
+                            <span className="hidden sm:inline">Previous</span>
+                          </Button>
+                        </div>
                         <span className="text-xs sm:text-sm text-muted-foreground text-center">
-                          <span className="hidden sm:inline">Showing {((paymentTransactionsPage - 1) * paymentTransactionsPerPage) + 1} - {Math.min(paymentTransactionsPage * paymentTransactionsPerPage, paymentTransactions.length)} of {paymentTransactions.length} transactions</span>
-                          <span className="sm:hidden">{((paymentTransactionsPage - 1) * paymentTransactionsPerPage) + 1}-{Math.min(paymentTransactionsPage * paymentTransactionsPerPage, paymentTransactions.length)} of {paymentTransactions.length}</span>
+                          Page {paymentTransactionsPage} of {Math.ceil(paymentTransactions.length / paymentTransactionsPerPage)}
+                          <span className="hidden sm:inline"> · {paymentTransactions.length} transactions</span>
                         </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setPaymentTransactionsPage(p => Math.min(Math.ceil(paymentTransactions.length / paymentTransactionsPerPage), p + 1))}
-                          disabled={paymentTransactionsPage >= Math.ceil(paymentTransactions.length / paymentTransactionsPerPage)}
-                        >
-                          <span className="hidden sm:inline">Next</span>
-                          <ChevronRight className="h-4 w-4 sm:ml-1" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setPaymentTransactionsPage(p => Math.min(Math.ceil(paymentTransactions.length / paymentTransactionsPerPage), p + 1))}
+                            disabled={paymentTransactionsPage >= Math.ceil(paymentTransactions.length / paymentTransactionsPerPage)}
+                          >
+                            <span className="hidden sm:inline">Next</span>
+                            <ChevronRight className="h-4 w-4 sm:ml-1" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setPaymentTransactionsPage(Math.ceil(paymentTransactions.length / paymentTransactionsPerPage))}
+                            disabled={paymentTransactionsPage >= Math.ceil(paymentTransactions.length / paymentTransactionsPerPage)}
+                          >
+                            <span className="hidden sm:inline">Last</span>
+                            <ChevronsRight className="h-4 w-4 sm:ml-1" />
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2283,11 +2303,7 @@ export default function Orders() {
                       const remaining = Math.max(0, totalAmt - paidAmt);
                       setAdditionalPayment(remaining > 0 ? remaining : totalAmt);
                       setPaymentMethod('CASH');
-                      setPaymentDate(
-                        selectedOrder.is_backdated && selectedOrder.created_at
-                          ? toKampalaYmd(selectedOrder.created_at)
-                          : kampalaTodayYmd()
-                      );
+                      setPaymentDate(defaultPaymentYmd(selectedOrder));
                       setShowPaymentDialog(true);
                     }}
                   >
@@ -2678,11 +2694,7 @@ export default function Orders() {
                           ? remaining
                           : parseFloat(String(selectedOrder.total_amount)) || 0
                       );
-                      setPaymentDate(
-                        selectedOrder.is_backdated && selectedOrder.created_at
-                          ? toKampalaYmd(selectedOrder.created_at)
-                          : kampalaTodayYmd()
-                      );
+                      setPaymentDate(defaultPaymentYmd(selectedOrder));
                       setShowPaymentDialog(true);
                     }}
                     variant="default"

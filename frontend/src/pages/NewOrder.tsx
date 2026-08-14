@@ -825,9 +825,7 @@ export default function NewOrder() {
         transaction_reference: transactionRef || null,
         notes,
         branch_id: selectedBranchId ? Number(selectedBranchId) : undefined,
-        ...(canBackdate && useBackdate && orderDate < kampalaTodayYmd()
-          ? { order_date: orderDate, payment_date: orderDate }
-          : {}),
+        ...(canBackdate && useBackdate ? { order_date: orderDate, payment_date: orderDate } : {}),
       };
 
       const response = await axios.post(`${API_BASE_URL}/orders`, orderData, {

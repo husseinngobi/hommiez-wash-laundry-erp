@@ -16,6 +16,19 @@ router.get('/', paymentController.getAllPayments as any);
 // Get payments for a specific order (accessible to all authenticated users)
 router.get('/order/:orderId', paymentController.getPaymentsByOrder as any);
 
+// Record a payment on an order (assigned payment_date is the ledger date)
+router.post(
+  '/order/:orderId',
+  [
+    body('amount').isFloat({ min: 0.01 }).withMessage('Payment amount must be greater than zero'),
+    body('payment_method').optional().isString(),
+    body('payment_date').optional().isString(),
+    body('transaction_reference').optional({ nullable: true }).isString(),
+    body('notes').optional({ nullable: true }).isString(),
+  ],
+  paymentController.addOrderPayment as any
+);
+
 // Get payment by ID (accessible to all authenticated users)
 router.get('/:id', paymentController.getPaymentById as any);
 
