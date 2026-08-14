@@ -8,6 +8,9 @@ import {
 
 type Frequency = 'daily' | 'weekly' | 'monthly';
 
+const KAMPALA_OFFSET_MS = 3 * 60 * 60 * 1000;
+const CATCH_UP_DAYS = 7;
+
 /** Read the enabled/frequency from DB, returns null when backups are disabled. */
 async function getSettings(): Promise<{ frequency: Frequency } | null> {
   try {
@@ -21,17 +24,56 @@ async function getSettings(): Promise<{ frequency: Frequency } | null> {
     return null;
   }
 }
-/** Returns "yesterday" as a Date, correctly computed in Africa/Kampala (UTC+3) local time,
- *  regardless of what moment this is called (cron fire time, server boot time, etc). */
-function getKampalaYesterday(): Date {
-  const now = new Date();
-  const kampalaNow = new Date(now.getTime() + 3 * 60 * 60 * 1000); // shift to UTC+3
-  return new Date(Date.UTC(
+
+function ymd(d: Date): string {
+  return d.toISOString().split('T')[0];
+}
+
+function addUtcDays(ymdDate: string, delta: number): string {
+  const d = new Date(`${ymdDate}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return ymd(d);
+}
+
+/** Today's calendar date in Africa/Kampala (UTC+3), as YYYY-MM-DD. */
+function getKampalaTodayYmd(): string {
+  const kampalaNow = new Date(Date.now() + KAMPALA_OFFSET_MS);
+  return ymd(new Date(Date.UTC(
     kampalaNow.getUTCFullYear(),
     kampalaNow.getUTCMonth(),
-    kampalaNow.getUTCDate() - 1
-  ));
+    kampalaNow.getUTCDate()
+  )));
 }
+
+/**
+ * Returns "yesterday" as a Date, correctly computed in Africa/Kampala (UTC+3)
+ * local time, regardless of when this is called (cron, boot, etc).
+ *
+ * At Kampala midnight the UTC clock is still the previous calendar day.
+ * Using server-local `setDate(getDate() - 1)` therefore skipped a day and
+ * treated the just-ended Kampala day as already sent.
+ */
+function getKampalaYesterday(): Date {
+  return new Date(`${addUtcDays(getKampalaTodayYmd(), -1)}T00:00:00.000Z`);
+}
+
+function getKampalaYesterdayYmd(): string {
+  return addUtcDays(getKampalaTodayYmd(), -1);
+}
+
+/**
+ * Last N completed Kampala calendar days, oldest → newest
+ * (does not include today).
+ */
+function lastCompletedKampalaDays(n: number): string[] {
+  const yesterday = getKampalaYesterdayYmd();
+  const dates: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    dates.push(addUtcDays(yesterday, -i));
+  }
+  return dates;
+}
+
 /**
  * Given a frequency and a reference "yesterday" Date, return:
  *  - reportDate: the canonical ID for this period (last day of the period), used
@@ -50,27 +92,27 @@ function getPeriod(
   }
 
   if (frequency === 'weekly') {
-    // Send on Monday midnight (yesterday = Sunday, getDay() === 0)
-    const isSendDay = yesterday.getDay() === 0;
-    // Build Mon–Sun dates for the week ending yesterday (Sunday)
+    // Send on Monday midnight (yesterday = Sunday, getUTCDay() === 0 — Date is UTC midnight)
+    const isSendDay = yesterday.getUTCDay() === 0;
     const dates: string[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(yesterday);
-      d.setDate(yesterday.getDate() - i);
+      d.setUTCDate(yesterday.getUTCDate() - i);
       dates.push(fmt(d));
     }
     return { reportDate: fmt(yesterday), dates, shouldSend: isSendDay };
   }
 
   // monthly — send on the 1st (yesterday = last day of prev month)
-  const lastDayOfPrevMonth = new Date(yesterday.getFullYear(), yesterday.getMonth() + 1, 0);
-  const isSendDay = yesterday.getDate() === lastDayOfPrevMonth.getDate();
-  const firstDay = new Date(yesterday.getFullYear(), yesterday.getMonth(), 1);
+  const y = yesterday.getUTCFullYear();
+  const m = yesterday.getUTCMonth();
+  const lastDayOfPrevMonth = new Date(Date.UTC(y, m + 1, 0));
+  const isSendDay = yesterday.getUTCDate() === lastDayOfPrevMonth.getUTCDate();
   const dates: string[] = [];
-  const cur = new Date(firstDay);
+  const cur = new Date(Date.UTC(y, m, 1));
   while (cur <= yesterday) {
     dates.push(fmt(cur));
-    cur.setDate(cur.getDate() + 1);
+    cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return { reportDate: fmt(yesterday), dates, shouldSend: isSendDay };
 }
@@ -84,16 +126,94 @@ async function isAlreadySent(reportDate: string): Promise<boolean> {
   return r.rows.length > 0;
 }
 
-/** Core: build and send the backup email, then record result. */
-async function sendBackup(reportDate: string, dates: string[]): Promise<void> {
-  console.log(`📧 Sending backup for period ending ${reportDate} (${dates.length} day(s))`);
-  const result = await emailBackupService.sendDailyBackup(dates);
+/**
+ * Dates in the last N completed Kampala days that are missing from
+ * automated_backup_dates or not marked SUCCESS (FAILED / PENDING).
+ */
+async function getUnsentDatesInWindow(days: number): Promise<string[]> {
+  const window = lastCompletedKampalaDays(days);
+  const result = await query(
+    `SELECT backup_date::text AS backup_date, status
+     FROM automated_backup_dates
+     WHERE backup_date = ANY($1::date[])`,
+    [window]
+  );
+
+  const success = new Set(
+    result.rows
+      .filter((row: { status: string }) => row.status === 'SUCCESS')
+      .map((row: { backup_date: string }) => String(row.backup_date).slice(0, 10))
+  );
+
+  return window.filter((d) => !success.has(d));
+}
+
+async function recordBatch(dates: string[], status: 'SUCCESS' | 'FAILED', errorMessage?: string): Promise<void> {
+  for (const date of dates) {
+    await recordBackupAttempt(date, status, errorMessage);
+  }
+}
+
+/** Core: build and send one email (single- or multi-day PDF), then record every date. */
+async function sendBackup(dates: string[]): Promise<void> {
+  if (dates.length === 0) return;
+
+  const sorted = [...dates].sort();
+  console.log(`📧 Sending backup for ${sorted.length} day(s): ${sorted.join(', ')}`);
+  const result = await emailBackupService.sendDailyBackup(sorted);
+
   if (result.success) {
-    await recordBackupAttempt(reportDate, 'SUCCESS');
-    console.log(`✅ Backup sent — period ending ${reportDate}`);
+    await recordBatch(sorted, 'SUCCESS');
+    console.log(`✅ Backup sent — ${sorted.length} day(s) marked SUCCESS`);
   } else {
-    await recordBackupAttempt(reportDate, 'FAILED', result.message);
+    await recordBatch(sorted, 'FAILED', result.message);
     console.error(`❌ Backup failed: ${result.message}`);
+  }
+}
+
+/**
+ * Daily: look back 7 completed Kampala days and send one combined PDF
+ * for every date that is missing or not SUCCESS.
+ * Weekly / monthly: send the current period if it is the send day and not yet SUCCESS.
+ */
+async function runBackupCheck(source: 'cron' | 'startup'): Promise<void> {
+  const settings = await getSettings();
+  if (!settings) {
+    if (source === 'cron') {
+      console.log('⏭️  Automatic email backups disabled — skipping');
+    }
+    return;
+  }
+
+  if (settings.frequency === 'daily') {
+    const missing = await getUnsentDatesInWindow(CATCH_UP_DAYS);
+    if (missing.length === 0) {
+      console.log(`✅ ${source}: last ${CATCH_UP_DAYS} days already marked SUCCESS`);
+      return;
+    }
+    console.log(
+      `🔁 ${source}: ${missing.length} day(s) not yet SUCCESS — sending one combined backup (${missing.join(', ')})`
+    );
+    await sendBackup(missing);
+    return;
+  }
+
+  const yesterday = getKampalaYesterday();
+  const { reportDate, dates, shouldSend } = getPeriod(settings.frequency, yesterday);
+
+  if (source === 'cron' && !shouldSend) {
+    console.log(`⏭️  ${settings.frequency} backup: not the send day — skipping`);
+    return;
+  }
+
+  if (await isAlreadySent(reportDate)) {
+    console.log(`✅ ${source}: ${settings.frequency} backup for ${reportDate} already sent`);
+    return;
+  }
+
+  if (source === 'cron' || shouldSend || !(await isAlreadySent(reportDate))) {
+    console.log(`🔁 ${source}: ${settings.frequency} backup for ${reportDate} was missed — sending now`);
+    await sendBackup(dates);
   }
 }
 
@@ -101,66 +221,36 @@ async function sendBackup(reportDate: string, dates: string[]): Promise<void> {
  * Automated backup scheduler.
  *
  * Respects the frequency saved in backup_email_settings:
- *   daily   → email every night at midnight covering the previous day
+ *   daily   → email every night at midnight covering missed days in the last 7
  *   weekly  → email every Monday midnight covering Mon–Sun of the past week
  *   monthly → email on the 1st of each month covering the full previous month
  *
  * STARTUP RECOVERY: Render's free tier puts the server to sleep, so the
- * midnight cron may never fire.  45 s after every server boot we check whether
- * the most recent expected report was sent; if not, we send it immediately.
+ * midnight cron may never fire.  45 s after every server boot we check the
+ * last 7 completed Kampala days (daily) or the current period (weekly/monthly).
  */
 export const initializeBackupScheduler = async () => {
   await initializeBackupTracking();
 
-  // ── Midnight cron (fires every night; frequency logic decides whether to send) ──
   cron.schedule('0 0 * * *', async () => {
     console.log('🕐 Midnight backup cron fired');
-    const yesterday = getKampalaYesterday();
-
     try {
-      const settings = await getSettings();
-      if (!settings) {
-        console.log('⏭️  Automatic email backups disabled — skipping');
-        return;
-      }
-
-      const { reportDate, dates, shouldSend } = getPeriod(settings.frequency, yesterday);
-      if (!shouldSend) {
-        console.log(`⏭️  ${settings.frequency} backup: not the send day — skipping`);
-        return;
-      }
-
-      if (await isAlreadySent(reportDate)) {
-        console.log(`✅ Backup for ${reportDate} already sent — nothing to do`);
-        return;
-      }
-
-      await sendBackup(reportDate, dates);
+      await runBackupCheck('cron');
     } catch (err: any) {
       console.error('❌ Midnight backup failed:', err.message);
-      const yd = new Date();
-      yd.setDate(yd.getDate() - 1);
-      await recordBackupAttempt(yd.toISOString().split('T')[0], 'FAILED', err.message);
+      try {
+        const missing = await getUnsentDatesInWindow(CATCH_UP_DAYS);
+        const dates = missing.length > 0 ? missing : [getKampalaYesterdayYmd()];
+        await recordBatch(dates, 'FAILED', err.message);
+      } catch (recordErr: any) {
+        console.error('❌ Failed to record midnight backup failure:', recordErr.message);
+      }
     }
   }, { timezone: 'Africa/Kampala' });
 
-  // ── Startup recovery ────────────────────────────────────────────────────────
   setTimeout(async () => {
     try {
-      const settings = await getSettings();
-      if (!settings) return;
-
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const { reportDate, dates } = getPeriod(settings.frequency, yesterday);
-
-      if (await isAlreadySent(reportDate)) {
-        console.log(`✅ Startup check: ${settings.frequency} backup for ${reportDate} already sent`);
-        return;
-      }
-
-      console.log(`🔁 Startup recovery: ${settings.frequency} backup for ${reportDate} was missed — sending now`);
-      await sendBackup(reportDate, dates);
+      await runBackupCheck('startup');
     } catch (err: any) {
       console.error('❌ Startup backup recovery failed:', err.message);
     }
