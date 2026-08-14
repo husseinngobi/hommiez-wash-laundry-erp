@@ -1,13 +1,15 @@
 import { Response } from 'express';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { resolveListBranchId, andBranchFilter, paymentsFrom } from '../utils/branchScope';
 
 /**
  * Get comprehensive financial dashboard data
  */
 export const getFinancialDashboard = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'all' } = req.query; // 'all', 'today', 'week', 'month', 'year', or specific year like '2021'
+    const { period = 'all', branch_id } = req.query;
+    const branchId = resolveListBranchId(req, branch_id);
 
     let dateFilter = '';
     let paymentsDateFilter = '';
@@ -69,12 +71,16 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
       }
     }
 
+    ordersDateFilter = andBranchFilter(ordersDateFilter, 'branch_id', branchId);
+    expensesDateFilter = andBranchFilter(expensesDateFilter, 'branch_id', branchId);
+    const payFrom = paymentsFrom(branchId);
+
     // Overall summary - USE PAYMENTS TABLE (when money was actually received)
     const revenueResult = await query(
       `SELECT 
         COALESCE(SUM(amount), 0) as total_revenue,
         COUNT(*) as total_orders
-       FROM payments 
+       ${payFrom} 
        ${paymentsDateFilter}`
     );
 
@@ -151,7 +157,7 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
     // outstanding: Total unpaid balances across ALL orders (not filtered by period)
     const cashInResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as cash_in
-       FROM payments 
+       ${payFrom} 
        ${paymentsDateFilter}`
     );
 
@@ -160,7 +166,7 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
          GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
        ), 0) as outstanding
        FROM orders 
-       WHERE payment_status IN ('UNPAID', 'PARTIAL')`
+       WHERE payment_status IN ('UNPAID', 'PARTIAL')${branchId ? ` AND branch_id = ${Number(branchId)}` : ''}`
     );
 
     const cashFlowResult = {

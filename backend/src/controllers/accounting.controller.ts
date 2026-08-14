@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { resolveListBranchId } from '../utils/branchScope';
 
 /**
  * Get Income Statement (Profit & Loss Statement)
@@ -8,7 +9,8 @@ import { AuthRequest } from '../middleware/auth';
  */
 export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'all', from_date, to_date, year } = req.query;
+    const { period = 'all', from_date, to_date, year, branch_id } = req.query;
+    const branchId = resolveListBranchId(req, branch_id);
 
     let dateFilter = '';
     let paymentDateFilter = '';
@@ -66,6 +68,12 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
       if (!baseFilter) return `WHERE ${clause}`;
       return `${baseFilter}\n        AND ${clause}`;
     };
+
+    if (branchId) {
+      paymentDateFilter = appendFilter(paymentDateFilter, `o.branch_id = ${Number(branchId)}`);
+      dateFilter = appendFilter(dateFilter, `o.branch_id = ${Number(branchId)}`);
+      expenseDateFilter = appendFilter(expenseDateFilter, `branch_id = ${Number(branchId)}`);
+    }
 
     // Revenue (from payments table — cash actually received)
     // is_refund may be missing on older DBs; COALESCE treats NULL as not-refund
@@ -634,5 +642,111 @@ export const getFinancialRatios = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Financial ratios error:', error);
     res.status(500).json({ error: 'Failed to calculate financial ratios' });
+  }
+};
+
+/**
+ * Per-branch P&L snapshot for the same period as the income statement.
+ * Company-wide statements stay on the other endpoints; this is the breakdown.
+ */
+export const getBranchSummary = async (req: AuthRequest, res: Response) => {
+  try {
+    const { period = 'all', year } = req.query;
+    const selectedYear = typeof year === 'string' ? Number(year) : NaN;
+    const hasSelectedYear = Number.isInteger(selectedYear) && selectedYear >= 2000;
+    const yearStart = hasSelectedYear ? `${selectedYear}-01-01` : '';
+    const yearEnd = hasSelectedYear ? `${selectedYear + 1}-01-01` : '';
+
+    let paymentDateSql = 'TRUE';
+    let expenseDateSql = 'TRUE';
+    let orderDateSql = 'TRUE';
+
+    switch (period) {
+      case 'today':
+        paymentDateSql = "DATE(p.payment_date) = CURRENT_DATE";
+        expenseDateSql = "DATE(e.expense_date) = CURRENT_DATE";
+        orderDateSql = "DATE(o.created_at) = CURRENT_DATE";
+        break;
+      case 'week':
+        paymentDateSql = "p.payment_date >= CURRENT_DATE - INTERVAL '7 days'";
+        expenseDateSql = "e.expense_date >= CURRENT_DATE - INTERVAL '7 days'";
+        orderDateSql = "o.created_at >= CURRENT_DATE - INTERVAL '7 days'";
+        break;
+      case 'month':
+        paymentDateSql = "DATE_TRUNC('month', p.payment_date) = DATE_TRUNC('month', CURRENT_DATE)";
+        expenseDateSql = "DATE_TRUNC('month', e.expense_date) = DATE_TRUNC('month', CURRENT_DATE)";
+        orderDateSql = "DATE_TRUNC('month', o.created_at) = DATE_TRUNC('month', CURRENT_DATE)";
+        break;
+      case 'year':
+        if (yearStart && yearEnd) {
+          paymentDateSql = `p.payment_date >= '${yearStart}' AND p.payment_date < '${yearEnd}'`;
+          expenseDateSql = `e.expense_date >= '${yearStart}' AND e.expense_date < '${yearEnd}'`;
+          orderDateSql = `o.created_at >= '${yearStart}' AND o.created_at < '${yearEnd}'`;
+        } else {
+          paymentDateSql = "DATE_TRUNC('year', p.payment_date) = DATE_TRUNC('year', CURRENT_DATE)";
+          expenseDateSql = "DATE_TRUNC('year', e.expense_date) = DATE_TRUNC('year', CURRENT_DATE)";
+          orderDateSql = "DATE_TRUNC('year', o.created_at) = DATE_TRUNC('year', CURRENT_DATE)";
+        }
+        break;
+      default:
+        break;
+    }
+
+    const result = await query(`
+      SELECT
+        b.id AS branch_id,
+        b.name AS branch_name,
+        b.code AS branch_code,
+        COALESCE((
+          SELECT SUM(p.amount)
+          FROM payments p
+          JOIN orders o ON o.id = p.order_id
+          WHERE o.branch_id = b.id AND ${paymentDateSql}
+        ), 0) AS revenue,
+        COALESCE((
+          SELECT SUM(e.amount)
+          FROM expenses e
+          WHERE e.branch_id = b.id
+            AND e.status = 'APPROVED'
+            AND ${expenseDateSql}
+        ), 0) AS expenses,
+        COALESCE((
+          SELECT COUNT(*)
+          FROM orders o
+          WHERE o.branch_id = b.id
+            AND LOWER(COALESCE(o.status::text, '')) <> 'cancelled'
+            AND ${orderDateSql}
+        ), 0) AS order_count
+      FROM branches b
+      ORDER BY b.name ASC
+    `);
+
+    const branches = result.rows.map((row: any) => {
+      const revenue = parseFloat(row.revenue) || 0;
+      const expenses = parseFloat(row.expenses) || 0;
+      return {
+        branch_id: row.branch_id,
+        branch_name: row.branch_name,
+        branch_code: row.branch_code,
+        revenue,
+        expenses,
+        net_profit: revenue - expenses,
+        order_count: parseInt(row.order_count, 10) || 0,
+      };
+    });
+
+    res.json({
+      period,
+      overall: {
+        revenue: branches.reduce((s: number, b: any) => s + b.revenue, 0),
+        expenses: branches.reduce((s: number, b: any) => s + b.expenses, 0),
+        net_profit: branches.reduce((s: number, b: any) => s + b.net_profit, 0),
+        order_count: branches.reduce((s: number, b: any) => s + b.order_count, 0),
+      },
+      branches,
+    });
+  } catch (error) {
+    console.error('Branch summary error:', error);
+    res.status(500).json({ error: 'Failed to fetch branch accounting summary' });
   }
 };

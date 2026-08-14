@@ -28,3 +28,16 @@ export function resolveListBranchId(req: AuthRequest, requested?: unknown): numb
   }
   return req.user?.branch_id ?? null;
 }
+
+/** Append AND col = id to a WHERE clause, or start WHERE if empty. */
+export function andBranchFilter(existingWhere: string, column: string, branchId: number | null): string {
+  if (!branchId) return existingWhere;
+  const clause = `${column} = ${Number(branchId)}`;
+  if (!existingWhere || !existingWhere.trim()) return `WHERE ${clause}`;
+  return `${existingWhere} AND ${clause}`;
+}
+
+export function paymentsFrom(branchId: number | null): string {
+  if (!branchId) return 'FROM payments';
+  return `FROM payments p INNER JOIN orders o ON o.id = p.order_id AND o.branch_id = ${Number(branchId)}`;
+}

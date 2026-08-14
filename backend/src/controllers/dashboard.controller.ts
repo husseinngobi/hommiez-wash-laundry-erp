@@ -1,10 +1,12 @@
 import { Response } from 'express';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { resolveListBranchId, andBranchFilter, paymentsFrom } from '../utils/branchScope';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'today' } = req.query; // 'today', 'week', 'month', 'year', 'all'
+    const { period = 'today', branch_id } = req.query; // 'today', 'week', 'month', 'year', 'all'
+    const branchId = resolveListBranchId(req, branch_id);
 
     // Build date filters based on period (using timezone-aware dates)
     // Use 'Africa/Nairobi' timezone (EAT = UTC+3) for local business time
@@ -47,6 +49,11 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         break;
     }
 
+    ordersDateFilter = andBranchFilter(ordersDateFilter, 'branch_id', branchId);
+    updatedAtDateFilter = andBranchFilter(updatedAtDateFilter, 'branch_id', branchId);
+    const payFrom = paymentsFrom(branchId);
+    const branchOrderAnd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
+
     // Orders count for selected period
     const ordersResult = await query(
       `SELECT COUNT(*) as count FROM orders ${ordersDateFilter}`
@@ -55,7 +62,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     // Revenue for selected period (from PAYMENTS, not orders)
     const revenueResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as order_revenue
-       FROM payments ${paymentsDateFilter}`
+       ${payFrom} ${paymentsDateFilter}`
     );
 
     // Delivery revenue for selected period. Deliveries are a side ledger, so a
@@ -94,15 +101,15 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     // CANCELLED - Filter by period (orders cancelled in selected timeframe) - use updated_at
     
     const pendingOrdersResult = await query(
-      `SELECT COUNT(*) as count FROM orders WHERE status = 'pending'`
+      `SELECT COUNT(*) as count FROM orders WHERE status = 'pending' ${branchOrderAnd}`
     );
 
     const processingOrdersResult = await query(
-      `SELECT COUNT(*) as count FROM orders WHERE status = 'processing'`
+      `SELECT COUNT(*) as count FROM orders WHERE status = 'processing' ${branchOrderAnd}`
     );
 
     const readyOrdersResult = await query(
-      `SELECT COUNT(*) as count FROM orders WHERE status = 'ready'`
+      `SELECT COUNT(*) as count FROM orders WHERE status = 'ready' ${branchOrderAnd}`
     );
 
     // DELIVERED - filtered by period (when they were marked delivered via updated_at)
@@ -121,7 +128,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 
     // Payment transactions count for selected period
     const paymentsResult = await query(
-      `SELECT COUNT(*) as count FROM payments ${paymentsDateFilter}`
+      `SELECT COUNT(*) as count ${payFrom} ${paymentsDateFilter}`
     );
 
     // Pending users count (always current, for admin notification badge)
@@ -191,7 +198,14 @@ function periodToDateRange(period: unknown): [Date, Date] | null {
 export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
   try {
     const period = req.query.period || 'month';
+    const branchId = resolveListBranchId(req, req.query.branch_id);
     const dateRange = periodToDateRange(period);
+    const payFrom = paymentsFrom(branchId);
+    const branchExp = branchId ? `AND branch_id = ${Number(branchId)}` : '';
+    const branchOrd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
+    const salaryBranch = branchId
+      ? `AND employee_id IN (SELECT id FROM payroll_employees WHERE branch_id = ${Number(branchId)})`
+      : '';
 
     // When dateRange is null we query all-time (no WHERE clause on date).
     const paymentsWhere = dateRange
@@ -208,7 +222,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
     const revenueResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as total_revenue,
               COUNT(*) as payment_count
-       FROM payments ${paymentsWhere}`,
+       ${payFrom} ${paymentsWhere}`,
       params
     );
 
@@ -231,7 +245,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 
     const expensesResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as total_expenses
-       FROM expenses ${expensesWhere}`,
+       FROM expenses ${expensesWhere} ${branchExp}`,
       params
     );
 
@@ -241,7 +255,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
     let salaries = 0;
     try {
       const salaryResult = await query(
-        `SELECT COALESCE(SUM(net_amount), 0) as total_salaries FROM salary_payments ${salaryWhere}`,
+        `SELECT COALESCE(SUM(net_amount), 0) as total_salaries FROM salary_payments ${salaryWhere} ${salaryBranch}`,
         salaryParams
       );
       salaries = parseFloat(salaryResult.rows[0].total_salaries) || 0;
@@ -252,7 +266,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
          GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
        ), 0) as outstanding_balance
        FROM orders
-       WHERE payment_status IN ('UNPAID', 'PARTIAL')`
+       WHERE payment_status IN ('UNPAID', 'PARTIAL') ${branchOrd}`
     );
 
     const orderRevenue = parseFloat(revenueResult.rows[0].total_revenue) || 0;
@@ -288,7 +302,9 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 export const getPaymentMethodsBreakdown = async (req: AuthRequest, res: Response) => {
   try {
     const period = req.query.period || 'month';
+    const branchId = resolveListBranchId(req, req.query.branch_id);
     const dateRange = periodToDateRange(period);
+    const payFrom = paymentsFrom(branchId);
 
     const whereClause = dateRange
       ? `WHERE payment_date >= $1 AND payment_date <= $2`
@@ -307,7 +323,7 @@ export const getPaymentMethodsBreakdown = async (req: AuthRequest, res: Response
         END as method,
         COUNT(*) as transaction_count,
         COALESCE(SUM(amount), 0) as total_amount
-       FROM payments
+       ${payFrom}
        ${whereClause}
        GROUP BY method
        ORDER BY total_amount DESC`,
@@ -326,6 +342,8 @@ export const getPaymentMethodsBreakdown = async (req: AuthRequest, res: Response
  */
 export const getOutstandingBalances = async (req: AuthRequest, res: Response) => {
   try {
+    const branchId = resolveListBranchId(req, req.query.branch_id);
+    const branchOrd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
     const outstandingExpr = `GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))`;
 
     // Get unpaid orders
@@ -334,7 +352,7 @@ export const getOutstandingBalances = async (req: AuthRequest, res: Response) =>
         COUNT(*) as count,
         COALESCE(SUM(${outstandingExpr}), 0) as total
        FROM orders 
-       WHERE payment_status = 'UNPAID'`
+       WHERE payment_status = 'UNPAID' ${branchOrd}`
     );
 
     // Get partial payments
@@ -343,7 +361,7 @@ export const getOutstandingBalances = async (req: AuthRequest, res: Response) =>
         COUNT(*) as count,
         COALESCE(SUM(${outstandingExpr}), 0) as total
        FROM orders 
-       WHERE payment_status = 'PARTIAL'`
+       WHERE payment_status = 'PARTIAL' ${branchOrd}`
     );
 
     // Get overdue orders (>30 days old with balance)
@@ -353,7 +371,7 @@ export const getOutstandingBalances = async (req: AuthRequest, res: Response) =>
         COALESCE(SUM(${outstandingExpr}), 0) as total
        FROM orders 
        WHERE payment_status IN ('UNPAID', 'PARTIAL')
-       AND created_at < NOW() - INTERVAL '30 days'`
+       AND created_at < NOW() - INTERVAL '30 days' ${branchOrd}`
     );
 
     res.json({
@@ -435,6 +453,8 @@ export const getDailyCollections = async (req: AuthRequest, res: Response) => {
  */
 export const getMonthOverMonth = async (req: AuthRequest, res: Response) => {
   try {
+    const branchId = resolveListBranchId(req, req.query.branch_id);
+    const branchOrd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
     // Current month
     const currentMonthStart = new Date();
     currentMonthStart.setDate(1);
@@ -454,7 +474,7 @@ export const getMonthOverMonth = async (req: AuthRequest, res: Response) => {
         COUNT(*) as order_count,
         COALESCE(SUM(amount_paid), 0) as revenue
        FROM orders 
-       WHERE created_at >= $1 AND created_at <= $2`,
+       WHERE created_at >= $1 AND created_at <= $2 ${branchOrd}`,
       [currentMonthStart, currentMonthEnd]
     );
 
@@ -464,7 +484,7 @@ export const getMonthOverMonth = async (req: AuthRequest, res: Response) => {
         COUNT(*) as order_count,
         COALESCE(SUM(amount_paid), 0) as revenue
        FROM orders 
-       WHERE created_at >= $1 AND created_at <= $2`,
+       WHERE created_at >= $1 AND created_at <= $2 ${branchOrd}`,
       [previousMonthStart, previousMonthEnd]
     );
 
@@ -514,6 +534,8 @@ export const getRecentOrders = async (req: AuthRequest, res: Response) => {
     // Get orders sorted by most recent activity
     // Activity includes: creation, updates, payments
     // BUSINESS RULE: Only ADMIN can see cancelled orders
+    const branchId = resolveListBranchId(req, req.query.branch_id);
+    const branchOrd = branchId ? `AND o.branch_id = ${Number(branchId)}` : '';
     const cancelledFilter = userRole !== 'ADMIN' ? `AND o.status != 'cancelled'` : '';
     
     const sql = `
@@ -540,7 +562,7 @@ export const getRecentOrders = async (req: AuthRequest, res: Response) => {
         ) as last_activity
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
-      WHERE 1=1 ${cancelledFilter}
+      WHERE 1=1 ${cancelledFilter} ${branchOrd}
       ORDER BY last_activity DESC
       LIMIT $1
     `;

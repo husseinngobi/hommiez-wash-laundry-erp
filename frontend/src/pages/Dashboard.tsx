@@ -143,22 +143,22 @@ interface DashboardCache {
   branchPerformance: BranchPerformance[];
 }
 
-function getDashboardCacheKey(period: string, isAdmin: boolean) {
-  return `dashboard-cache:${period}:${isAdmin ? 'admin' : 'staff'}`;
+function getDashboardCacheKey(period: string, isAdmin: boolean, branchId = 'all') {
+  return `dashboard-cache:${period}:${isAdmin ? 'admin' : 'staff'}:${branchId}`;
 }
 
-function readDashboardCache(period: string, isAdmin: boolean): DashboardCache | null {
+function readDashboardCache(period: string, isAdmin: boolean, branchId = 'all'): DashboardCache | null {
   try {
-    const raw = sessionStorage.getItem(getDashboardCacheKey(period, isAdmin));
+    const raw = sessionStorage.getItem(getDashboardCacheKey(period, isAdmin, branchId));
     return raw ? (JSON.parse(raw) as DashboardCache) : null;
   } catch {
     return null;
   }
 }
 
-function writeDashboardCache(period: string, isAdmin: boolean, cache: DashboardCache) {
+function writeDashboardCache(period: string, isAdmin: boolean, cache: DashboardCache, branchId = 'all') {
   try {
-    sessionStorage.setItem(getDashboardCacheKey(period, isAdmin), JSON.stringify(cache));
+    sessionStorage.setItem(getDashboardCacheKey(period, isAdmin, branchId), JSON.stringify(cache));
   } catch {
     // Ignore storage failures and fall back to live fetching.
   }
@@ -207,6 +207,8 @@ export default function Dashboard() {
   const [outstandingBalances, setOutstandingBalances] = useState<OutstandingBalances | null>(() => cachedDashboard?.outstandingBalances ?? null);
   const [monthGrowth, setMonthGrowth] = useState<MonthOverMonth | null>(() => cachedDashboard?.monthGrowth ?? null);
   const [branchPerformance, setBranchPerformance] = useState<BranchPerformance[]>(() => cachedDashboard?.branchPerformance ?? []);
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [branchList, setBranchList] = useState<Array<{ id: number; name: string }>>([]);
 
   const TODAY_KEY = DAY_KEYS[new Date().getDay()];
   const dashboardPeriod = isCashier ? 'today' : statsPeriod;
@@ -275,19 +277,22 @@ export default function Dashboard() {
     if (!token) return;
     
     try {
-      const hasCachedData = Boolean(readDashboardCache(dashboardPeriod, isAdmin));
+      const hasCachedData = Boolean(readDashboardCache(dashboardPeriod, isAdmin, branchFilter));
       if (!hasCachedData) {
         setLoading(true);
       }
+
+      const branchParams = isAdmin && branchFilter !== 'all' ? { branch_id: branchFilter } : {};
       
       // Fetch all data in parallel
       const requests = [
-        axios.get(`${API_BASE_URL}/dashboard/stats?period=${dashboardPeriod}`, {
-          headers: { Authorization: `Bearer ${token}` }
+        axios.get(`${API_BASE_URL}/dashboard/stats`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { period: dashboardPeriod, ...branchParams },
         }),
         axios.get(`${API_BASE_URL}/dashboard/recent-orders`, {
           headers: { Authorization: `Bearer ${token}` },
-          params: { limit: 10 }
+          params: { limit: 10, ...branchParams }
         }),
         axios.get(`${API_BASE_URL}/settings/business-hours`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -297,17 +302,21 @@ export default function Dashboard() {
       // Only fetch financial data for admins
       if (isAdmin) {
         requests.push(
-          axios.get(`${API_BASE_URL}/dashboard/financial-summary?period=${dashboardPeriod}`, {
-            headers: { Authorization: `Bearer ${token}` }
+          axios.get(`${API_BASE_URL}/dashboard/financial-summary`, {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { period: dashboardPeriod, ...branchParams },
           }),
-          axios.get(`${API_BASE_URL}/dashboard/payment-methods-breakdown?period=${dashboardPeriod}`, {
-            headers: { Authorization: `Bearer ${token}` }
+          axios.get(`${API_BASE_URL}/dashboard/payment-methods-breakdown`, {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { period: dashboardPeriod, ...branchParams },
           }),
           axios.get(`${API_BASE_URL}/dashboard/outstanding-balances`, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
+            params: branchParams,
           }),
           axios.get(`${API_BASE_URL}/dashboard/month-over-month`, {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
+            params: branchParams,
           })
         );
       }
@@ -335,13 +344,13 @@ export default function Dashboard() {
         outstandingBalances: isAdmin && responses.length > 3 ? responses[5].data : null,
         monthGrowth: isAdmin && responses.length > 3 ? responses[6].data : null,
         branchPerformance: [],
-      });
+      }, branchFilter);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
     }
-  }, [token, dashboardPeriod, isAdmin]);
+  }, [token, dashboardPeriod, isAdmin, branchFilter]);
 
   // Branch performance is fetched on its own so a failure never blocks the
   // dashboard, and it stays hidden until a second branch is actually created.
@@ -354,16 +363,23 @@ export default function Dashboard() {
       .then((res) => {
         const branches = res.data.multi_branch ? res.data.branches || [] : [];
         setBranchPerformance(branches);
-        const cached = readDashboardCache(dashboardPeriod, isAdmin);
+        const cached = readDashboardCache(dashboardPeriod, isAdmin, branchFilter);
         if (cached) {
           writeDashboardCache(dashboardPeriod, isAdmin, {
             ...cached,
             branchPerformance: branches,
-          });
+          }, branchFilter);
         }
       })
       .catch(() => setBranchPerformance([]));
   }, [token, isAdmin, dashboardPeriod]);
+
+  useEffect(() => {
+    if (!token || !isAdmin) return;
+    axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBranchList(res.data.branches || []))
+      .catch(() => setBranchList([]));
+  }, [token, isAdmin]);
 
   // Initial data fetch and refresh on changes
   useEffect(() => {
@@ -409,6 +425,19 @@ export default function Dashboard() {
               <SelectItem value="month">This Month</SelectItem>
               <SelectItem value="year">This Year</SelectItem>
               <SelectItem value="all">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        {isAdmin && branchList.length > 1 && (
+          <Select value={branchFilter} onValueChange={setBranchFilter}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Branch" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Branches</SelectItem>
+              {branchList.map((b) => (
+                <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         )}
@@ -483,15 +512,24 @@ export default function Dashboard() {
       {/* Branch performance — only rendered once a second branch exists */}
       {isAdmin && branchPerformance.length > 1 && (
         <div className="mb-8 rounded-xl border border-border bg-card p-4 sm:p-6">
-          <h3 className="font-semibold text-lg flex items-center gap-2 mb-4">
+          <h3 className="font-semibold text-lg flex items-center gap-2 mb-1">
             <Building2 className="h-5 w-5 text-primary" />
             Branch Performance
           </h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Click a branch to view its revenue and orders. Choose All Branches to return to the company total.
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {branchPerformance.map((branch) => (
-              <div
+              <button
+                type="button"
                 key={branch.branch_id}
-                className="rounded-lg border border-border bg-background p-4"
+                onClick={() => setBranchFilter(String(branch.branch_id))}
+                className={`text-left rounded-lg border bg-background p-4 transition-colors ${
+                  branchFilter === String(branch.branch_id)
+                    ? 'border-primary ring-2 ring-primary/20'
+                    : 'border-border hover:border-primary/50'
+                }`}
               >
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="min-w-0">
@@ -538,7 +576,7 @@ export default function Dashboard() {
                     </dd>
                   </div>
                 </dl>
-              </div>
+              </button>
             ))}
           </div>
         </div>

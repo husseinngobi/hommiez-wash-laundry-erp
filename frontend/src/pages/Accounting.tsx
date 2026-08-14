@@ -147,6 +147,19 @@ export default function Accounting() {
   const [activeTab, setActiveTab] = useState('income-statement');
   const [period, setPeriod] = useState('all');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
+  const [branchSummary, setBranchSummary] = useState<{
+    overall: { revenue: number; expenses: number; net_profit: number; order_count: number };
+    branches: Array<{
+      branch_id: number;
+      branch_name: string;
+      revenue: number;
+      expenses: number;
+      net_profit: number;
+      order_count: number;
+    }>;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   
   // Export dialog state
@@ -160,11 +173,13 @@ export default function Accounting() {
   const [trialBalance, setTrialBalance] = useState<TrialBalance | null>(null);
 
   const getAccountingPeriodParams = () => {
-    if (period === 'year') {
-      return `period=${period}&year=${selectedYear}`;
+    const parts = period === 'year'
+      ? [`period=${period}`, `year=${selectedYear}`]
+      : [`period=${period}`];
+    if (branchFilter !== 'all') {
+      parts.push(`branch_id=${branchFilter}`);
     }
-
-    return `period=${period}`;
+    return parts.join('&');
   };
 
   const getAsOfDate = () => {
@@ -174,6 +189,13 @@ export default function Accounting() {
 
     return new Date().toISOString().split('T')[0];
   };
+
+  useEffect(() => {
+    if (!token) return;
+    axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBranches(res.data.branches || []))
+      .catch(() => setBranches([]));
+  }, [token]);
 
   useEffect(() => {
     if (activeTab === 'income-statement') {
@@ -186,7 +208,7 @@ export default function Accounting() {
       fetchTrialBalance();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, period, selectedYear, token]);
+  }, [activeTab, period, selectedYear, token, branchFilter]);
 
   const fetchIncomeStatement = async () => {
     try {
@@ -196,6 +218,19 @@ export default function Accounting() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setIncomeStatement(response.data);
+      if (branchFilter === 'all') {
+        try {
+          const summary = await axios.get(
+            `${API_BASE_URL}/accounting/branch-summary?${getAccountingPeriodParams()}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          setBranchSummary(summary.data);
+        } catch {
+          setBranchSummary(null);
+        }
+      } else {
+        setBranchSummary(null);
+      }
     } catch (error) {
       const errorResponse = error && typeof error === 'object' && 'response' in error ? (error as {response?: {data?: {error?: string}}}).response : null;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -643,6 +678,19 @@ export default function Accounting() {
                 <SelectItem value="all">All Time</SelectItem>
               </SelectContent>
             </Select>
+            {branches.length > 1 && (
+              <Select value={branchFilter} onValueChange={setBranchFilter}>
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <SelectValue placeholder="Branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Branches (company books)</SelectItem>
+                  {branches.map((b) => (
+                    <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Button variant="outline" onClick={() => setShowExportDialog(true)} className="w-full sm:w-auto">
               <FileText className="h-4 w-4 mr-2" />
               Export PDF
@@ -748,6 +796,52 @@ export default function Accounting() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {branchFilter === 'all' && branchSummary && branchSummary.branches.length > 1 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>By Branch</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Location snapshot for this period. The figures above remain the combined company books.
+                      </p>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b text-left text-muted-foreground">
+                              <th className="py-2 pr-4">Branch</th>
+                              <th className="py-2 pr-4 text-right">Orders</th>
+                              <th className="py-2 pr-4 text-right">Revenue</th>
+                              <th className="py-2 pr-4 text-right">Expenses</th>
+                              <th className="py-2 text-right">Net</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {branchSummary.branches.map((row) => (
+                              <tr key={row.branch_id} className="border-b last:border-0">
+                                <td className="py-2 pr-4 font-medium">{row.branch_name}</td>
+                                <td className="py-2 pr-4 text-right">{row.order_count}</td>
+                                <td className="py-2 pr-4 text-right">{formatUGX(row.revenue)}</td>
+                                <td className="py-2 pr-4 text-right">{formatUGX(row.expenses)}</td>
+                                <td className={`py-2 text-right font-semibold ${row.net_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  {formatUGX(row.net_profit)}
+                                </td>
+                              </tr>
+                            ))}
+                            <tr className="font-semibold">
+                              <td className="py-2 pr-4">Company total</td>
+                              <td className="py-2 pr-4 text-right">{branchSummary.overall.order_count}</td>
+                              <td className="py-2 pr-4 text-right">{formatUGX(branchSummary.overall.revenue)}</td>
+                              <td className="py-2 pr-4 text-right">{formatUGX(branchSummary.overall.expenses)}</td>
+                              <td className="py-2 text-right">{formatUGX(branchSummary.overall.net_profit)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Detailed P&L Statement */}
                 <Card>

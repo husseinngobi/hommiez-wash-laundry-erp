@@ -6,6 +6,7 @@ import {
   getTrialBalance,
   getAgedReceivables,
   getFinancialRatios,
+  getBranchSummary,
 } from '../controllers/accounting.controller';
 import { authenticate, requireAdmin } from '../middleware/auth';
 
@@ -52,5 +53,7 @@ router.get('/aged-receivables', authenticate as any, requireAdmin as any, getAge
  * @access  Admin only
  */
 router.get('/financial-ratios', authenticate as any, requireAdmin as any, getFinancialRatios as any);
+
+router.get('/branch-summary', authenticate as any, requireAdmin as any, getBranchSummary as any);
 
 export default router;

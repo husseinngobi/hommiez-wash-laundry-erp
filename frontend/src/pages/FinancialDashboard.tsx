@@ -94,6 +94,8 @@ const FinancialDashboard = () => {
   const [period, setPeriod] = useState(() => {
     return localStorage.getItem('financialDashboardPeriod') || 'all';
   });
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
   const [dateRange, setDateRange] = useState({
     from_date: '',
     to_date: '',
@@ -114,9 +116,13 @@ const FinancialDashboard = () => {
       setLoading(true);
       if (!token) return;
       const response = await axios.get(
-        `${API_BASE_URL}/financial/dashboard?period=${period}`,
+        `${API_BASE_URL}/financial/dashboard`,
         {
           headers: { Authorization: `Bearer ${token}` },
+          params: {
+            period,
+            ...(branchFilter !== 'all' ? { branch_id: branchFilter } : {}),
+          },
         }
       );
       setDashboardData(response.data);
@@ -134,11 +140,18 @@ const FinancialDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [period, token]);
+  }, [period, token, branchFilter]);
 
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  useEffect(() => {
+    if (!token) return;
+    axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBranches(res.data.branches || []))
+      .catch(() => setBranches([]));
+  }, [token]);
 
   // Format amount for PDF export
   const formatAmount = (amount: number) => {
@@ -379,7 +392,14 @@ const FinancialDashboard = () => {
   const COLORS = pieData.map((item) => item.color);
 
   return (
-    <MainLayout title="Financial Dashboard" subtitle="Business performance and financial overview">
+    <MainLayout
+      title="Financial Dashboard"
+      subtitle={
+        branchFilter === 'all'
+          ? 'Company-wide performance. Choose a branch to inspect one location; accounting still holds the full books.'
+          : `Showing ${branches.find((b) => String(b.id) === branchFilter)?.name || 'selected branch'} — switch to All Branches for the company total.`
+      }
+    >
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -402,6 +422,19 @@ const FinancialDashboard = () => {
               <SelectItem value="2021">Year 2021</SelectItem>
             </SelectContent>
           </Select>
+          {branches.length > 1 && (
+            <Select value={branchFilter} onValueChange={setBranchFilter}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Branch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Branches (company)</SelectItem>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button onClick={() => setShowExportDialog(true)} variant="outline" className="gap-2 w-full sm:w-auto">
             <FileText className="w-4 h-4 flex-shrink-0" />
             <span className="hidden sm:inline">Export Report</span>
