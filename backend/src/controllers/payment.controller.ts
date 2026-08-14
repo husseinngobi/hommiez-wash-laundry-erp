@@ -265,6 +265,7 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
       from_date,
       to_date,
       payment_method,
+      payment_status,
       search,
       page = 1,
       limit = 50,
@@ -305,6 +306,18 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
       )`);
       values.push(`%${search}%`);
       paramCount++;
+    }
+
+    // Payment / ledger status filter
+    if (payment_status && payment_status !== 'ALL') {
+      if (payment_status === 'CANCELLED') {
+        whereConditions.push(`p.is_cancelled = TRUE`);
+      } else {
+        whereConditions.push(`(p.is_cancelled IS NULL OR p.is_cancelled = FALSE)`);
+        whereConditions.push(`o.payment_status = $${paramCount}`);
+        values.push(payment_status);
+        paramCount++;
+      }
     }
 
     const listBranchId = resolveListBranchId(req, req.query.branch_id);
@@ -352,10 +365,7 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
        LEFT JOIN customers c ON p.customer_id = c.id
        LEFT JOIN users u ON p.created_by = u.id
        WHERE ${whereClause}
-       ORDER BY
-         CASE WHEN o.payment_status IN ('UNPAID', 'PARTIAL') THEN 0 ELSE 1 END,
-         p.payment_date DESC,
-         p.id DESC
+       ORDER BY p.payment_date DESC NULLS LAST, p.id DESC
        LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
       [...values, limit, offset]
     );

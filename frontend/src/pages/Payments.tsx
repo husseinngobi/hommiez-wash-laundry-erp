@@ -160,6 +160,7 @@ const Payments = () => {
     from_date: '',
     to_date: '',
     payment_method: '',
+    payment_status: '',
     search: '',
   });
   
@@ -226,6 +227,7 @@ const Payments = () => {
   // Handle period change
   const handlePeriodChange = (period: string) => {
     setSelectedPeriod(period);
+    setCurrentPage(1);
     if (period !== 'CUSTOM') {
       const dates = getPeriodDates(period);
       setFilters({ ...filters, ...dates });
@@ -729,7 +731,7 @@ const Payments = () => {
             <CardTitle>Filter Payments</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div>
                 <Label>Period</Label>
                 <Select
@@ -778,10 +780,34 @@ const Payments = () => {
                 />
               </div>
               <div>
+                <Label>Payment Status</Label>
+                <Select
+                  value={filters.payment_status || 'ALL'}
+                  onValueChange={(value) => {
+                    setCurrentPage(1);
+                    setFilters({ ...filters, payment_status: value === 'ALL' ? '' : value });
+                  }}
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Statuses</SelectItem>
+                    <SelectItem value="PAID">Paid</SelectItem>
+                    <SelectItem value="PARTIAL">Partial</SelectItem>
+                    <SelectItem value="UNPAID">Unpaid</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
                 <Label>Payment Method</Label>
                 <Select
                   value={filters.payment_method || 'ALL'}
-                  onValueChange={(value) => setFilters({ ...filters, payment_method: value === 'ALL' ? '' : value })}
+                  onValueChange={(value) => {
+                    setCurrentPage(1);
+                    setFilters({ ...filters, payment_method: value === 'ALL' ? '' : value });
+                  }}
                 >
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder="All Methods" />
@@ -803,7 +829,10 @@ const Payments = () => {
                   <Input
                     placeholder="Order number, customer..."
                     value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    onChange={(e) => {
+                      setCurrentPage(1);
+                      setFilters({ ...filters, search: e.target.value });
+                    }}
                     className="pl-10"
                   />
                 </div>
