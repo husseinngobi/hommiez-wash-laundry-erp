@@ -19,10 +19,10 @@ router.get('/order/:orderId', paymentController.getPaymentsByOrder as any);
 // Get payment by ID (accessible to all authenticated users)
 router.get('/:id', paymentController.getPaymentById as any);
 
-// Soft-cancel a payment (marks as cancelled, recalculates order) — ADMIN only
+// Soft-cancel a payment (marks as cancelled, recalculates order) — Admin or Manager
 router.post(
   '/:id/cancel',
-  authorize(UserRole.ADMIN) as any,
+  authorize(UserRole.ADMIN, UserRole.MANAGER) as any,
   [
     body('reason').optional().isString().isLength({ max: 500 }),
   ],

@@ -19,8 +19,8 @@ router.get('/', priceController.getAllPrices as any);
 router.get('/:id', priceController.getPriceById as any);
 
 // Write operations (Admin only)
-router.post('/', authorize(UserRole.ADMIN) as any, priceValidation.create, priceController.createPrice as any);
-router.put('/:id', authorize(UserRole.ADMIN) as any, priceValidation.update, priceController.updatePrice as any);
+router.post('/', authorize(UserRole.ADMIN, UserRole.MANAGER) as any, priceValidation.create, priceController.createPrice as any);
+router.put('/:id', authorize(UserRole.ADMIN, UserRole.MANAGER) as any, priceValidation.update, priceController.updatePrice as any);
 router.delete('/:id', authorize(UserRole.ADMIN) as any, priceController.deletePrice as any);
 
 export default router;

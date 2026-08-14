@@ -83,7 +83,7 @@ const unitConfig = {
 
 
 export default function PriceList() {
-  const { token, canEditPrices } = useAuth();
+  const { token, canEditPrices, isAdmin } = useAuth();
   const { toast } = useToast();
   
   const [items, setItems] = useState<PriceItem[]>([]);
@@ -593,7 +593,7 @@ export default function PriceList() {
         </div>
 
         <div className="flex gap-2">
-          {canEditPrices && (
+          {isAdmin && (
             <Button
               variant="outline"
               size="sm"
@@ -776,7 +776,7 @@ export default function PriceList() {
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      {item.is_active === false ? (
+                      {isAdmin && (item.is_active === false ? (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -796,7 +796,7 @@ export default function PriceList() {
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
-                      )}
+                      ))}
                     </div>
                   ) : (
                     <span className="text-xs text-muted-foreground italic">View only</span>

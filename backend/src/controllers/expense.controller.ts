@@ -3,6 +3,7 @@ import { validationResult } from 'express-validator';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { resolveWriteBranchId, resolveListBranchId } from '../utils/branchScope';
+import { notifyAdministrators } from './notifications.controller';
 
 /**
  * Record a new expense
@@ -424,6 +425,15 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
           notificationTitle,
           notificationMessage
         ]
+      );
+    }
+
+    if (approverRole === 'MANAGER') {
+      await notifyAdministrators(
+        'expense',
+        `Expense ${approval_status.toLowerCase()} by manager`,
+        `${req.user?.full_name} ${approval_status.toLowerCase()} an expense of UGX ${parseFloat(expense.amount).toLocaleString()} (${expense.description}).`,
+        '/expenses'
       );
     }
 

@@ -165,7 +165,8 @@ function writeDashboardCache(period: string, isAdmin: boolean, cache: DashboardC
 }
 
 export default function Dashboard() {
-  const { token, isAdmin, isCashier, user } = useAuth();
+  const { token, isAdmin, isCashier, isManager, user } = useAuth();
+  const canPickBranch = isAdmin || isManager;
   const initialStatsPeriod = (() => {
     const saved = localStorage.getItem('dashboardStatsPeriod');
     if (saved === 'today' || saved === 'week' || saved === 'month' || saved === 'year' || saved === 'all') {
@@ -269,7 +270,7 @@ export default function Dashboard() {
         setLoading(true);
       }
 
-      const branchParams = isAdmin && branchFilter !== 'all' ? { branch_id: branchFilter } : {};
+      const branchParams = canPickBranch && branchFilter !== 'all' ? { branch_id: branchFilter } : {};
       
       // Fetch all data in parallel
       const requests = [
@@ -337,12 +338,12 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [token, dashboardPeriod, isAdmin, branchFilter]);
+  }, [token, dashboardPeriod, isAdmin, canPickBranch, branchFilter]);
 
   // Branch performance is fetched on its own so a failure never blocks the
   // dashboard, and it stays hidden until a second branch is actually created.
   useEffect(() => {
-    if (!token || !isAdmin) return;
+    if (!token || !canPickBranch) return;
     axios
       .get(`${API_BASE_URL}/branches/performance`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -359,14 +360,14 @@ export default function Dashboard() {
         }
       })
       .catch(() => setBranchPerformance([]));
-  }, [token, isAdmin, dashboardPeriod]);
+  }, [token, canPickBranch, dashboardPeriod]);
 
   useEffect(() => {
-    if (!token || !isAdmin) return;
+    if (!token || !canPickBranch) return;
     axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => setBranchList(res.data.branches || []))
       .catch(() => setBranchList([]));
-  }, [token, isAdmin]);
+  }, [token, canPickBranch]);
 
   // Initial data fetch and refresh on changes
   useEffect(() => {
@@ -409,7 +410,7 @@ export default function Dashboard() {
             <SelectItem value="all">All Time</SelectItem>
           </SelectContent>
         </Select>
-        {isAdmin && branchList.length > 1 && (
+        {canPickBranch && branchList.length > 1 && (
           <Select value={branchFilter} onValueChange={setBranchFilter}>
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Branch" />
@@ -491,7 +492,7 @@ export default function Dashboard() {
       </div>
 
       {/* Branch performance — only rendered once a second branch exists */}
-      {isAdmin && branchPerformance.length > 1 && (
+      {canPickBranch && branchPerformance.length > 1 && (
         <div className="mb-8 rounded-xl border border-border bg-card p-4 sm:p-6">
           <h3 className="font-semibold text-lg flex items-center gap-2 mb-1">
             <Building2 className="h-5 w-5 text-primary" />

@@ -120,7 +120,8 @@ const formatLocalDate = (date: Date) => {
 };
 
 const Payments = () => {
-  const { token, isAdmin } = useAuth();
+  const { token, isAdmin, isManager } = useAuth();
+  const canCancelPayments = isAdmin || isManager;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkOrderNumber = searchParams.get('orderNumber');
@@ -1282,7 +1283,7 @@ const Payments = () => {
                 <ExternalLink className="h-4 w-4 mr-2" />
                 View Order
               </Button>
-              {isAdmin && !selectedPayment.is_cancelled && Number(selectedPayment.amount_paid) > 0 && (
+              {canCancelPayments && !selectedPayment.is_cancelled && Number(selectedPayment.amount_paid) > 0 && (
                 <Button
                   variant="outline"
                   className="w-full sm:w-auto border-orange-400 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950"

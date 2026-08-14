@@ -10,6 +10,7 @@ import { generateOrderReceiptPDF } from '../services/pdf.service';
 import { logCreate, logUpdate, logDelete } from '../utils/activityLogger';
 import { getEffectiveBargainLimit, getMaxDiscountForRole } from '../utils/roleLimits';
 import { resolveListBranchId, forbiddenIfOutsideBranch } from '../utils/branchScope';
+import { notifyAdministrators } from './notifications.controller';
 import fs from 'fs';
 
 type SettingsQuerier = { query: (text: string) => Promise<any> };
@@ -964,10 +965,11 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
     if (
       order_status &&
       String(order_status).toLowerCase() === 'cancelled' &&
-      req.user!.role !== 'ADMIN'
+      req.user!.role !== 'ADMIN' &&
+      req.user!.role !== 'MANAGER'
     ) {
       return res.status(403).json({
-        error: 'Only administrators can cancel an order',
+        error: 'Only administrators and managers can cancel an order',
       });
     }
 
@@ -1224,11 +1226,11 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     const dbStatus = status.toLowerCase();
     
     // BUSINESS RULE: Only ADMIN can cancel orders
-    if (dbStatus === 'cancelled' && req.user?.role !== 'ADMIN') {
+    if (dbStatus === 'cancelled' && req.user?.role !== 'ADMIN' && req.user?.role !== 'MANAGER') {
       return res.status(403).json({ 
-        error: 'Only administrators can cancel orders',
+        error: 'Only administrators and managers can cancel orders',
         businessRule: 'CANCELLATION_RESTRICTED',
-        requiredRole: 'ADMIN',
+        requiredRole: 'ADMIN or MANAGER',
         yourRole: req.user?.role
       });
     }
@@ -1382,6 +1384,15 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
       message: 'Order status updated successfully',
       order: result.rows[0],
     });
+
+    if (dbStatus === 'cancelled' && req.user?.role === 'MANAGER') {
+      notifyAdministrators(
+        'order',
+        'Order cancelled by manager',
+        `${req.user.full_name} cancelled order ${orderNumber} (${customerName}).`,
+        `/orders`
+      ).catch(() => undefined);
+    }
   } catch (error) {
     console.error('Update order status error:', error);
     res.status(500).json({ error: 'Failed to update order status' });

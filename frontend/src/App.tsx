@@ -157,8 +157,8 @@ const App = () => (
 
               {/* ── Protected: Admin only ── */}
               <Route path="/settings" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><Settings /></ProtectedRoute></Suspense>} />
-              <Route path="/user-management" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><UserManagement /></ProtectedRoute></Suspense>} />
-              <Route path="/password-reset-requests" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><PasswordResetRequests /></ProtectedRoute></Suspense>} />
+              <Route path="/user-management" element={<Suspense fallback={routeFallback}><ProtectedRoute requireManager><UserManagement /></ProtectedRoute></Suspense>} />
+              <Route path="/password-reset-requests" element={<Suspense fallback={routeFallback}><ProtectedRoute requireManager><PasswordResetRequests /></ProtectedRoute></Suspense>} />
               <Route path="/financial" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><FinancialDashboard /></ProtectedRoute></Suspense>} />
               <Route path="/accounting" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><Accounting /></ProtectedRoute></Suspense>} />
               <Route path="/refund-requests" element={<Suspense fallback={routeFallback}><ProtectedRoute requireAdmin><RefundRequests /></ProtectedRoute></Suspense>} />

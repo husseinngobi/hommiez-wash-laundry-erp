@@ -127,7 +127,8 @@ interface Statistics {
 }
 
 const UserManagement = () => {
-  const { token, isAdmin } = useAuth();
+  const { token, isAdmin, isManager } = useAuth();
+  const canManageUsers = isAdmin || isManager;
   const { toast } = useToast();
   
   const [users, setUsers] = useState<User[]>([]);
@@ -277,13 +278,13 @@ const UserManagement = () => {
   }, [historyPeriod, token, toast]);
 
   useEffect(() => {
-    if (isAdmin) {
+    if (canManageUsers) {
       fetchUsers();
       fetchStatistics();
       fetchActivityLogs();
       fetchBranchOptions();
     }
-  }, [isAdmin, fetchUsers, fetchStatistics, fetchActivityLogs, fetchBranchOptions]);
+  }, [canManageUsers, fetchUsers, fetchStatistics, fetchActivityLogs, fetchBranchOptions]);
 
   // Actions
   const handleApproveUser = async () => {
@@ -559,7 +560,7 @@ const UserManagement = () => {
     return '📋';
   };
 
-  if (!isAdmin) {
+  if (!canManageUsers) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center h-96">
@@ -567,7 +568,7 @@ const UserManagement = () => {
             <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
             <p className="text-gray-600 dark:text-gray-400">
-              This page is only accessible to administrators.
+              This page is only accessible to administrators and managers.
             </p>
           </div>
         </div>
@@ -586,7 +587,9 @@ const UserManagement = () => {
               User Management
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">
-              Manage system users, approve requests, and track activities
+              {isManager && !isAdmin
+                ? 'Approve desktop agents, assign their branch, and help with password resets. Administrators are notified of these actions.'
+                : 'Manage system users, approve requests, and track activities'}
             </p>
           </div>
         </div>
@@ -772,6 +775,7 @@ const UserManagement = () => {
                               <Select
                                 value={user.branch_id ? String(user.branch_id) : 'none'}
                                 onValueChange={(value) => handleUpdateBranch(user, value)}
+                                disabled={isManager && !isAdmin && user.role !== 'DESKTOP_AGENT'}
                               >
                                 <SelectTrigger className="h-8 w-[150px]">
                                   <SelectValue placeholder="Unassigned" />
@@ -821,7 +825,7 @@ const UserManagement = () => {
                                 <History className="h-4 w-4" />
                               </Button>
                               
-                              {user.status === 'PENDING' && (
+                              {user.status === 'PENDING' && (isAdmin || user.role === 'DESKTOP_AGENT') && (
                                 <>
                                   <Button
                                     variant="ghost"
@@ -850,7 +854,7 @@ const UserManagement = () => {
                                 </>
                               )}
                               
-                              {user.status === 'ACTIVE' && user.role !== 'ADMIN' && (
+                              {user.status === 'ACTIVE' && user.role !== 'ADMIN' && (isAdmin || user.role === 'DESKTOP_AGENT') && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -865,7 +869,7 @@ const UserManagement = () => {
                                 </Button>
                               )}
                               
-                              {user.status === 'SUSPENDED' && (
+                              {user.status === 'SUSPENDED' && (isAdmin || user.role === 'DESKTOP_AGENT') && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -877,7 +881,7 @@ const UserManagement = () => {
                                 </Button>
                               )}
                               
-                              {user.role !== 'ADMIN' && (
+                              {isAdmin && user.role !== 'ADMIN' && (
                                 <Button
                                   variant="ghost"
                                   size="sm"

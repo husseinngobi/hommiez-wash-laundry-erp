@@ -2,9 +2,7 @@ import { Response } from 'express';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
-import { createSystemNotification } from './notifications.controller';
-import { logDelete } from '../utils/activityLogger';
-import { resolveListBranchId, forbiddenIfOutsideBranch } from '../utils/branchScope';
+import { createSystemNotification, notifyAdministrators } from './notifications.controller';
 
 /**
  * Recalculate order payment totals from remaining payments ledger rows.
@@ -75,10 +73,10 @@ async function syncOrderPaymentFromLedger(orderId: number | string) {
  */
 export const cancelPayment = async (req: AuthRequest, res: Response) => {
   try {
-    if (!req.user || req.user.role !== 'ADMIN') {
+    if (!req.user || (req.user.role !== 'ADMIN' && req.user.role !== 'MANAGER')) {
       return res.status(403).json({
         error: 'Access denied',
-        message: 'Only administrators can cancel a payment ledger entry',
+        message: 'Only administrators and managers can cancel a payment ledger entry',
       });
     }
 
@@ -163,8 +161,17 @@ export const cancelPayment = async (req: AuthRequest, res: Response) => {
     );
 
     console.log(
-      `🚫 Admin ${req.user.email} soft-cancelled payment #${id} (UGX ${Number(payment.amount).toLocaleString()}) on ${payment.order_number} → ${updatedOrder.payment_status}`
+      `🚫 ${req.user.role} ${req.user.email} soft-cancelled payment #${id} (UGX ${Number(payment.amount).toLocaleString()}) on ${payment.order_number} → ${updatedOrder.payment_status}`
     );
+
+    if (req.user.role === 'MANAGER') {
+      await notifyAdministrators(
+        'payment',
+        'Payment cancelled by manager',
+        `${req.user.full_name} cancelled a ${Number(payment.amount).toLocaleString()} payment on ${payment.order_number}.`,
+        '/payments'
+      );
+    }
 
     res.json({
       message: 'Payment cancelled successfully. You may now delete it permanently if needed.',

@@ -239,9 +239,9 @@ const helpTopics: HelpTopic[] = [
         '5. Use password reset requests to help staff regain access',
       ],
       tips: [
-        'ADMIN has the broadest access, including system and accounting areas',
-        'MANAGER access is broader than Desktop Agent but still restricted from admin-only areas',
-        'Desktop Agent access is focused on day-to-day operations',
+        'ADMIN has Settings, Accounting, Payroll, Financial Dashboard, and permanent deletions',
+        'Managers sit between Admin and Desktop Agent: they can pick branches, edit the price list, approve agent expenses, cancel orders/payments, manage Desktop Agents (including branch switches and password resets). Administrators are notified of those actions.',
+        'Desktop Agent access is focused on day-to-day work at their assigned branch',
       ],
     },
   },

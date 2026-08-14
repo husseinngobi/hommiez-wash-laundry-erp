@@ -193,3 +193,26 @@ export const createSystemNotification = async (
     console.error('Create system notification error:', error);
   }
 };
+
+/** Personal notifications for every active administrator (not a public broadcast). */
+export const notifyAdministrators = async (
+  type: string,
+  title: string,
+  message: string,
+  link?: string
+) => {
+  try {
+    const admins = await query(
+      `SELECT id FROM users
+       WHERE role = 'ADMIN'
+         AND COALESCE(status, 'ACTIVE') = 'ACTIVE'`
+    );
+    await Promise.all(
+      admins.rows.map((admin: { id: number }) =>
+        createSystemNotification(type, title, message, link, admin.id)
+      )
+    );
+  } catch (error) {
+    console.error('Notify administrators error:', error);
+  }
+};

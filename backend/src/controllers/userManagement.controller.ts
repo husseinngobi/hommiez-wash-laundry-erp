@@ -5,6 +5,7 @@ import { UserRole, UserStatus } from '../models/User';
 import bcrypt from 'bcryptjs';
 import { userNotificationService } from '../services/user-notification.service';
 import { getSystemAdminEmails, isSystemAdminEmail } from '../utils/systemAdmin';
+import { notifyAdministrators } from './notifications.controller';
 
 const getHiddenSystemAdminEmails = (req: AuthRequest): string[] => {
   if (req.user?.is_system_admin) {
@@ -25,6 +26,17 @@ const enforceTargetVisibility = (req: AuthRequest, targetEmail?: string) => {
   }
 
   return null;
+};
+
+const managerMayOnlyManageAgents = (req: AuthRequest, targetRole?: string) => {
+  if (req.user?.role !== 'MANAGER') return null;
+  if (targetRole === 'DESKTOP_AGENT') return null;
+  return {
+    status: 403,
+    payload: {
+      error: 'Managers can only manage Desktop Agent accounts. Ask an administrator for other roles.',
+    },
+  };
 };
 
 const tableHasColumn = async (tableName: string, columnName: string): Promise<boolean> => {
@@ -181,6 +193,11 @@ export const approveUser = async (req: AuthRequest, res: Response) => {
     if (visibilityBlock) {
       return res.status(visibilityBlock.status).json(visibilityBlock.payload);
     }
+
+    const managerBlock = managerMayOnlyManageAgents(req, user.role);
+    if (managerBlock) {
+      return res.status(managerBlock.status).json(managerBlock.payload);
+    }
     
     if (user.status !== UserStatus.PENDING) {
       return res.status(400).json({ error: 'User is not awaiting approval' });
@@ -196,6 +213,15 @@ export const approveUser = async (req: AuthRequest, res: Response) => {
     );
 
     const approvedUser = result.rows[0];
+
+    if (req.user?.role === 'MANAGER') {
+      await notifyAdministrators(
+        'user',
+        'Staff approved by manager',
+        `${req.user.full_name} approved ${approvedUser.full_name} (${approvedUser.role}).`,
+        '/user-management'
+      );
+    }
 
     // Send approval notification email to user
     userNotificationService.notifyUserApproved({
@@ -261,6 +287,11 @@ export const rejectUser = async (req: AuthRequest, res: Response) => {
     const visibilityBlock = enforceTargetVisibility(req, user.email);
     if (visibilityBlock) {
       return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
+
+    const managerBlock = managerMayOnlyManageAgents(req, user.role);
+    if (managerBlock) {
+      return res.status(managerBlock.status).json(managerBlock.payload);
     }
     
     if (user.status !== UserStatus.PENDING) {
@@ -341,6 +372,11 @@ export const suspendUser = async (req: AuthRequest, res: Response) => {
     if (visibilityBlock) {
       return res.status(visibilityBlock.status).json(visibilityBlock.payload);
     }
+
+    const managerBlock = managerMayOnlyManageAgents(req, user.role);
+    if (managerBlock) {
+      return res.status(managerBlock.status).json(managerBlock.payload);
+    }
     
     // Prevent suspending admins
     if (user.role === UserRole.ADMIN) {
@@ -397,7 +433,7 @@ export const activateUser = async (req: AuthRequest, res: Response) => {
     
     // Check if user exists
     const userCheck = await query(
-      'SELECT id, email, full_name, status FROM users WHERE id = $1',
+      'SELECT id, email, full_name, status, role FROM users WHERE id = $1',
       [userId]
     );
     
@@ -410,6 +446,11 @@ export const activateUser = async (req: AuthRequest, res: Response) => {
     const visibilityBlock = enforceTargetVisibility(req, user.email);
     if (visibilityBlock) {
       return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
+
+    const managerBlock = managerMayOnlyManageAgents(req, user.role);
+    if (managerBlock) {
+      return res.status(managerBlock.status).json(managerBlock.payload);
     }
     
     if (user.status === UserStatus.ACTIVE) {
@@ -559,7 +600,7 @@ export const updateUserBranch = async (req: AuthRequest, res: Response) => {
     const { branch_id } = req.body;
 
     const userCheck = await query(
-      'SELECT id, email, full_name, branch_id FROM users WHERE id = $1',
+      'SELECT id, email, full_name, branch_id, role FROM users WHERE id = $1',
       [userId]
     );
     if (userCheck.rows.length === 0) {
@@ -569,6 +610,11 @@ export const updateUserBranch = async (req: AuthRequest, res: Response) => {
     const visibilityBlock = enforceTargetVisibility(req, userCheck.rows[0].email);
     if (visibilityBlock) {
       return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
+
+    const managerBlock = managerMayOnlyManageAgents(req, userCheck.rows[0].role);
+    if (managerBlock) {
+      return res.status(managerBlock.status).json(managerBlock.payload);
     }
 
     let branchId: number | null = null;
@@ -586,6 +632,15 @@ export const updateUserBranch = async (req: AuthRequest, res: Response) => {
        RETURNING id, email, full_name, role, status, branch_id`,
       [branchId, userId]
     );
+
+    if (req.user?.role === 'MANAGER') {
+      await notifyAdministrators(
+        'user',
+        'Staff branch changed',
+        `${req.user.full_name} moved ${result.rows[0].full_name} to a different branch.`,
+        '/user-management'
+      );
+    }
 
     res.json({
       success: true,
@@ -942,7 +997,7 @@ export const resetUserPassword = async (req: AuthRequest, res: Response) => {
     const { temporaryPassword } = req.body;
     const adminId = req.user!.id;
 
-    const targetUserResult = await query('SELECT email FROM users WHERE id = $1', [userId]);
+    const targetUserResult = await query('SELECT email, role, full_name FROM users WHERE id = $1', [userId]);
     if (targetUserResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -950,6 +1005,11 @@ export const resetUserPassword = async (req: AuthRequest, res: Response) => {
     const visibilityBlock = enforceTargetVisibility(req, targetUserResult.rows[0].email);
     if (visibilityBlock) {
       return res.status(visibilityBlock.status).json(visibilityBlock.payload);
+    }
+
+    const managerBlock = managerMayOnlyManageAgents(req, targetUserResult.rows[0].role);
+    if (managerBlock) {
+      return res.status(managerBlock.status).json(managerBlock.payload);
     }
     
     if (!temporaryPassword || temporaryPassword.length < 6) {
@@ -992,6 +1052,15 @@ export const resetUserPassword = async (req: AuthRequest, res: Response) => {
     }
     
     console.log(`✅ Admin ${adminId} reset password for user ${userId}`);
+
+    if (req.user?.role === 'MANAGER') {
+      await notifyAdministrators(
+        'security',
+        'Password reset by manager',
+        `${req.user.full_name} issued a temporary password for ${targetUserResult.rows[0].full_name}.`,
+        '/password-reset-requests'
+      );
+    }
     
     res.json({ 
       success: true,

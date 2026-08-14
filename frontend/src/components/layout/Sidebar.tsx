@@ -45,9 +45,9 @@ const navigation = [
 ];
 
 const secondaryNavigation = [
-  { name: 'User Management', href: '/user-management', icon: Shield, adminOnly: true }, // Admin only
-  { name: 'Password Resets', href: '/password-reset-requests', icon: KeyRound, adminOnly: true }, // Admin only
-  { name: 'Refund Requests', href: '/refund-requests', icon: ClipboardCheck, adminOnly: true }, // Admin only
+  { name: 'User Management', href: '/user-management', icon: Shield, opsLead: true },
+  { name: 'Password Resets', href: '/password-reset-requests', icon: KeyRound, opsLead: true },
+  { name: 'Refund Requests', href: '/refund-requests', icon: ClipboardCheck, adminOnly: true },
   { name: 'Financial Dashboard', href: '/financial', icon: TrendingUp, adminOnly: true },
   { name: 'Accounting', href: '/accounting', icon: FileText, adminOnly: true },
   { name: 'Payroll', href: '/payroll', icon: Users, adminOnly: true },
@@ -113,6 +113,7 @@ export function Sidebar({ isOpen, hasInteracted = false, onClose }: SidebarProps
   const visibleSecondaryNavigation = secondaryNavigation.filter(item => {
     // Admin-only pages (User Management, Financial, Accounting, Payroll)
     if (item.adminOnly && !isAdmin) return false;
+    if (item.opsLead && !isAdmin && !isManager) return false;
     
     // Settings: Check permission
     if (item.href === '/settings' && !canAccessSettings) return false;

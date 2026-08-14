@@ -503,7 +503,7 @@ const Expenses = () => {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
-                          {isAdmin && expense.status === 'PENDING' && (
+                          {(isAdmin || isManager) && expense.status === 'PENDING' && (
                             <>
                               <Button
                                 size="sm"

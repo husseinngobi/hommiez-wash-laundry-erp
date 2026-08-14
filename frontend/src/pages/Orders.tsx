@@ -600,6 +600,7 @@ const printReceipt = (
 
 export default function Orders() {
   const { token, canCancelOrders, user, isAdmin } = useAuth();
+  const canCancelPayments = canCancelOrders;
   const { toast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
@@ -2161,7 +2162,7 @@ export default function Orders() {
                           <TableHead className="whitespace-nowrap px-2 sm:px-4">Reference</TableHead>
                           <TableHead className="whitespace-nowrap px-2 sm:px-4">Received By</TableHead>
                           <TableHead className="whitespace-nowrap px-2 sm:px-4">Notes</TableHead>
-                          {isAdmin && <TableHead className="whitespace-nowrap px-2 sm:px-4">Actions</TableHead>}
+                          {canCancelPayments && <TableHead className="whitespace-nowrap px-2 sm:px-4">Actions</TableHead>}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2203,7 +2204,7 @@ export default function Orders() {
                                 </Button>
                               </div>
                             </TableCell>
-                            {isAdmin && Number(payment.amount) > 0 && (
+                            {canCancelPayments && Number(payment.amount) > 0 && (
                               <TableCell className="px-2 sm:px-4">
                                 <Button
                                   size="sm"
@@ -2218,7 +2219,7 @@ export default function Orders() {
                                 </Button>
                               </TableCell>
                             )}
-                            {isAdmin && Number(payment.amount) <= 0 && <TableCell />}
+                            {canCancelPayments && Number(payment.amount) <= 0 && <TableCell />}
                           </TableRow>
                         ))}
                         <TableRow className="bg-green-50 dark:bg-green-950 font-bold">
@@ -2226,7 +2227,7 @@ export default function Orders() {
                           <TableCell className="text-green-600 font-bold px-2 sm:px-4 whitespace-nowrap">
                             {formatUGX(paymentTransactions.reduce((sum, p) => sum + Number(p.amount), 0))}
                           </TableCell>
-                          <TableCell colSpan={isAdmin ? 4 : 3}></TableCell>
+                          <TableCell colSpan={canCancelPayments ? 4 : 3}></TableCell>
                         </TableRow>
                       </TableBody>
                     </Table>
@@ -3100,7 +3101,7 @@ export default function Orders() {
                     <SelectItem value="READY">✅ Ready — cleaned, awaiting collection</SelectItem>
                     <SelectItem value="DELIVERED">📦 Delivered — customer has collected</SelectItem>
                     {canCancelOrders && (
-                      <SelectItem value="CANCELLED">🚫 Cancelled (Admin only)</SelectItem>
+                      <SelectItem value="CANCELLED">🚫 Cancelled</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
