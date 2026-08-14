@@ -494,8 +494,10 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
 
     const staffWhereSql = staffWhereClauses.join(' AND ');
 
+    const ghostNameClause = `AND LOWER(REGEXP_REPLACE(COALESCE(u.full_name, ''), '\\s+', ' ', 'g')) NOT LIKE '%mutoni blessing%'`;
+
     // Staff performance: only people who actually created orders. Active staff
-    // with zero history (and deleted staff with no orders) stay off the table.
+    // with zero history (and deleted/pending staff) stay off the table.
     const staffStats = await query(`
       SELECT 
         u.id,
@@ -508,10 +510,11 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(o.discount_amount), 0) as total_discounts_given,
         COALESCE(SUM(o.bargain_amount), 0) as total_bargains_given
       FROM users u
-      LEFT JOIN orders o ON u.id = o.user_id ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
+      INNER JOIN orders o ON u.id = o.user_id ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
       LEFT JOIN payments p ON o.id = p.order_id ${dateFilter !== '1=1' ? `AND ${dateFilter}` : ''}
       WHERE ${staffWhereSql}
-        AND u.deleted_at IS NULL
+        AND COALESCE(u.status, 'ACTIVE') = 'ACTIVE'
+        ${ghostNameClause}
       GROUP BY u.id, u.full_name, u.role, u.status
       HAVING COUNT(DISTINCT o.id) > 0
       ORDER BY total_revenue DESC
@@ -544,7 +547,8 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
       JOIN users u ON o.user_id = u.id
       WHERE ${dailyWhereSql}
         ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
-        AND u.deleted_at IS NULL
+        AND COALESCE(u.status, 'ACTIVE') = 'ACTIVE'
+        AND LOWER(REGEXP_REPLACE(COALESCE(u.full_name, ''), '\\s+', ' ', 'g')) NOT LIKE '%mutoni blessing%'
       GROUP BY DATE(p.payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi'), u.full_name
       ORDER BY date DESC, revenue DESC
     `, dailyWhereParams);

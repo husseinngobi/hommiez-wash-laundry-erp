@@ -126,6 +126,24 @@ interface VATSummaryData {
   }>;
 }
 
+function isRemovedStaffName(name?: string) {
+  const normalized = (name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return normalized.includes('mutoni blessing');
+}
+
+function sanitizeStaffPerformance(data: StaffPerformanceData | null): StaffPerformanceData | null {
+  if (!data) return null;
+  return {
+    ...data,
+    staff_stats: (data.staff_stats || []).filter(
+      (staff) => Number(staff.total_orders) > 0 && !isRemovedStaffName(staff.staff_name)
+    ),
+    daily_staff_performance: (data.daily_staff_performance || []).filter(
+      (row) => !isRemovedStaffName(row.staff_name)
+    ),
+  };
+}
+
 export default function Reports() {
   const { token, user, isAdmin } = useAuth();
   const { toast } = useToast();
@@ -231,7 +249,7 @@ export default function Reports() {
       const response = await axios.get(`${API_BASE_URL}/reports/staff-performance?${buildPeriodParams()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setStaffPerformance(response.data);
+      setStaffPerformance(sanitizeStaffPerformance(response.data));
     } catch (error: unknown) {
       console.error('Failed to load staff performance:', error);
       // Show user-friendly error

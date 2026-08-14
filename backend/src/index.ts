@@ -30,6 +30,7 @@ import { ensureSurcharges } from './database/ensureSurcharges';
 import { ensureNotificationReads } from './database/ensureNotificationReads';
 import { ensurePaymentCancellation } from './database/ensurePaymentCancellation';
 import { ensureBranchScopedData } from './database/ensureBranchScopedData';
+import { ensureGhostStaffRemoved } from './database/ensureGhostStaffRemoved';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -223,6 +224,12 @@ const startServer = async () => {
       await ensureBranchScopedData();
     } catch (branchScopeErr) {
       console.error('⚠️ ensureBranchScopedData migration skipped or failed:', branchScopeErr);
+    }
+
+    try {
+      await ensureGhostStaffRemoved();
+    } catch (ghostStaffErr) {
+      console.error('⚠️ ghost staff cleanup skipped or failed:', ghostStaffErr);
     }
 
     // Ensure upload directories exist
