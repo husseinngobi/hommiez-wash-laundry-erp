@@ -171,7 +171,7 @@ export default function Dashboard() {
     if (saved === 'today' || saved === 'week' || saved === 'month' || saved === 'year' || saved === 'all') {
       return saved;
     }
-    return isCashier ? 'today' : 'all';
+    return 'all';
   })();
   const cachedDashboard = readDashboardCache(initialStatsPeriod, isAdmin);
   const [stats, setStats] = useState<DashboardStats>(() => cachedDashboard?.stats ?? {
