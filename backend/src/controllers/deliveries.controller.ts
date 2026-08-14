@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { validationResult } from 'express-validator';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { resolveListBranchId, forbiddenIfOutsideBranch } from '../utils/branchScope';
 
 /**
  * Get delivery info for a specific order
@@ -9,6 +10,14 @@ import { AuthRequest } from '../middleware/auth';
 export const getDeliveryByOrderId = async (req: AuthRequest, res: Response) => {
   try {
     const { orderId } = req.params;
+
+    const orderCheck = await query('SELECT id, branch_id FROM orders WHERE id = $1', [orderId]);
+    if (orderCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (forbiddenIfOutsideBranch(req, res, orderCheck.rows[0].branch_id)) {
+      return;
+    }
 
     const result = await query(
       `SELECT 
@@ -101,6 +110,12 @@ export const getAllDeliveries = async (req: AuthRequest, res: Response) => {
       sql += ` AND d.driver_id = $${paramCount++}`;
       values.push(driver_id);
     }
+
+    const listBranchId = resolveListBranchId(req, req.query.branch_id);
+    if (listBranchId) {
+      sql += ` AND o.branch_id = $${paramCount++}`;
+      values.push(listBranchId);
+    }
     
     sql += ' ORDER BY d.scheduled_date DESC, d.created_at DESC';
     
@@ -151,12 +166,16 @@ export const createDelivery = async (req: AuthRequest, res: Response) => {
     
     // Verify order exists and is ready for delivery
     const orderCheck = await query(
-      'SELECT id, status FROM orders WHERE id = $1',
+      'SELECT id, status, branch_id FROM orders WHERE id = $1',
       [order_id]
     );
     
     if (orderCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (forbiddenIfOutsideBranch(req, res, orderCheck.rows[0].branch_id)) {
+      return;
     }
     
     const orderStatus = orderCheck.rows[0].status;

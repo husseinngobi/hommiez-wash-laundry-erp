@@ -98,6 +98,7 @@ const helpTopics: HelpTopic[] = [
       ],
       tips: [
         'The default payment view is All Time so the full ledger is visible first',
+        'Desktop agents only see payments that belong to orders at their assigned branch',
         'Filters only narrow the data; they do not change the stored payment history',
         'Payment statistics are calculated from the same backend data as the payment list',
         'Historical orders should use the date the money was actually received',
@@ -162,8 +163,9 @@ const helpTopics: HelpTopic[] = [
       ],
       tips: [
         'Payment modes can be set per branch in Settings',
-        'Accounting and the dashboard still combine every branch for administrators',
-        'Use the branch filter on Expenses, Inventory, Reports, Payroll, and Orders to inspect one location',
+        'Administrators can view all branches together, or pick one branch on Dashboard, Orders, Payments, Expenses, and Accounting',
+        'Desktop agents only see their assigned branch: dashboard (including recent orders), orders, payments tied to those orders, expenses, inventory, and reports',
+        'Customers stay shared. Deliveries follow the order’s branch.',
       ],
     },
   },

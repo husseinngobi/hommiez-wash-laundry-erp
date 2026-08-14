@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
+import { query } from '../config/database';
 import { UserRole } from '../models/User';
 import { isSystemAdminEmail } from '../utils/systemAdmin';
 
@@ -63,6 +64,15 @@ export const authenticate = async (
         // Tokens issued before branches existed simply have no branch
         branch_id: decoded.branch_id ?? null
       };
+
+      try {
+        const live = await query('SELECT branch_id FROM users WHERE id = $1', [userId]);
+        if (live.rows[0] && live.rows[0].branch_id != null) {
+          req.user.branch_id = live.rows[0].branch_id;
+        }
+      } catch {
+        // Keep the token value if the lookup fails
+      }
       
       next();
     } catch (error) {
@@ -80,7 +90,7 @@ export const authorize = (...roles: UserRole[]) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    if (!roles.includes(req.user.role)) {
+    if (!roles.map((r) => String(r).toUpperCase()).includes(String(req.user.role || '').toUpperCase())) {
       return res.status(403).json({ 
         error: 'Insufficient permissions',
         required: roles,

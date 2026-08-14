@@ -76,10 +76,10 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
   try {
     const { period = 'week', from_date, to_date, branch_id } = req.query;
     const listBranchId = resolveListBranchId(req, branch_id);
-    const branchJoin = listBranchId
-      ? `JOIN orders o_br ON o_br.id = p.order_id AND o_br.branch_id = ${Number(listBranchId)}`
-      : '';
     const branchAnd = listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : '';
+    const paymentOrdersJoin = listBranchId
+      ? `INNER JOIN orders o ON o.id = p.order_id AND o.branch_id = ${Number(listBranchId)}`
+      : `LEFT JOIN orders o ON o.id = p.order_id`;
     
     let dateFilter = '';
     if (period === 'custom' && from_date && to_date) {
@@ -109,7 +109,7 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
         SUM(p.amount) as revenue,
         AVG(p.amount) as avg_order_value
       FROM payments p
-      ${branchJoin}
+      ${paymentOrdersJoin}
       WHERE ${dateFilter.replace(/payment_date/g, 'p.payment_date')}
       GROUP BY DATE(p.payment_date)
       ORDER BY date DESC
@@ -125,7 +125,7 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
       JOIN orders o ON pay.order_id = o.id
       JOIN order_items oi ON o.id = oi.order_id
       JOIN price_items pi ON oi.price_item_id = pi.id
-      WHERE ${dateFilter.replace('payment_date', 'pay.payment_date')}
+      WHERE ${dateFilter.replace(/payment_date/g, 'pay.payment_date')}
         AND pi.category IS NOT NULL
         ${branchAnd}
       GROUP BY pi.category
@@ -143,8 +143,8 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
         SUM(p.amount) as total_spent
       FROM customers c
       JOIN payments p ON c.id = p.customer_id
-      ${branchJoin}
-      WHERE ${dateFilter.replace('payment_date', 'p.payment_date')}
+      ${paymentOrdersJoin}
+      WHERE ${dateFilter.replace(/payment_date/g, 'p.payment_date')}
       GROUP BY c.id, c.name, c.phone
       HAVING SUM(p.amount) > 0
       ORDER BY total_spent DESC
@@ -157,11 +157,10 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
         COUNT(DISTINCT p.order_id) as total_orders,
         COALESCE(SUM(p.amount), 0) as total_revenue,
         COALESCE(AVG(p.amount), 0) as avg_order_value,
-        COALESCE(SUM(CASE WHEN o.discount IS NOT NULL THEN o.discount ELSE 0 END), 0) as total_discounts
+        COALESCE(SUM(COALESCE(o.discount_amount, 0)), 0) as total_discounts
       FROM payments p
-      LEFT JOIN orders o ON p.order_id = o.id
-      WHERE ${dateFilter.replace('payment_date', 'p.payment_date')}
-        ${branchAnd}
+      ${paymentOrdersJoin}
+      WHERE ${dateFilter.replace(/payment_date/g, 'p.payment_date')}
     `);
 
     // Order status distribution - operational view (orders CREATED in period)

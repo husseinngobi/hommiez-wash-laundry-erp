@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import { createSystemNotification } from './notifications.controller';
 import { logDelete } from '../utils/activityLogger';
+import { resolveListBranchId, forbiddenIfOutsideBranch } from '../utils/branchScope';
 
 /**
  * Recalculate order payment totals from remaining payments ledger rows.
@@ -296,6 +297,12 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
       paramCount++;
     }
 
+    const listBranchId = resolveListBranchId(req, req.query.branch_id);
+    if (listBranchId) {
+      whereConditions.push(`o.branch_id = $${paramCount++}`);
+      values.push(listBranchId);
+    }
+
     const whereClause = whereConditions.join(' AND ');
 
     // Get total count
@@ -487,7 +494,8 @@ export const getPaymentById = async (req: AuthRequest, res: Response) => {
         c.phone as customer_phone,
         c.email as customer_email,
         u.full_name as received_by,
-        u.email as receiver_email
+        u.email as receiver_email,
+        o.branch_id as order_branch_id
        FROM payments p
        LEFT JOIN orders o ON p.order_id = o.id
        LEFT JOIN customers c ON p.customer_id = c.id
@@ -498,6 +506,10 @@ export const getPaymentById = async (req: AuthRequest, res: Response) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    if (forbiddenIfOutsideBranch(req, res, result.rows[0].order_branch_id)) {
+      return;
     }
 
     // Get order items for the payment's order if available
@@ -793,6 +805,14 @@ export const getPaymentsByOrder = async (req: AuthRequest, res: Response) => {
 
     if (!orderId) {
       return res.status(400).json({ error: 'Order ID is required' });
+    }
+
+    const orderRow = await query('SELECT id, branch_id FROM orders WHERE id = $1', [orderId]);
+    if (orderRow.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (forbiddenIfOutsideBranch(req, res, orderRow.rows[0].branch_id)) {
+      return;
     }
 
     const result = await query(

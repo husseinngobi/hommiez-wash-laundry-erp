@@ -9,6 +9,7 @@ import { sendOrderReady } from '../services/whatsapp.service';
 import { generateOrderReceiptPDF } from '../services/pdf.service';
 import { logCreate, logUpdate, logDelete } from '../utils/activityLogger';
 import { getEffectiveBargainLimit, getMaxDiscountForRole } from '../utils/roleLimits';
+import { resolveListBranchId, forbiddenIfOutsideBranch } from '../utils/branchScope';
 import fs from 'fs';
 
 type SettingsQuerier = { query: (text: string) => Promise<any> };
@@ -105,9 +106,10 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       values.push(to_date);
     }
 
-    if (branch_id && branch_id !== 'all') {
+    const listBranchId = resolveListBranchId(req, branch_id);
+    if (listBranchId) {
       whereClause += ` AND o.branch_id = $${paramCount++}`;
-      values.push(Number(branch_id));
+      values.push(listBranchId);
     }
 
     if (is_backdated === 'true' || is_backdated === true) {
@@ -208,6 +210,10 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
     
     if (orderResult.rows.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (forbiddenIfOutsideBranch(req, res, orderResult.rows[0].branch_id)) {
+      return;
     }
 
     // Get order items
@@ -997,6 +1003,10 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
     }
     const currentOrder = currentOrderResult.rows[0];
 
+    if (forbiddenIfOutsideBranch(req, res, currentOrder.branch_id)) {
+      return;
+    }
+
     const updates: string[] = [];
     const values: any[] = [];
     let paramCount = 1;
@@ -1196,6 +1206,10 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
     
     if (orderBeforeUpdate.rows.length === 0) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+
+    if (forbiddenIfOutsideBranch(req, res, orderBeforeUpdate.rows[0].branch_id)) {
+      return;
     }
 
     const oldStatus = orderBeforeUpdate.rows[0].status;

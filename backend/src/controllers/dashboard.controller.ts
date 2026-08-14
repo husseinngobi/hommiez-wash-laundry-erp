@@ -75,7 +75,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
          ${deliveriesDateFilter}
          ${deliveriesDateFilter ? 'AND' : 'WHERE'} delivery_type = 'PAID'
          AND delivery_status = 'DELIVERED'
-         AND payment_status = 'PAID'`
+         AND payment_status = 'PAID'
+         ${branchId ? `AND order_id IN (SELECT id FROM orders WHERE branch_id = ${Number(branchId)})` : ''}`
       );
       deliveryRevenue = parseFloat(deliveryRevenueResult.rows[0].delivery_revenue) || 0;
     } catch (deliveryError) {

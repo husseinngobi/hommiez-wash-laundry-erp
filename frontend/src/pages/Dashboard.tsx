@@ -167,12 +167,11 @@ function writeDashboardCache(period: string, isAdmin: boolean, cache: DashboardC
 export default function Dashboard() {
   const { token, isAdmin, isCashier, user } = useAuth();
   const initialStatsPeriod = (() => {
-    if (isCashier) {
-      return 'today';
-    }
-
     const saved = localStorage.getItem('dashboardStatsPeriod');
-    return (saved as 'today' | 'week' | 'month' | 'year' | 'all') || 'all';
+    if (saved === 'today' || saved === 'week' || saved === 'month' || saved === 'year' || saved === 'all') {
+      return saved;
+    }
+    return isCashier ? 'today' : 'all';
   })();
   const cachedDashboard = readDashboardCache(initialStatsPeriod, isAdmin);
   const [stats, setStats] = useState<DashboardStats>(() => cachedDashboard?.stats ?? {
@@ -192,14 +191,7 @@ export default function Dashboard() {
   const [businessHours, setBusinessHours] = useState<BusinessHours | null>(() => cachedDashboard?.businessHours ?? null);
   
   // Main period selector - controls both stats AND financial performance
-  const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'all'>(() => {
-    if (isCashier) {
-      return 'today';
-    }
-
-    const saved = localStorage.getItem('dashboardStatsPeriod');
-    return (saved as 'today' | 'week' | 'month' | 'year' | 'all') || 'all';
-  });
+  const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'all'>(initialStatsPeriod);
   
   // Enhanced financial states
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(() => cachedDashboard?.financialSummary ?? null);
@@ -211,7 +203,7 @@ export default function Dashboard() {
   const [branchList, setBranchList] = useState<Array<{ id: number; name: string }>>([]);
 
   const TODAY_KEY = DAY_KEYS[new Date().getDay()];
-  const dashboardPeriod = isCashier ? 'today' : statsPeriod;
+  const dashboardPeriod = statsPeriod;
 
   // Whether the shop is trading right now, per today's configured hours
   const openStatus = useMemo(() => {
@@ -264,13 +256,8 @@ export default function Dashboard() {
 
   // Save statsPeriod to localStorage whenever it changes
   useEffect(() => {
-    if (isCashier) {
-      localStorage.removeItem('dashboardStatsPeriod');
-      return;
-    }
-
     localStorage.setItem('dashboardStatsPeriod', statsPeriod);
-  }, [statsPeriod, isCashier]);
+  }, [statsPeriod]);
 
   // Fetch dashboard data (memoized to prevent unnecessary re-renders)
   const fetchDashboardData = useCallback(async () => {
@@ -405,29 +392,23 @@ export default function Dashboard() {
   return (
     <MainLayout 
       title={isCashier ? `Welcome, ${user?.full_name || 'Cashier'}` : "Dashboard"} 
-      subtitle={isCashier ? "Your work overview for today" : "Welcome back! Here's what's happening today."}
+      subtitle={isCashier ? "Your branch overview — pick a period to see today, this week, this month, or all time." : "Welcome back! Here's what's happening today."}
     >
       {/* Period Selector for Stats */}
       <div className="mb-6 flex items-center gap-4">
         <span className="text-sm font-medium text-muted-foreground">Show stats for:</span>
-        {isCashier ? (
-          <div className="rounded-full border border-border bg-muted/40 px-3 py-2 text-sm font-medium text-muted-foreground">
-            Today only
-          </div>
-        ) : (
-          <Select value={statsPeriod} onValueChange={(value) => setStatsPeriod(value as 'today' | 'week' | 'month' | 'year' | 'all')}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="week">This Week</SelectItem>
-              <SelectItem value="month">This Month</SelectItem>
-              <SelectItem value="year">This Year</SelectItem>
-              <SelectItem value="all">All Time</SelectItem>
-            </SelectContent>
-          </Select>
-        )}
+        <Select value={statsPeriod} onValueChange={(value) => setStatsPeriod(value as 'today' | 'week' | 'month' | 'year' | 'all')}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="today">Today</SelectItem>
+            <SelectItem value="week">This Week</SelectItem>
+            <SelectItem value="month">This Month</SelectItem>
+            <SelectItem value="year">This Year</SelectItem>
+            <SelectItem value="all">All Time</SelectItem>
+          </SelectContent>
+        </Select>
         {isAdmin && branchList.length > 1 && (
           <Select value={branchFilter} onValueChange={setBranchFilter}>
             <SelectTrigger className="w-[200px]">

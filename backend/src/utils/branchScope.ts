@@ -1,7 +1,28 @@
+import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 
 export function canChooseBranch(role?: string): boolean {
   return role === 'ADMIN' || role === 'MANAGER';
+}
+
+/** True when a desktop agent (or other non-admin) must not see this branch’s row. */
+export function isOutsideStaffBranch(req: AuthRequest, recordBranchId: unknown): boolean {
+  if (canChooseBranch(req.user?.role)) return false;
+  const mine = Number(req.user?.branch_id);
+  if (!Number.isFinite(mine) || mine <= 0) return true;
+  const theirs = Number(recordBranchId);
+  if (!Number.isFinite(theirs) || theirs <= 0) return true;
+  return theirs !== mine;
+}
+
+export function forbiddenIfOutsideBranch(
+  req: AuthRequest,
+  res: Response,
+  recordBranchId: unknown
+): boolean {
+  if (!isOutsideStaffBranch(req, recordBranchId)) return false;
+  res.status(403).json({ error: 'You can only access records for your assigned branch' });
+  return true;
 }
 
 /** Branch to write against: admins/managers may pick; staff are locked to their own. */
@@ -26,7 +47,10 @@ export function resolveListBranchId(req: AuthRequest, requested?: unknown): numb
     }
     return null;
   }
-  return req.user?.branch_id ?? null;
+  const bid = Number(req.user?.branch_id);
+  if (Number.isFinite(bid) && bid > 0) return bid;
+  // Unassigned staff must not fall through to company-wide lists.
+  return -1;
 }
 
 /** Append AND col = id to a WHERE clause, or start WHERE if empty. */

@@ -173,11 +173,47 @@ export default function Reports() {
     if (period === 'custom' && (!customFromDate || !customToDate)) return;
     try {
       setLoading(true);
+
+      // Desktop agents are not allowed on /reports/revenue in production (403).
+      // Dashboard stats already scope to their assigned branch.
+      if (isDesktopAgent) {
+        const dashPeriod =
+          period === 'day' || period === 'today'
+            ? 'today'
+            : period === 'custom'
+              ? 'week'
+              : period;
+        const response = await axios.get(`${API_BASE_URL}/dashboard/stats`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { period: dashPeriod },
+        });
+        const s = response.data;
+        setReportData({
+          summary: {
+            total_orders: Number(s.totalOrders) || 0,
+            total_revenue: Number(s.totalRevenue) || 0,
+            avg_order_value: Number(s.averageOrderValue) || 0,
+            total_discounts: 0,
+          },
+          daily_revenue: [],
+          category_revenue: [],
+          top_customers: [],
+          status_distribution: [
+            { status: 'pending', count: Number(s.pendingOrders) || 0 },
+            { status: 'processing', count: Number(s.processingOrders) || 0 },
+            { status: 'ready', count: Number(s.readyOrders) || 0 },
+            { status: 'delivered', count: Number(s.deliveredOrders) || 0 },
+          ].filter((row) => row.count > 0),
+        });
+        return;
+      }
+
       const response = await axios.get(`${API_BASE_URL}/reports/revenue?${buildPeriodParams()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setReportData(response.data);
     } catch (error) {
+      console.error('Failed to load report data:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -187,7 +223,7 @@ export default function Reports() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, customFromDate, customToDate, branchFilter, token, toast]);
+  }, [period, customFromDate, customToDate, branchFilter, token, toast, isDesktopAgent]);
 
   const fetchStaffPerformance = useCallback(async () => {
     if (period === 'custom' && (!customFromDate || !customToDate)) return;
