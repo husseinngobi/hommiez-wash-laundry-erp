@@ -56,6 +56,8 @@ interface Employee {
   bank_name: string;
   hire_date: string;
   employment_status: string;
+  branch_id?: number | null;
+  branch_name?: string | null;
 }
 
 interface SalaryPayment {
@@ -70,6 +72,7 @@ interface SalaryPayment {
   net_amount: number;
   payment_method: string;
   payment_status: string;
+  branch_name?: string | null;
 }
 
 export default function Payroll() {
@@ -77,6 +80,8 @@ export default function Payroll() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [payments, setPayments] = useState<SalaryPayment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
+  const [branchFilter, setBranchFilter] = useState('all');
   
   // Pagination for employees
   const [employeePage, setEmployeePage] = useState(1);
@@ -107,6 +112,7 @@ export default function Payroll() {
     bank_account: '',
     bank_name: '',
     hire_date: '',
+    branch_id: '',
   });
 
   // Process Payment Form
@@ -148,6 +154,13 @@ export default function Payroll() {
     fetchPayments();
   }, [fetchEmployees, fetchPayments]);
 
+  useEffect(() => {
+    if (!token) return;
+    axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBranches(res.data.branches || []))
+      .catch(() => setBranches([]));
+  }, [token]);
+
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -176,6 +189,7 @@ export default function Payroll() {
         bank_account: '',
         bank_name: '',
         hire_date: '',
+        branch_id: '',
       });
       fetchEmployees();
     } catch (error: unknown) {
@@ -319,40 +333,48 @@ export default function Payroll() {
     }
   };
 
-  const activeEmployees = employees.filter(e => e.employment_status === 'ACTIVE');
+  const filteredEmployees = branchFilter === 'all'
+    ? employees
+    : employees.filter((e) => String(e.branch_id) === branchFilter);
+  const activeEmployees = filteredEmployees.filter(e => e.employment_status === 'ACTIVE');
   const totalActiveEmployees = activeEmployees.length;
 
   // Pagination calculation for employees
-  const paginatedEmployees = employees.slice(
+  const paginatedEmployees = filteredEmployees.slice(
     (employeePage - 1) * employeesPerPage,
     employeePage * employeesPerPage
   );
 
+  const selectedBranchName = branches.find((b) => String(b.id) === branchFilter)?.name;
+  const filteredPayments = branchFilter === 'all'
+    ? payments
+    : payments.filter((p) => p.branch_name === selectedBranchName);
+
   // Pagination calculation for payments
-  const paginatedPayments = payments.slice(
+  const paginatedPayments = filteredPayments.slice(
     (paymentPage - 1) * paymentsPerPage,
     paymentPage * paymentsPerPage
   );
 
   // Update employee pagination when employees list changes
   useEffect(() => {
-    const pages = Math.ceil(employees.length / employeesPerPage);
+    const pages = Math.ceil(filteredEmployees.length / employeesPerPage);
     setEmployeeTotalPages(pages || 1);
-    setTotalEmployees(employees.length);
+    setTotalEmployees(filteredEmployees.length);
     if (employeePage > pages && pages > 0) {
       setEmployeePage(pages);
     }
-  }, [employees.length, employeePage]);
+  }, [filteredEmployees.length, employeePage]);
 
   // Update payment pagination when payments list changes
   useEffect(() => {
-    const pages = Math.ceil(payments.length / paymentsPerPage);
+    const pages = Math.ceil(filteredPayments.length / paymentsPerPage);
     setPaymentTotalPages(pages || 1);
-    setTotalPayments(payments.length);
+    setTotalPayments(filteredPayments.length);
     if (paymentPage > pages && pages > 0) {
       setPaymentPage(pages);
     }
-  }, [payments.length, paymentPage]);
+  }, [filteredPayments.length, paymentPage]);
   const totalMonthlySalary = activeEmployees.reduce((sum, e) => sum + Number(e.salary_amount), 0);
 
   return (
@@ -513,6 +535,24 @@ export default function Payroll() {
                     onChange={(e) => setNewEmployee({...newEmployee, hire_date: e.target.value})}
                   />
                 </div>
+                {branches.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Branch *</Label>
+                    <Select
+                      value={newEmployee.branch_id}
+                      onValueChange={(value) => setNewEmployee({...newEmployee, branch_id: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select branch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map((b) => (
+                          <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-2 mt-6">
                 <Button type="button" variant="outline" onClick={() => setShowAddEmployee(false)}>
@@ -671,8 +711,21 @@ export default function Payroll() {
 
       {/* Employees Table */}
       <Card className="mb-6">
-        <CardHeader>
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <CardTitle>Employees on Payroll</CardTitle>
+          {branches.length > 1 && (
+            <Select value={branchFilter} onValueChange={(v) => { setBranchFilter(v); }}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Branch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Branches</SelectItem>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -681,6 +734,7 @@ export default function Payroll() {
               <TableRow className="bg-muted/50 dark:bg-gray-800">
                 <TableHead className="font-semibold dark:text-gray-100">Employee</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Position</TableHead>
+                <TableHead className="font-semibold dark:text-gray-100">Branch</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Phone</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Monthly Salary</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Bank</TableHead>
@@ -692,7 +746,7 @@ export default function Payroll() {
             <TableBody>
               {paginatedEmployees.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                     No employees found
                   </TableCell>
                 </TableRow>
@@ -706,6 +760,7 @@ export default function Payroll() {
                     </div>
                   </TableCell>
                   <TableCell className="dark:text-gray-100">{employee.position}</TableCell>
+                  <TableCell className="dark:text-gray-100">{employee.branch_name || '—'}</TableCell>
                   <TableCell className="dark:text-gray-100 break-all">{employee.phone}</TableCell>
                   <TableCell className="font-semibold text-green-600">
                     {formatUGX(employee.salary_amount)}
@@ -858,6 +913,24 @@ export default function Payroll() {
                     placeholder="e.g., Iron Worker, Washer, Delivery Agent"
                   />
                 </div>
+                {branches.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Branch</Label>
+                    <Select
+                      value={editingEmployee.branch_id ? String(editingEmployee.branch_id) : ''}
+                      onValueChange={(value) => setEditingEmployee({...editingEmployee, branch_id: Number(value)})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select branch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map((b) => (
+                          <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="edit_phone">Phone Number *</Label>
                   <Input
@@ -934,6 +1007,7 @@ export default function Payroll() {
             <TableHeader>
               <TableRow className="bg-muted/50 dark:bg-gray-800">
                 <TableHead className="font-semibold dark:text-gray-100">Employee</TableHead>
+                <TableHead className="font-semibold dark:text-gray-100">Branch</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Period</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Gross Amount</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Deductions</TableHead>
@@ -946,7 +1020,7 @@ export default function Payroll() {
             <TableBody>
               {paginatedPayments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                     No payment records found
                   </TableCell>
                 </TableRow>
@@ -959,6 +1033,7 @@ export default function Payroll() {
                       <p className="text-sm text-muted-foreground">{payment.position}</p>
                     </div>
                   </TableCell>
+                  <TableCell className="dark:text-gray-100">{payment.branch_name || '—'}</TableCell>
                   <TableCell className="dark:text-gray-100">{payment.payment_period}</TableCell>
                   <TableCell className="dark:text-gray-100">{formatUGX(payment.amount_paid)}</TableCell>
                   <TableCell className="text-red-600">- {formatUGX(payment.deductions)}</TableCell>

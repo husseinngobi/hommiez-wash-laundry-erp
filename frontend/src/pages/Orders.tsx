@@ -85,6 +85,9 @@ interface Order {
   staff_name?: string;
   user_role?: string;
   branch_name?: string;
+  branch_id?: number;
+  is_backdated?: boolean;
+  recorded_at?: string;
 }
 
 interface OrderItem {
@@ -604,6 +607,8 @@ export default function Orders() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [paymentFilter, setPaymentFilter] = useState('ALL');
+  const [backdatedFilter, setBackdatedFilter] = useState(false);
+  const [branchFilter, setBranchFilter] = useState('ALL');
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -646,6 +651,7 @@ export default function Orders() {
     payment_modes?: { centenary_account?: string; mtn_code?: string; airtel_merchant?: string };
   }>>([]);
   const [additionalPayment, setAdditionalPayment] = useState(0);
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER'>('CASH');
   const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
   const [paymentChannel, setPaymentChannel] = useState<'MANUAL' | 'MERCHANT' | 'P2P' | 'DEPOSIT' | 'API_PUSH'>('MANUAL');
@@ -777,6 +783,12 @@ export default function Orders() {
       if (paymentFilter !== 'ALL') {
         params.payment_status = paymentFilter;
       }
+      if (backdatedFilter) {
+        params.is_backdated = 'true';
+      }
+      if (branchFilter !== 'ALL') {
+        params.branch_id = branchFilter;
+      }
       
       const response = await axios.get(`${API_BASE_URL}/orders`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -794,7 +806,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [token, toast, currentPage, searchQuery, statusFilter, paymentFilter]);
+  }, [token, toast, currentPage, searchQuery, statusFilter, paymentFilter, backdatedFilter, branchFilter]);
 
   useEffect(() => {
     if (!token) return;
@@ -1031,7 +1043,7 @@ export default function Orders() {
   // Reset to page 1 when search/filters change
   useEffect(() => {
     setCurrentPage(prev => prev !== 1 ? 1 : prev);
-  }, [searchQuery, statusFilter, paymentFilter]);
+  }, [searchQuery, statusFilter, paymentFilter, backdatedFilter, branchFilter]);
 
   // View order details
   const viewOrderDetails = async (order: Order) => {
@@ -1140,6 +1152,7 @@ export default function Orders() {
           recipient_account: recipientAccount || null,
           sender_phone: senderPhone || null,
           transaction_reference: transactionReference || null,
+          payment_date: paymentDate || undefined,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -1165,6 +1178,7 @@ export default function Orders() {
       setRecipientAccount('');
       setSenderPhone('');
       setTransactionReference('');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
       fetchOrders();
       if (selectedOrder) viewOrderDetails(selectedOrder);
     } catch (error) {
@@ -1533,6 +1547,26 @@ export default function Orders() {
             <SelectItem value="PARTIAL">Partial</SelectItem>
           </SelectContent>
         </Select>
+        {multiBranch && (isAdmin || user?.role === 'MANAGER') && (
+          <Select value={branchFilter} onValueChange={setBranchFilter}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="Branch" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Branches</SelectItem>
+              {branchList.map((b) => (
+                <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Button
+          variant={backdatedFilter ? 'default' : 'outline'}
+          className="w-full sm:w-auto"
+          onClick={() => setBackdatedFilter((v) => !v)}
+        >
+          {backdatedFilter ? 'Historical entries' : 'Past-date entries'}
+        </Button>
 
         {/* Column Visibility Menu */}
         <DropdownMenu>
@@ -1682,7 +1716,18 @@ export default function Orders() {
                   )}
                   {visibleColumns.customer && <TableCell>{order.customer_name}</TableCell>}
                   {visibleColumns.phone && <TableCell>{order.customer_phone}</TableCell>}
-                  {visibleColumns.orderDate && <TableCell className="text-sm">{formatDate(order.created_at)}</TableCell>}
+                  {visibleColumns.orderDate && (
+                    <TableCell className="text-sm">
+                      <div className="flex flex-col gap-0.5">
+                        <span>{formatDate(order.created_at)}</span>
+                        {order.is_backdated && (
+                          <Badge variant="outline" className="text-[10px] w-fit text-amber-700 border-amber-300">
+                            Historical
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
                   {visibleColumns.daysOld && (
                     <TableCell>
                       <div className="flex flex-col gap-1">
@@ -2241,6 +2286,11 @@ export default function Orders() {
                       const remaining = Math.max(0, totalAmt - paidAmt);
                       setAdditionalPayment(remaining > 0 ? remaining : totalAmt);
                       setPaymentMethod('CASH');
+                      setPaymentDate(
+                        selectedOrder.is_backdated && selectedOrder.created_at
+                          ? String(selectedOrder.created_at).slice(0, 10)
+                          : new Date().toISOString().split('T')[0]
+                      );
                       setShowPaymentDialog(true);
                     }}
                   >
@@ -2631,6 +2681,11 @@ export default function Orders() {
                           ? remaining
                           : parseFloat(String(selectedOrder.total_amount)) || 0
                       );
+                      setPaymentDate(
+                        selectedOrder.is_backdated && selectedOrder.created_at
+                          ? String(selectedOrder.created_at).slice(0, 10)
+                          : new Date().toISOString().split('T')[0]
+                      );
                       setShowPaymentDialog(true);
                     }}
                     variant="default"
@@ -2801,6 +2856,23 @@ export default function Orders() {
                 >
                   Pay Full Balance
                 </Button>
+              </div>
+
+              <div>
+                <Label htmlFor="payment-date">Payment Date</Label>
+                <Input
+                  id="payment-date"
+                  type="date"
+                  max={new Date().toISOString().split('T')[0]}
+                  value={paymentDate}
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                  className="mt-2"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {selectedOrder.is_backdated
+                    ? 'This order was entered historically — pick the date the payment was actually received.'
+                    : 'Defaults to today. Change it only if you are recording a past payment.'}
+                </p>
               </div>
 
               <div>

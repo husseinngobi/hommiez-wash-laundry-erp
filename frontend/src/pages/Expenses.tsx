@@ -41,6 +41,8 @@ interface Expense {
   recorded_by_name: string;
   approved_by_name: string;
   created_at: string;
+  branch_id?: number | null;
+  branch_name?: string | null;
 }
 
 interface Category {
@@ -74,6 +76,7 @@ const Expenses = () => {
     category: '',
     status: '',
     search: '',
+    branch_id: '',
   });
 
   const [formData, setFormData] = useState({
@@ -83,9 +86,12 @@ const Expenses = () => {
     amount: '',
     payment_method: 'CASH',
     receipt_number: '',
+    branch_id: '',
   });
 
-  const { token, isAdmin } = useAuth();
+  const { token, user, isAdmin, isManager } = useAuth();
+  const canChooseBranch = isAdmin || isManager;
+  const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
 
   const fetchExpenses = useCallback(async () => {
     try {
@@ -142,7 +148,12 @@ const Expenses = () => {
 
       const response = await axios.get(`${API_BASE_URL}/expenses`, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { from_date, to_date, limit: 1000 }, // Get all for the month
+        params: {
+          from_date,
+          to_date,
+          limit: 1000,
+          ...(filters.branch_id ? { branch_id: filters.branch_id } : {}),
+        },
       });
 
       const allExpenses = response.data.expenses || [];
@@ -157,7 +168,14 @@ const Expenses = () => {
     } catch (error) {
       console.error('Failed to fetch monthly stats:', error);
     }
-  }, [selectedMonth, token]);
+  }, [selectedMonth, token, filters.branch_id]);
+
+  useEffect(() => {
+    if (!token) return;
+    axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBranches(res.data.branches || []))
+      .catch(() => setBranches([]));
+  }, [token]);
 
   useEffect(() => {
     fetchExpenses();
@@ -181,6 +199,7 @@ const Expenses = () => {
         amount: '',
         payment_method: 'CASH',
         receipt_number: '',
+        branch_id: '',
       });
       fetchExpenses();
     } catch (error) {
@@ -255,7 +274,13 @@ const Expenses = () => {
             />
           </div>
         </div>
-        <Button onClick={() => setShowAddDialog(true)} className="gap-2 w-full sm:w-auto">
+        <Button onClick={() => {
+          setFormData((prev) => ({
+            ...prev,
+            branch_id: user?.branch_id ? String(user.branch_id) : prev.branch_id,
+          }));
+          setShowAddDialog(true);
+        }} className="gap-2 w-full sm:w-auto">
           <Plus className="w-4 h-4" />
           Record Expense
         </Button>
@@ -375,6 +400,25 @@ const Expenses = () => {
                 </SelectContent>
               </Select>
             </div>
+            {canChooseBranch && branches.length > 1 && (
+              <div>
+                <Label>Branch</Label>
+                <Select
+                  value={filters.branch_id || 'all'}
+                  onValueChange={(value) => setFilters({ ...filters, branch_id: value === 'all' ? '' : value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Branches" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Branches</SelectItem>
+                    {branches.map((b) => (
+                      <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label>Search</Label>
               <Input
@@ -400,6 +444,7 @@ const Expenses = () => {
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">Amount</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Method</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Branch</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Recorded By</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900 dark:text-gray-100">Actions</th>
                 </tr>
@@ -407,13 +452,13 @@ const Expenses = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                       Loading...
                     </td>
                   </tr>
                 ) : expenses.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                       No expenses found
                     </td>
                   </tr>
@@ -446,6 +491,7 @@ const Expenses = () => {
                           {expense.status}
                         </Badge>
                       </td>
+                      <td className="px-4 py-3 text-sm dark:text-gray-300">{expense.branch_name || '—'}</td>
                       <td className="px-4 py-3 text-sm dark:text-gray-300">{expense.recorded_by_name}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-center gap-2">
@@ -532,6 +578,24 @@ const Expenses = () => {
                   required
                 />
               </div>
+              {canChooseBranch && branches.length > 0 && (
+                <div>
+                  <Label>Branch *</Label>
+                  <Select
+                    value={formData.branch_id}
+                    onValueChange={(value) => setFormData({ ...formData, branch_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((b) => (
+                        <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
                 <Label htmlFor="category">Category *</Label>
                 <Select
@@ -657,6 +721,10 @@ const Expenses = () => {
                 <div>
                   <Label className="text-gray-600">Recorded By</Label>
                   <p className="font-medium">{selectedExpense.recorded_by_name}</p>
+                </div>
+                <div>
+                  <Label className="text-gray-600">Branch</Label>
+                  <p className="font-medium">{selectedExpense.branch_name || '—'}</p>
                 </div>
                 <div>
                   <Label className="text-gray-600">Status</Label>

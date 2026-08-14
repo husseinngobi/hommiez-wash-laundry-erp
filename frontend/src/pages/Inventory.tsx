@@ -66,12 +66,17 @@ interface InventoryItem {
   asset_serial_number?: string | null;
   asset_condition?: string | null;
   asset_location?: string | null;
+  branch_id?: number | null;
+  branch_name?: string | null;
 }
 
 export default function Inventory() {
   const { token, user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
+  const [branchFilter, setBranchFilter] = useState('ALL');
+  const [newItemBranchId, setNewItemBranchId] = useState('');
   const { toast } = useToast();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,13 +137,25 @@ export default function Inventory() {
   useEffect(() => {
     fetchInventory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, branchFilter]);
+
+  useEffect(() => {
+    if (!token) return;
+    axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBranches(res.data.branches || []))
+      .catch(() => setBranches([]));
   }, [token]);
 
   const fetchInventory = async () => {
     try {
       setLoading(true);
+      const params: Record<string, string> = {};
+      if (isAdminOrManager && branchFilter !== 'ALL') {
+        params.branch_id = branchFilter;
+      }
       const response = await axios.get(`${API_BASE_URL}/inventory`, {
         headers: { Authorization: `Bearer ${token}` },
+        params,
       });
       const fetched: InventoryItem[] = response.data.items || [];
       setItems(fetched);
@@ -256,6 +273,7 @@ export default function Inventory() {
     setNewItemAssetSerial(item.asset_serial_number || '');
     setNewItemAssetCondition(item.asset_condition || 'GOOD');
     setNewItemAssetLocation(item.asset_location || '');
+    setNewItemBranchId(item.branch_id ? String(item.branch_id) : '');
     setShowAddDialog(true);
   };
 
@@ -318,6 +336,7 @@ export default function Inventory() {
         asset_serial_number: newItemIsLongTerm ? (newItemAssetSerial || null) : null,
         asset_condition: newItemIsLongTerm ? newItemAssetCondition : null,
         asset_location: newItemIsLongTerm ? (newItemAssetLocation || null) : null,
+        branch_id: newItemBranchId ? Number(newItemBranchId) : undefined,
       };
 
       if (isEditing && editingItemId) {
@@ -410,6 +429,7 @@ export default function Inventory() {
     setNewItemAssetSerial('');
     setNewItemAssetCondition('GOOD');
     setNewItemAssetLocation('');
+    setNewItemBranchId(user?.branch_id ? String(user.branch_id) : '');
   };
 
   const filteredItems = items.filter((item) => {
@@ -568,6 +588,19 @@ export default function Inventory() {
               className="pl-10"
             />
           </div>
+          {isAdminOrManager && branches.length > 1 && (
+            <Select value={branchFilter} onValueChange={setBranchFilter}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Branch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Branches</SelectItem>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           {isAdminOrManager && (
             <div className="flex gap-2 w-full sm:w-auto">
               <Button onClick={openAddDialog} className="flex-1 sm:flex-none">
@@ -636,6 +669,7 @@ export default function Inventory() {
                 <TableRow>
                   <TableHead className="whitespace-nowrap">Item Name</TableHead>
                   <TableHead className="whitespace-nowrap">Category</TableHead>
+                  <TableHead className="whitespace-nowrap">Branch</TableHead>
                   <TableHead className="text-right whitespace-nowrap">In Stock</TableHead>
                   <TableHead className="text-right whitespace-nowrap">Reorder Level</TableHead>
                   <TableHead className="text-right whitespace-nowrap">Unit Cost</TableHead>
@@ -663,6 +697,9 @@ export default function Inventory() {
                         <Badge variant="outline" className={getCategoryColor(item.category)}>
                           {item.category}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {item.branch_name || '—'}
                       </TableCell>
                       <TableCell className="text-right">
                         <div>
@@ -878,6 +915,21 @@ export default function Inventory() {
                   onChange={(e) => setNewItemName(e.target.value)}
                 />
               </div>
+              {isAdminOrManager && branches.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Branch *</Label>
+                  <Select value={newItemBranchId} onValueChange={setNewItemBranchId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((b) => (
+                        <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Category *</Label>
                 <Select value={newItemCategory} onValueChange={setNewItemCategory}>

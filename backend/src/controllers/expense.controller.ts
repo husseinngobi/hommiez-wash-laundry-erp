@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { validationResult } from 'express-validator';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { resolveWriteBranchId, resolveListBranchId } from '../utils/branchScope';
 
 /**
  * Record a new expense
@@ -20,16 +21,18 @@ export const recordExpense = async (req: AuthRequest, res: Response) => {
       amount,
       payment_method,
       receipt_number,
+      branch_id: requestedBranchId,
     } = req.body;
 
     const userId = req.user?.id;
+    const branchId = resolveWriteBranchId(req, requestedBranchId);
 
     const result = await query(
       `INSERT INTO expenses 
-       (expense_date, category, description, amount, payment_method, receipt_number, submitted_by, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', NOW())
-       RETURNING id, expense_date, description, amount`,
-      [expense_date || new Date(), category, description, amount, payment_method || 'CASH', receipt_number, userId]
+       (expense_date, category, description, amount, payment_method, receipt_number, submitted_by, status, created_at, branch_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', NOW(), $8)
+       RETURNING id, expense_date, description, amount, branch_id`,
+      [expense_date || new Date(), category, description, amount, payment_method || 'CASH', receipt_number, userId, branchId]
     );
 
     // Log activity
@@ -111,8 +114,11 @@ export const getAllExpenses = async (req: AuthRequest, res: Response) => {
       from_date,
       to_date,
       category_id,
+      category,
       approval_status,
+      status,
       search,
+      branch_id,
     } = req.query;
 
     const offset = (Number(page) - 1) * Number(limit);
@@ -121,6 +127,12 @@ export const getAllExpenses = async (req: AuthRequest, res: Response) => {
     let whereClause = 'WHERE 1=1';
     const values: any[] = [];
     let paramCount = 1;
+
+    const listBranchId = resolveListBranchId(req, branch_id);
+    if (listBranchId) {
+      whereClause += ` AND e.branch_id = $${paramCount++}`;
+      values.push(listBranchId);
+    }
 
     if (from_date) {
       whereClause += ` AND e.expense_date >= $${paramCount++}`;
@@ -132,14 +144,16 @@ export const getAllExpenses = async (req: AuthRequest, res: Response) => {
       values.push(to_date);
     }
 
-    if (category_id) {
-      whereClause += ` AND e.category_id = $${paramCount++}`;
-      values.push(category_id);
+    const categoryFilter = category || category_id;
+    if (categoryFilter) {
+      whereClause += ` AND e.category = $${paramCount++}`;
+      values.push(categoryFilter);
     }
 
-    if (approval_status) {
+    const statusFilter = approval_status || status;
+    if (statusFilter) {
       whereClause += ` AND e.status = $${paramCount++}`;
-      values.push(approval_status);
+      values.push(statusFilter);
     }
 
     if (search) {
@@ -156,10 +170,12 @@ export const getAllExpenses = async (req: AuthRequest, res: Response) => {
         e.category as category_name,
         '#3B82F6' as category_color,
         u1.full_name as recorded_by_name,
-        u2.full_name as approved_by_name
+        u2.full_name as approved_by_name,
+        b.name as branch_name
        FROM expenses e
        LEFT JOIN users u1 ON e.submitted_by = u1.id
        LEFT JOIN users u2 ON e.approved_by = u2.id
+       LEFT JOIN branches b ON e.branch_id = b.id
        ${whereClause}
        ORDER BY e.expense_date DESC, e.created_at DESC
        LIMIT $${paramCount++} OFFSET $${paramCount}`,

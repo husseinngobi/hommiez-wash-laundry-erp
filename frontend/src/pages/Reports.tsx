@@ -132,6 +132,8 @@ export default function Reports() {
   const [period, setPeriod] = useState('week');
   const [customFromDate, setCustomFromDate] = useState('');
   const [customToDate, setCustomToDate] = useState('');
+  const [branchFilter, setBranchFilter] = useState('all');
+  const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [staffPerformance, setStaffPerformance] = useState<StaffPerformanceData | null>(null);
@@ -146,17 +148,25 @@ export default function Reports() {
   // Check if user is DESKTOP_AGENT (sees only own performance)
   const isDesktopAgent = user?.role === 'DESKTOP_AGENT';
   const isManagerOrAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
-  const pageTitle = isDesktopAgent ? 'My Performance' : 'Reports';
-  const pageSubtitle = isDesktopAgent ? 'Your day-to-day performance overview' : 'Business analytics and insights';
+  const pageTitle = isDesktopAgent ? 'My Branch Performance' : 'Reports';
+  const pageSubtitle = isDesktopAgent
+    ? 'Performance for your assigned branch'
+    : 'Business analytics and insights';
 
   // Pie chart colors
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#ff7c7c'];
 
   const buildPeriodParams = () => {
+    const parts: string[] = [];
     if (period === 'custom' && customFromDate && customToDate) {
-      return `period=custom&from_date=${customFromDate}&to_date=${customToDate}`;
+      parts.push(`period=custom&from_date=${customFromDate}&to_date=${customToDate}`);
+    } else {
+      parts.push(`period=${period}`);
     }
-    return `period=${period}`;
+    if (isManagerOrAdmin && branchFilter !== 'all') {
+      parts.push(`branch_id=${branchFilter}`);
+    }
+    return parts.join('&');
   };
 
   const fetchReportData = useCallback(async () => {
@@ -177,7 +187,7 @@ export default function Reports() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, customFromDate, customToDate, token, toast]);
+  }, [period, customFromDate, customToDate, branchFilter, token, toast]);
 
   const fetchStaffPerformance = useCallback(async () => {
     if (period === 'custom' && (!customFromDate || !customToDate)) return;
@@ -198,7 +208,7 @@ export default function Reports() {
       setStaffPerformance(null); // Clear any stale data
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, customFromDate, customToDate, token, toast]);
+  }, [period, customFromDate, customToDate, branchFilter, token, toast]);
 
   const fetchVATSummary = useCallback(async () => {
     if (period === 'custom' && (!customFromDate || !customToDate)) return;
@@ -219,22 +229,24 @@ export default function Reports() {
       setVatSummary(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, customFromDate, customToDate, token, toast]);
+  }, [period, customFromDate, customToDate, branchFilter, token, toast]);
 
   useEffect(() => {
     // Don't auto-fetch for custom until both dates are set
     if (period === 'custom' && (!customFromDate || !customToDate)) return;
-    // DESKTOP_AGENT only fetches their own performance
-    if (isDesktopAgent) {
-      setLoading(true);
-      fetchStaffPerformance().finally(() => setLoading(false));
-    } else {
-      // ADMIN/MANAGER fetch full reports
-      fetchReportData();
-      fetchStaffPerformance();
-      fetchVATSummary(); // Fetch VAT summary for managers/admins
+    fetchStaffPerformance();
+    fetchReportData();
+    if (!isDesktopAgent) {
+      fetchVATSummary();
     }
-  }, [period, customFromDate, customToDate, token, isDesktopAgent, fetchReportData, fetchStaffPerformance, fetchVATSummary]);
+  }, [period, customFromDate, customToDate, branchFilter, token, isDesktopAgent, fetchReportData, fetchStaffPerformance, fetchVATSummary]);
+
+  useEffect(() => {
+    if (!token) return;
+    axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setBranches(res.data.branches || []))
+      .catch(() => setBranches([]));
+  }, [token]);
 
   // Format amount for PDF export
   const formatAmount = (amount: number) => {
@@ -625,7 +637,7 @@ export default function Reports() {
     );
   }
 
-  // For ADMIN/MANAGER, check if reportData exists
+  // For ADMIN/MANAGER, wait until revenue data is present
   if (isManagerOrAdmin && !reportData) {
     return (
       <MainLayout title={pageTitle} subtitle={pageSubtitle}>
@@ -676,6 +688,19 @@ export default function Reports() {
               <SelectItem value="2021">Year 2021</SelectItem>
             </SelectContent>
           </Select>
+          {isManagerOrAdmin && branches.length > 1 && (
+            <Select value={branchFilter} onValueChange={setBranchFilter}>
+              <SelectTrigger className="w-full max-w-[200px]">
+                <SelectValue placeholder="Branch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Branches</SelectItem>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           {period === 'custom' && (
             <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full sm:w-auto">
               <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -735,9 +760,9 @@ export default function Reports() {
           <div className="flex items-start gap-3">
             <Users className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h3 className="font-medium text-green-900 dark:text-green-100">My Performance Stats</h3>
+              <h3 className="font-medium text-green-900 dark:text-green-100">Your branch at a glance</h3>
               <p className="text-sm text-green-700 dark:text-green-300 mt-1">
-                View your personal performance metrics including orders, revenue brought in, and average order value for the selected period.
+                Revenue, orders, and your personal stats for the branch you are assigned to. Company-wide accounting remains with administrators.
               </p>
             </div>
           </div>
@@ -815,8 +840,8 @@ export default function Reports() {
       </div>
       )}
 
-      {/* Summary Cards - Admin/Manager Only */}
-      {isManagerOrAdmin && reportData && reportData.summary && (
+      {/* Summary Cards */}
+      {reportData && reportData.summary && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="bg-card rounded-xl border border-border p-6">
           <div className="flex items-center justify-between">
@@ -873,8 +898,8 @@ export default function Reports() {
       </div>
       )}
 
-      {/* Revenue Charts and Analytics - Admin/Manager Only */}
-      {isManagerOrAdmin && reportData && (
+      {/* Revenue Charts and Analytics */}
+      {reportData && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Revenue Chart */}
         <div className="bg-card rounded-xl border border-border p-6">

@@ -2,56 +2,66 @@ import { Response } from 'express';
 import { validationResult } from 'express-validator';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
+import { resolveWriteBranchId, resolveListBranchId } from '../utils/branchScope';
 
 /**
  * Get all inventory items
  */
 export const getAllInventoryItems = async (req: AuthRequest, res: Response) => {
   try {
-    const { low_stock, category } = req.query;
+    const { low_stock, category, branch_id } = req.query;
     
     let sql = `
       SELECT 
-        id,
-        item_name as name,
-        category,
-        quantity as quantity_in_stock,
-        unit,
-        unit_cost,
-        reorder_level,
-        supplier,
-        last_restocked as last_restock_date,
-        max_stock_quantity,
-        expected_duration_value,
-        expected_duration_unit,
-        is_long_term,
-        low_stock_threshold_percent,
-        asset_value,
-        asset_purchase_date,
-        asset_serial_number,
-        asset_condition,
-        asset_location,
-        notes,
-        created_at,
-        updated_at
-      FROM inventory_items 
+        i.id,
+        i.item_name as name,
+        i.category,
+        i.quantity as quantity_in_stock,
+        i.unit,
+        i.unit_cost,
+        i.reorder_level,
+        i.supplier,
+        i.last_restocked as last_restock_date,
+        i.max_stock_quantity,
+        i.expected_duration_value,
+        i.expected_duration_unit,
+        i.is_long_term,
+        i.low_stock_threshold_percent,
+        i.asset_value,
+        i.asset_purchase_date,
+        i.asset_serial_number,
+        i.asset_condition,
+        i.asset_location,
+        i.notes,
+        i.created_at,
+        i.updated_at,
+        i.branch_id,
+        b.name as branch_name
+      FROM inventory_items i
+      LEFT JOIN branches b ON i.branch_id = b.id
       WHERE 1=1
-        AND COALESCE(is_active, TRUE) = TRUE
+        AND COALESCE(i.is_active, TRUE) = TRUE
     `;
     const values: any[] = [];
     let paramCount = 1;
+
+    const listBranchId = resolveListBranchId(req, branch_id);
+    if (listBranchId) {
+      sql += ` AND i.branch_id = $${paramCount++}`;
+      values.push(listBranchId);
+    }
     
     if (category) {
-      sql += ` AND category = $${paramCount++}`;
+      sql += ` AND i.category = $${paramCount++}`;
       values.push(category);
     }
     
     if (low_stock === 'true') {
       // Long-term assets are not consumables — they never run "low"
-      sql += ` AND COALESCE(is_long_term, FALSE) = FALSE AND quantity <= reorder_level`;
+      sql += ` AND COALESCE(i.is_long_term, FALSE) = FALSE AND i.quantity <= i.reorder_level`;
     }
     
-    sql += ' ORDER BY item_name ASC';
+    sql += ' ORDER BY i.item_name ASC';
     
     const result = await query(sql, values);
     
@@ -223,6 +233,7 @@ export const createInventoryItem = async (req: AuthRequest, res: Response) => {
       item_name,
       unit,
       quantity = 0,
+      quantity_in_stock,
       reorder_level = 0,
       unit_cost = 0,
       category,
@@ -238,6 +249,7 @@ export const createInventoryItem = async (req: AuthRequest, res: Response) => {
       asset_serial_number,
       asset_condition,
       asset_location,
+      branch_id: requestedBranchId,
     } = req.body;
 
     const longTerm = Boolean(is_long_term);
@@ -245,19 +257,21 @@ export const createInventoryItem = async (req: AuthRequest, res: Response) => {
     const resolvedCost = longTerm
       ? Number(asset_value ?? unit_cost) || 0
       : Number(unit_cost) || 0;
+    const branchId = resolveWriteBranchId(req, requestedBranchId);
+    const resolvedQty = quantity_in_stock != null ? Number(quantity_in_stock) : Number(quantity) || 0;
     
     const result = await query(
       `INSERT INTO inventory_items 
        (item_name, unit, quantity, reorder_level, unit_cost, category, supplier, notes, 
         max_stock_quantity, expected_duration_value, expected_duration_unit, is_long_term, 
         low_stock_threshold_percent, asset_value, asset_purchase_date, asset_serial_number,
-        asset_condition, asset_location, last_restocked)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())
+        asset_condition, asset_location, last_restocked, branch_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), $19)
        RETURNING *`,
       [
         item_name,
         resolvedUnit,
-        longTerm ? Math.max(1, Number(quantity) || 1) : quantity,
+        longTerm ? Math.max(1, resolvedQty || 1) : resolvedQty,
         longTerm ? 0 : reorder_level,
         resolvedCost,
         category,
@@ -273,6 +287,7 @@ export const createInventoryItem = async (req: AuthRequest, res: Response) => {
         longTerm ? (asset_serial_number || null) : null,
         longTerm ? (asset_condition || 'GOOD') : null,
         longTerm ? (asset_location || null) : null,
+        branchId,
       ]
     );
     
@@ -311,6 +326,7 @@ export const updateInventoryItem = async (req: AuthRequest, res: Response) => {
       asset_condition,
       asset_location,
       quantity_in_stock,
+      branch_id: requestedBranchId,
     } = req.body;
 
     const longTerm = Boolean(is_long_term);
@@ -339,8 +355,9 @@ export const updateInventoryItem = async (req: AuthRequest, res: Response) => {
            asset_condition = $16,
            asset_location = $17,
            quantity = COALESCE($18, quantity),
+           branch_id = COALESCE($19, branch_id),
            updated_at = NOW()
-       WHERE id = $19
+       WHERE id = $20
        RETURNING *`,
       [
         item_name,
@@ -361,6 +378,7 @@ export const updateInventoryItem = async (req: AuthRequest, res: Response) => {
         longTerm ? (asset_condition || 'GOOD') : null,
         longTerm ? (asset_location || null) : null,
         quantity_in_stock != null ? Number(quantity_in_stock) : null,
+        requestedBranchId ? Number(requestedBranchId) : null,
         id,
       ]
     );

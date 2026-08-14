@@ -29,6 +29,7 @@ import { ensureDamageClaims } from './database/ensureDamageClaims';
 import { ensureSurcharges } from './database/ensureSurcharges';
 import { ensureNotificationReads } from './database/ensureNotificationReads';
 import { ensurePaymentCancellation } from './database/ensurePaymentCancellation';
+import { ensureBranchScopedData } from './database/ensureBranchScopedData';
 
 // Force IPv4 DNS resolution to avoid unreachable IPv6 routes in some environments.
 dns.setDefaultResultOrder('ipv4first');
@@ -215,6 +216,13 @@ const startServer = async () => {
       await ensurePaymentCancellation();
     } catch (pmtCancelErr) {
       console.error('⚠️ ensurePaymentCancellation migration skipped or failed:', pmtCancelErr);
+    }
+
+    // Branch-scoped expenses, inventory, payroll + backdated order flags
+    try {
+      await ensureBranchScopedData();
+    } catch (branchScopeErr) {
+      console.error('⚠️ ensureBranchScopedData migration skipped or failed:', branchScopeErr);
     }
 
     // Ensure upload directories exist

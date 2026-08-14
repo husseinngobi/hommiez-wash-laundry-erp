@@ -8,7 +8,9 @@ const router = Router();
 router.get('/employees', authenticate as any, requireAdmin as any, (async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(`
-      SELECT * FROM payroll_employees
+      SELECT pe.*, b.name as branch_name
+      FROM payroll_employees pe
+      LEFT JOIN branches b ON pe.branch_id = b.id
       ORDER BY hire_date DESC
     `);
     // Convert salary_amount from string to number
@@ -35,7 +37,8 @@ router.post('/employees', authenticate as any, requireAdmin as any, (async (req:
       payment_frequency,
       bank_account,
       bank_name,
-      hire_date
+      hire_date,
+      branch_id,
     } = req.body;
 
     // Validate required fields (employee_id_number is now auto-generated)
@@ -60,8 +63,8 @@ router.post('/employees', authenticate as any, requireAdmin as any, (async (req:
       `INSERT INTO payroll_employees (
         employee_name, employee_id_number, position, phone, email,
         salary_amount, payment_frequency, bank_account, bank_name,
-        hire_date, employment_status, added_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11)
+        hire_date, employment_status, added_by, branch_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11, $12)
       RETURNING *`,
       [
         employee_name,
@@ -74,7 +77,8 @@ router.post('/employees', authenticate as any, requireAdmin as any, (async (req:
         bank_account || null,
         bank_name || null,
         hire_date,
-        req.user!.id
+        req.user!.id,
+        branch_id ? Number(branch_id) : (req.user!.branch_id ?? null),
       ]
     );
 
@@ -95,9 +99,12 @@ router.get('/payments', authenticate as any, requireAdmin as any, (async (req: A
       SELECT 
         sp.*,
         pe.employee_name,
-        pe.position
+        pe.position,
+        pe.branch_id,
+        b.name as branch_name
       FROM salary_payments sp
       JOIN payroll_employees pe ON sp.employee_id = pe.id
+      LEFT JOIN branches b ON pe.branch_id = b.id
       ORDER BY sp.payment_date DESC
       LIMIT 50
     `);
@@ -187,7 +194,8 @@ router.put('/employees/:id', authenticate as any, requireAdmin as any, (async (r
       salary_amount,
       payment_frequency,
       bank_account,
-      bank_name
+      bank_name,
+      branch_id,
     } = req.body;
 
     // Validate required fields
@@ -199,10 +207,10 @@ router.put('/employees/:id', authenticate as any, requireAdmin as any, (async (r
       `UPDATE payroll_employees 
        SET employee_name = $1, position = $2, phone = $3, email = $4,
            salary_amount = $5, payment_frequency = $6, bank_account = $7, bank_name = $8,
-           updated_at = NOW()
-       WHERE id = $9
+           branch_id = $9, updated_at = NOW()
+       WHERE id = $10
        RETURNING *`,
-      [employee_name, position, phone, email, salary_amount, payment_frequency, bank_account, bank_name, id]
+      [employee_name, position, phone, email, salary_amount, payment_frequency, bank_account, bank_name, branch_id ? Number(branch_id) : null, id]
     );
 
     if (result.rows.length === 0) {

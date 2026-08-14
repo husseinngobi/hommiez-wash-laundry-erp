@@ -55,7 +55,7 @@ export async function resolveVatConfig(
 
 export const getAllOrders = async (req: AuthRequest, res: Response) => {
   try {
-    const { status, payment_status, customer_id, from_date, to_date, search, page = 1, limit = 15 } = req.query;
+    const { status, payment_status, customer_id, from_date, to_date, search, page = 1, limit = 15, is_backdated, branch_id } = req.query;
     const userRole = req.user?.role;
     
     // Build WHERE clause
@@ -104,6 +104,15 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       whereClause += ` AND o.created_at <= $${paramCount++}`;
       values.push(to_date);
     }
+
+    if (branch_id && branch_id !== 'all') {
+      whereClause += ` AND o.branch_id = $${paramCount++}`;
+      values.push(Number(branch_id));
+    }
+
+    if (is_backdated === 'true' || is_backdated === true) {
+      whereClause += ` AND o.is_backdated = TRUE`;
+    }
     
     // Get total count
     const countSql = `
@@ -131,6 +140,8 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
         o.discount_percentage, o.discount_amount, o.bargain_amount,
         COALESCE(o.surcharge_amount, 0) as surcharge_amount,
         o.tax_rate, o.tax_amount,
+        COALESCE(o.is_backdated, FALSE) as is_backdated,
+        o.recorded_at,
         c.name as customer_name,
         c.phone as customer_phone,
         u.full_name as staff_name,
@@ -178,6 +189,8 @@ export const getOrderById = async (req: AuthRequest, res: Response) => {
         o.discount_percentage, o.discount_amount, o.bargain_amount,
         COALESCE(o.surcharge_amount, 0) as surcharge_amount,
         o.tax_rate, o.tax_amount,
+        COALESCE(o.is_backdated, FALSE) as is_backdated,
+        o.recorded_at,
         c.name as customer_name, 
         c.phone as customer_phone,
         c.email as customer_email,
@@ -585,37 +598,24 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     const nextInvoiceNumber = parseInt(invoiceMaxResult.rows[0].max_number) + 1;
     const invoice_number = `INV-${year}-${String(nextInvoiceNumber).padStart(6, '0')}`;
     
-    // Create order
+    // Create order — recorded_at is always "entered now"; created_at is the business date
     const orderResult = await client.query(
-      customOrderDate
-        ? `INSERT INTO orders (
-            order_number, customer_id, user_id, subtotal, tax_rate, tax_amount,
-            discount_percentage, discount_amount, bargain_amount, surcharge_amount,
-            total_amount, payment_status, payment_method, amount_paid, balance,
-            status, transaction_reference, invoice_number, notes, branch_id, created_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-          RETURNING *`
-        : `INSERT INTO orders (
-            order_number, customer_id, user_id, subtotal, tax_rate, tax_amount,
-            discount_percentage, discount_amount, bargain_amount, surcharge_amount,
-            total_amount, payment_status, payment_method, amount_paid, balance,
-            status, transaction_reference, invoice_number, notes, branch_id
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-          RETURNING *`,
-      customOrderDate
-        ? [
-            order_number, customer_id, req.user!.id, subtotal, tax_rate, tax_amount,
-            discount_percentage, discount_amount, bargainAmountValue, surchargeAmountValue,
-            total_amount, finalPaymentStatus, finalPaymentMethod, finalAmountPaidValue,
-            balance, 'pending', transaction_reference || null, invoice_number, notes, branchId,
-            customOrderDate,
-          ]
-        : [
-            order_number, customer_id, req.user!.id, subtotal, tax_rate, tax_amount,
-            discount_percentage, discount_amount, bargainAmountValue, surchargeAmountValue,
-            total_amount, finalPaymentStatus, finalPaymentMethod, finalAmountPaidValue,
-            balance, 'pending', transaction_reference || null, invoice_number, notes, branchId,
-          ]
+      `INSERT INTO orders (
+        order_number, customer_id, user_id, subtotal, tax_rate, tax_amount,
+        discount_percentage, discount_amount, bargain_amount, surcharge_amount,
+        total_amount, payment_status, payment_method, amount_paid, balance,
+        status, transaction_reference, invoice_number, notes, branch_id,
+        created_at, recorded_at, is_backdated
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NOW(),$22)
+      RETURNING *`,
+      [
+        order_number, customer_id, req.user!.id, subtotal, tax_rate, tax_amount,
+        discount_percentage, discount_amount, bargainAmountValue, surchargeAmountValue,
+        total_amount, finalPaymentStatus, finalPaymentMethod, finalAmountPaidValue,
+        balance, 'pending', transaction_reference || null, invoice_number, notes, branchId,
+        customOrderDate || new Date().toISOString(),
+        !!customOrderDate,
+      ]
     );
     
     const orderId = orderResult.rows[0].id;
@@ -651,6 +651,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     
     // Always create a payments ledger row when money was received (links order ↔ Payments ↔ accounting)
     if (finalAmountPaidValue > 0 && finalPaymentMethod !== 'ON_ACCOUNT') {
+      const initialPaymentDate = customOrderDate || new Date().toISOString();
       await client.query(
         `INSERT INTO payments (
           order_id,
@@ -661,13 +662,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           payment_date,
           notes,
           created_by
-        ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6, $7)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           orderId,
           customer_id,
           finalAmountPaidValue,
           finalPaymentMethod,
           transaction_reference || null,
+          initialPaymentDate,
           `Initial payment for order ${order_number}`,
           req.user!.id
         ]
@@ -947,7 +949,8 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       discount_percentage,
       discount_amount,
       notes,
-      transaction_reference
+      transaction_reference,
+      payment_date: requestedPaymentDate,
     } = req.body;
 
     // Cancelling is an administrator action. This generic update route must not
@@ -1105,6 +1108,16 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       const userId = req.user?.id;
 
       try {
+        let paymentTs = new Date();
+        if (requestedPaymentDate) {
+          const parsed = new Date(requestedPaymentDate);
+          const today = new Date();
+          today.setHours(23, 59, 59, 999);
+          if (!isNaN(parsed.getTime()) && parsed <= today) {
+            paymentTs = parsed;
+          }
+        }
+
         await query(`
           INSERT INTO payments (
             order_id,
@@ -1115,13 +1128,14 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
             payment_date,
             notes,
             created_by
-          ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6, $7)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `, [
           id,
           updatedOrder.customer_id,
           paymentAmount,
           payment_method || currentOrder.payment_method || 'CASH',
           transaction_reference || null,
+          paymentTs.toISOString(),
           notes ? `Manual payment: ${notes}` : 'Manual payment added to order',
           userId
         ]);

@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { query } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { getSystemAdminEmails } from '../utils/systemAdmin';
+import { resolveListBranchId } from '../utils/branchScope';
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
@@ -73,7 +74,12 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 
 export const getRevenueReport = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'week', from_date, to_date } = req.query;
+    const { period = 'week', from_date, to_date, branch_id } = req.query;
+    const listBranchId = resolveListBranchId(req, branch_id);
+    const branchJoin = listBranchId
+      ? `JOIN orders o_br ON o_br.id = p.order_id AND o_br.branch_id = ${Number(listBranchId)}`
+      : '';
+    const branchAnd = listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : '';
     
     let dateFilter = '';
     if (period === 'custom' && from_date && to_date) {
@@ -103,7 +109,8 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
         SUM(p.amount) as revenue,
         AVG(p.amount) as avg_order_value
       FROM payments p
-      WHERE ${dateFilter}
+      ${branchJoin}
+      WHERE ${dateFilter.replace(/payment_date/g, 'p.payment_date')}
       GROUP BY DATE(p.payment_date)
       ORDER BY date DESC
     `);
@@ -120,6 +127,7 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
       JOIN price_items pi ON oi.price_item_id = pi.id
       WHERE ${dateFilter.replace('payment_date', 'pay.payment_date')}
         AND pi.category IS NOT NULL
+        ${branchAnd}
       GROUP BY pi.category
       HAVING SUM(pay.amount) > 0
       ORDER BY revenue DESC
@@ -135,6 +143,7 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
         SUM(p.amount) as total_spent
       FROM customers c
       JOIN payments p ON c.id = p.customer_id
+      ${branchJoin}
       WHERE ${dateFilter.replace('payment_date', 'p.payment_date')}
       GROUP BY c.id, c.name, c.phone
       HAVING SUM(p.amount) > 0
@@ -145,13 +154,14 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
     // Total summary - based on actual payments RECEIVED in this period (payment date)
     const summary = await query(`
       SELECT 
-        COUNT(DISTINCT order_id) as total_orders,
-        COALESCE(SUM(amount), 0) as total_revenue,
-        COALESCE(AVG(amount), 0) as avg_order_value,
+        COUNT(DISTINCT p.order_id) as total_orders,
+        COALESCE(SUM(p.amount), 0) as total_revenue,
+        COALESCE(AVG(p.amount), 0) as avg_order_value,
         COALESCE(SUM(CASE WHEN o.discount IS NOT NULL THEN o.discount ELSE 0 END), 0) as total_discounts
       FROM payments p
       LEFT JOIN orders o ON p.order_id = o.id
       WHERE ${dateFilter.replace('payment_date', 'p.payment_date')}
+        ${branchAnd}
     `);
 
     // Order status distribution - operational view (orders CREATED in period)
@@ -161,6 +171,7 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
         COUNT(*) as count
       FROM orders
       WHERE ${dateFilter.replace('payment_date', 'created_at')}
+        ${listBranchId ? `AND branch_id = ${Number(listBranchId)}` : ''}
       GROUP BY status
       ORDER BY count DESC
     `);
@@ -445,10 +456,11 @@ export const downloadPDFReport = async (req: AuthRequest, res: Response) => {
 
 export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'week', from_date, to_date } = req.query;
+    const { period = 'week', from_date, to_date, branch_id } = req.query;
     const userRole = req.user?.role;
     const userId = req.user?.id;
     const hiddenSystemAdminEmails = getSystemAdminEmails();
+    const listBranchId = resolveListBranchId(req, branch_id);
     
     let dateFilter = '';
     if (period === 'custom' && from_date && to_date) {
@@ -483,9 +495,8 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
 
     const staffWhereSql = staffWhereClauses.join(' AND ');
 
-    // Staff performance: orders created by each staff member - revenue counted when PAYMENT RECEIVED
-    // Only shows: active users (regardless of orders) OR inactive users who have at least one order.
-    // This prevents deleted/inactive staff with zero history from cluttering the report.
+    // Staff performance: only people who actually created orders. Active staff
+    // with zero history (and deleted staff with no orders) stay off the table.
     const staffStats = await query(`
       SELECT 
         u.id,
@@ -498,11 +509,12 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(o.discount_amount), 0) as total_discounts_given,
         COALESCE(SUM(o.bargain_amount), 0) as total_bargains_given
       FROM users u
-      LEFT JOIN orders o ON u.id = o.user_id
+      LEFT JOIN orders o ON u.id = o.user_id ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
       LEFT JOIN payments p ON o.id = p.order_id ${dateFilter !== '1=1' ? `AND ${dateFilter}` : ''}
       WHERE ${staffWhereSql}
+        AND u.deleted_at IS NULL
       GROUP BY u.id, u.full_name, u.role, u.status
-      HAVING COUNT(DISTINCT o.id) > 0 OR u.status = 'ACTIVE'
+      HAVING COUNT(DISTINCT o.id) > 0
       ORDER BY total_revenue DESC
     `, staffWhereParams);
 
@@ -532,6 +544,8 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
       JOIN orders o ON p.order_id = o.id
       JOIN users u ON o.user_id = u.id
       WHERE ${dailyWhereSql}
+        ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
+        AND u.deleted_at IS NULL
       GROUP BY DATE(p.payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi'), u.full_name
       ORDER BY date DESC, revenue DESC
     `, dailyWhereParams);
@@ -548,7 +562,8 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
 
 export const getVATSummary = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'week', from_date, to_date } = req.query;
+    const { period = 'week', from_date, to_date, branch_id } = req.query;
+    const listBranchId = resolveListBranchId(req, branch_id);
     
     let dateFilter = '';
     if (period === 'custom' && from_date && to_date) {
@@ -567,6 +582,8 @@ export const getVATSummary = async (req: AuthRequest, res: Response) => {
       dateFilter = "1=1";
     }
 
+    const vatBranch = listBranchId ? `AND branch_id = ${Number(listBranchId)}` : '';
+
     // Total VAT collected (only from orders with tax_amount > 0)
     const vatSummary = await query(`
       SELECT 
@@ -578,6 +595,7 @@ export const getVATSummary = async (req: AuthRequest, res: Response) => {
       FROM orders
       WHERE ${dateFilter}
         AND tax_amount > 0
+        ${vatBranch}
     `);
 
     // Orders without VAT
@@ -586,6 +604,7 @@ export const getVATSummary = async (req: AuthRequest, res: Response) => {
       FROM orders
       WHERE ${dateFilter}
         AND (tax_amount = 0 OR tax_amount IS NULL)
+        ${vatBranch}
     `);
 
     // VAT breakdown by day
@@ -598,6 +617,7 @@ export const getVATSummary = async (req: AuthRequest, res: Response) => {
       FROM orders
       WHERE ${dateFilter}
         AND tax_amount > 0
+        ${vatBranch}
       GROUP BY DATE(created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi')
       ORDER BY date DESC
       LIMIT 30
@@ -615,6 +635,7 @@ export const getVATSummary = async (req: AuthRequest, res: Response) => {
       FROM orders
       WHERE ${dateFilter}
         AND tax_amount > 0
+        ${vatBranch}
       GROUP BY TO_CHAR(created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi', 'YYYY-MM'),
                TO_CHAR(created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi', 'Month YYYY')
       ORDER BY month DESC
@@ -633,6 +654,7 @@ export const getVATSummary = async (req: AuthRequest, res: Response) => {
       JOIN orders o ON u.id = o.user_id
       WHERE ${dateFilter.replace(/created_at/g, 'o.created_at')}
         AND o.tax_amount > 0
+        ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
       GROUP BY u.id, u.full_name, u.role
       ORDER BY total_vat_collected DESC
     `);

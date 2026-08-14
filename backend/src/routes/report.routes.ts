@@ -10,7 +10,7 @@ router.use(authenticate as any);
 
 // Dashboard, revenue, customer analytics - Admin & Manager only
 router.get('/dashboard', authorize(UserRole.ADMIN, UserRole.MANAGER) as any, reportController.getDashboardStats as any);
-router.get('/revenue', authorize(UserRole.ADMIN, UserRole.MANAGER) as any, reportController.getRevenueReport as any);
+router.get('/revenue', authorize(UserRole.ADMIN, UserRole.MANAGER, UserRole.DESKTOP_AGENT) as any, reportController.getRevenueReport as any);
 router.get('/customers', authorize(UserRole.ADMIN, UserRole.MANAGER) as any, reportController.getCustomerAnalytics as any);
 router.get('/download/pdf', authorize(UserRole.ADMIN, UserRole.MANAGER) as any, reportController.downloadPDFReport as any);
 

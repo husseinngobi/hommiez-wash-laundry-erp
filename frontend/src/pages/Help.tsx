@@ -1,5 +1,5 @@
 import { MainLayout } from '@/components/layout/MainLayout';
-import { HelpCircle, Book, MessageCircle, Phone, Mail, ChevronDown, ChevronUp, Package, Users, DollarSign, Settings, BarChart } from 'lucide-react';
+import { HelpCircle, Book, MessageCircle, Phone, Mail, ChevronDown, ChevronUp, Package, Users, DollarSign, Settings, BarChart, Building2, Warehouse, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useState } from 'react';
@@ -50,13 +50,35 @@ const helpTopics: HelpTopic[] = [
         '4. Enter pickup and delivery dates',
         '5. Set payment status as Paid, Partial, or Unpaid',
         '6. Add notes for the order or for individual items when needed',
-        '7. Save the order and review the generated order record',
+        '7. Tick “Record for a past date” if you are entering a historical order, then pick the original order date',
+        '8. Save the order and review the generated order record',
       ],
       tips: [
         'Item notes are available in the order details dialog through View note',
         'Prices are pulled from the current Price List automatically',
-        'Order status is manually updated through the workflow',
+        'Past-date orders sit in the Orders table by their original date, not the day you typed them in',
+        'Desktop agents always book against their assigned branch. Admins and managers choose the branch.',
         'Receipts and order summaries can be exported or printed when needed',
+      ],
+    },
+  },
+  {
+    id: 'historical-orders',
+    title: 'Past-date orders and payments',
+    description: 'Enter old orders so they sit in the correct date and payment period',
+    icon: Calendar,
+    content: {
+      steps: [
+        '1. On New Order, tick Record for a past date and pick the original order date (today or earlier)',
+        '2. Save the order. It appears in the Orders table by that order date, not the day you typed it',
+        '3. Use the Past-date entries filter on Orders to find only historically entered records',
+        '4. When adding a payment on such an order, pick the Payment Date so Payments and accounting use the real receipt day',
+        '5. If the order was paid when it was originally taken, that first payment uses the same past date',
+      ],
+      tips: [
+        'You cannot pick a future date',
+        'The Dashboard still shows newly entered work in Recent activity, which is expected',
+        'A Historical badge on the order date column marks backdated entries',
       ],
     },
   },
@@ -71,12 +93,14 @@ const helpTopics: HelpTopic[] = [
         '2. Review all payment records, including partial payments and refunds where allowed',
         '3. Use the period filter to narrow results by Today, Week, Month, Year, or All Time',
         '4. Open a payment to review details or receipt information',
-        '5. Use the payment actions only when your role is allowed to do so',
+        '5. When adding a payment on an order, you can pick the payment date so it lands in the correct period',
+        '6. Use the payment actions only when your role is allowed to do so',
       ],
       tips: [
         'The default payment view is All Time so the full ledger is visible first',
         'Filters only narrow the data; they do not change the stored payment history',
         'Payment statistics are calculated from the same backend data as the payment list',
+        'Historical orders should use the date the money was actually received',
       ],
     },
   },
@@ -110,13 +134,92 @@ const helpTopics: HelpTopic[] = [
         '1. Use the Dashboard for the main operational summary',
         '2. Use Financial Dashboard for revenue and business performance views',
         '3. Use Accounting for income statement, balance sheet, cash flow, and trial balance reports',
-        '4. Choose the timeframe you want to inspect',
-        '5. Export the selected reports to PDF from the Accounting page',
+        '4. Choose the timeframe, and for admins, choose All Branches or a specific branch',
+        '5. Staff performance lists only people who have created orders — deleted or unused accounts stay off the table',
+        '6. Export the selected reports to PDF from the Accounting page',
       ],
       tips: [
+        'Desktop agents see performance for their assigned branch',
+        'Accounting still totals the whole business for administrators',
         'Accounting reports now support the selected timeframe and year where applicable',
         'The export PDF button uses the same period as the screen you are viewing',
-        'If a report fails, the page shows the backend error message so you can tell whether it is a session, query, or deployment issue',
+      ],
+    },
+  },
+  {
+    id: 'branches',
+    title: 'Branches',
+    description: 'How orders, expenses, inventory, and payroll follow each branch',
+    icon: Building2,
+    content: {
+      steps: [
+        '1. Add and edit branches in Settings. New branches are available immediately.',
+        '2. Assign each Desktop Agent to a branch in User Management',
+        '3. Desktop agents record orders, expenses, and inventory against their assigned branch automatically',
+        '4. Admins and managers choose the branch when recording an expense, adding inventory, or creating an order',
+        '5. Customers stay shared across all branches',
+        '6. Deliveries follow the order’s branch, because the order is already assigned',
+      ],
+      tips: [
+        'Payment modes can be set per branch in Settings',
+        'Accounting and the dashboard still combine every branch for administrators',
+        'Use the branch filter on Expenses, Inventory, Reports, Payroll, and Orders to inspect one location',
+      ],
+    },
+  },
+  {
+    id: 'expenses',
+    title: 'Expenses',
+    description: 'Record and approve expenses by branch',
+    icon: DollarSign,
+    content: {
+      steps: [
+        '1. Open Expenses from the sidebar',
+        '2. Click Record Expense and fill date, category, amount, and payment method',
+        '3. Admins and managers pick the branch. Desktop agents are saved to their own branch.',
+        '4. Submit for approval. Admins approve or reject from the list.',
+        '5. Filter by month, category, status, or branch to review the ledger',
+      ],
+      tips: [
+        'Approved expenses feed accounting for the whole business',
+        'Click a row to see receipt number, method, branch, and who recorded it',
+      ],
+    },
+  },
+  {
+    id: 'inventory',
+    title: 'Inventory',
+    description: 'Keep stock per branch',
+    icon: Warehouse,
+    content: {
+      steps: [
+        '1. Open Inventory from the sidebar',
+        '2. Admins can filter All Branches or one location',
+        '3. Add items against the correct branch so stock is not mixed',
+        '4. Restock and usage apply to that branch’s quantity',
+        '5. Desktop agents only see and update stock for their assigned branch',
+      ],
+      tips: [
+        'The same item name can exist at more than one branch as separate stock',
+        'Low-stock alerts are based on the items visible for your branch',
+      ],
+    },
+  },
+  {
+    id: 'payroll',
+    title: 'Payroll',
+    description: 'Assign workers to branches and pay them by location',
+    icon: Users,
+    content: {
+      steps: [
+        '1. Open Payroll (administrators)',
+        '2. When adding an employee, choose their branch',
+        '3. Filter the employee list and salary history by branch',
+        '4. Process salary payments as usual — they stay tied to that worker’s branch',
+      ],
+      tips: [
+        'Use branch filter to review one location’s wage bill',
+        'Existing employees were assigned to the main branch and can be edited',
       ],
     },
   },
