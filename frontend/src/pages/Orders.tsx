@@ -39,7 +39,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare, StickyNote, X, ShieldAlert } from 'lucide-react';
+import { Search, Eye, Calendar, User, Phone, Package, CreditCard, AlertCircle, CheckCircle2, Edit, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Truck, MapPin, MessageCircle, Printer, FileText, Settings2, Share2, Download, Mail, Trash2, ExternalLink, Bell, MessageSquare, StickyNote, X, ShieldAlert, Loader2 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -648,6 +648,7 @@ export default function Orders() {
     payment_modes?: { centenary_account?: string; mtn_code?: string; airtel_merchant?: string };
   }>>([]);
   const [additionalPayment, setAdditionalPayment] = useState(0);
+  const [recordingPayment, setRecordingPayment] = useState(false);
   const [paymentDate, setPaymentDate] = useState(kampalaTodayYmd());
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER'>('CASH');
   const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
@@ -1106,6 +1107,7 @@ export default function Orders() {
 
   // Update payment
   const handleUpdatePayment = async () => {
+    if (recordingPayment) return;
     if (!selectedOrder || additionalPayment <= 0) {
       toast({
         variant: 'destructive',
@@ -1116,6 +1118,7 @@ export default function Orders() {
     }
 
     try {
+      setRecordingPayment(true);
       // Ensure numeric values are properly parsed
       const totalAmount = parseFloat(String(selectedOrder.total_amount));
       const currentPaid = parseFloat(String(selectedOrder.amount_paid));
@@ -1174,11 +1177,14 @@ export default function Orders() {
       fetchOrders();
       if (selectedOrder) viewOrderDetails(selectedOrder);
     } catch (error) {
+      const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to update payment',
+        title: axiosError.response?.status === 409 ? 'Already recorded' : 'Error',
+        description: axiosError.response?.data?.error || 'Failed to update payment',
       });
+    } finally {
+      setRecordingPayment(false);
     }
   };
 
@@ -2820,7 +2826,13 @@ export default function Orders() {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+      <Dialog
+        open={showPaymentDialog}
+        onOpenChange={(open) => {
+          if (recordingPayment) return;
+          setShowPaymentDialog(open);
+        }}
+      >
         <DialogContent className="max-w-[95vw] sm:max-w-md max-h-[96dvh] sm:max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Add Payment</DialogTitle>
@@ -3052,11 +3064,27 @@ export default function Orders() {
               )}
 
               <div className="flex flex-col sm:flex-row gap-2 pt-4">
-                <Button variant="outline" onClick={() => setShowPaymentDialog(false)} className="w-full sm:w-auto">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowPaymentDialog(false)}
+                  className="w-full sm:w-auto"
+                  disabled={recordingPayment}
+                >
                   Cancel
                 </Button>
-                <Button onClick={handleUpdatePayment} className="w-full sm:w-auto" disabled={additionalPayment <= 0}>
-                  Record Payment
+                <Button
+                  onClick={handleUpdatePayment}
+                  className="w-full sm:w-auto"
+                  disabled={recordingPayment || additionalPayment <= 0}
+                >
+                  {recordingPayment ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Recording…
+                    </>
+                  ) : (
+                    'Record Payment'
+                  )}
                 </Button>
               </div>
             </div>

@@ -851,6 +851,21 @@ export const addOrderPayment = async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const recentDuplicate = await query(
+      `SELECT id FROM payments
+       WHERE order_id = $1
+         AND amount = $2
+         AND (is_cancelled IS NULL OR is_cancelled = FALSE)
+         AND created_at > NOW() - INTERVAL '10 seconds'
+       LIMIT 1`,
+      [order.id, paymentAmount]
+    );
+    if (recentDuplicate.rows.length > 0) {
+      return res.status(409).json({
+        error: 'This payment was just recorded. Avoid tapping Record Payment more than once.',
+      });
+    }
+
     const paymentYmd =
       extractYmd(payment_date) ||
       (order.is_backdated ? extractYmd(order.created_at) : null) ||
