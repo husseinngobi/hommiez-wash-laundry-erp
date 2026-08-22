@@ -106,6 +106,7 @@ export const recordExpense = async (req: AuthRequest, res: Response) => {
 
 /**
  * Get all expenses with filters and pagination
+ * - Hides REJECTED expenses from Desktop Agents
  */
 export const getAllExpenses = async (req: AuthRequest, res: Response) => {
   try {
@@ -123,11 +124,17 @@ export const getAllExpenses = async (req: AuthRequest, res: Response) => {
     } = req.query;
 
     const offset = (Number(page) - 1) * Number(limit);
+    const userRole = req.user?.role;
 
     // Build WHERE clause
     let whereClause = 'WHERE 1=1';
     const values: any[] = [];
     let paramCount = 1;
+
+    // RULE: Desktop Agents cannot see REJECTED expenses
+    if (userRole === 'DESKTOP_AGENT') {
+      whereClause += ` AND e.status != 'REJECTED'`;
+    }
 
     const listBranchId = resolveListBranchId(req, branch_id);
     if (listBranchId) {
@@ -260,7 +267,6 @@ export const updateExpense = async (req: AuthRequest, res: Response) => {
       receipt_number,
     } = req.body;
 
-    // Check if expense is already approved
     const expenseCheck = await query(
       'SELECT status FROM expenses WHERE id = $1',
       [id]
@@ -295,12 +301,12 @@ export const updateExpense = async (req: AuthRequest, res: Response) => {
 };
 
 /**
- * Approve/Reject expense (Admin only)
+ * Approve/Reject expense (Admin/Manager permissions)
  */
 export const approveExpense = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { approval_status, approval_notes, rejection_reason } = req.body; // 'APPROVED' or 'REJECTED'
+    const { approval_status, approval_notes, rejection_reason } = req.body;
 
     if (!['APPROVED', 'REJECTED'].includes(approval_status)) {
       return res.status(400).json({ error: 'Invalid approval status' });
@@ -309,8 +315,6 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     const approverRole = req.user?.role;
 
-    // Professional hierarchical approval permissions
-    // First, get expense details to check creator's role
     const expenseCheck = await query(
       `SELECT e.*, u.role as creator_role, u.full_name as creator_name
        FROM expenses e
@@ -326,31 +330,21 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
     const expenseToApprove = expenseCheck.rows[0];
     const creatorRole = expenseToApprove.creator_role;
 
-    // Permission validation
+    // Permission check
     if (creatorRole === 'DESKTOP_AGENT') {
-      // Desktop Agent expenses can be approved by Manager OR Admin
       if (!approverRole || !['MANAGER', 'ADMIN'].includes(approverRole)) {
         return res.status(403).json({ 
-          error: 'Only Managers and Admins can approve Desktop Agent expenses' 
+          error: 'Only Managers and Admins can approve/reject Desktop Agent expenses' 
         });
       }
-    } else if (creatorRole === 'MANAGER') {
-      // Manager expenses can only be approved by Admin
+    } else if (creatorRole === 'MANAGER' || creatorRole === 'ADMIN') {
       if (approverRole !== 'ADMIN') {
         return res.status(403).json({ 
-          error: 'Only Admins can approve Manager expenses' 
-        });
-      }
-    } else if (creatorRole === 'ADMIN') {
-      // Admin expenses can be self-approved by any Admin
-      if (approverRole !== 'ADMIN') {
-        return res.status(403).json({ 
-          error: 'Only Admins can approve Admin expenses' 
+          error: 'Only Admins can approve/reject this expense' 
         });
       }
     }
 
-    // Build update query based on approval status
     let updateQuery;
     let queryParams;
     
@@ -381,50 +375,32 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
       [userId, 'APPROVE_EXPENSE', JSON.stringify({ expense_id: id, status: approval_status })]
     );
 
-    // Notify the submitter about the approval/rejection (only if different person)
     const expense = result.rows[0];
     if (expense.submitted_by && expense.submitted_by !== userId) {
-      // Get approver details for personalized notification
       const approverResult = await query(
         `SELECT full_name, role FROM users WHERE id = $1`,
         [userId]
       );
       const approverName = approverResult.rows[0]?.full_name || 'Administrator';
-      const approverRole = approverResult.rows[0]?.role || 'ADMIN';
+      const userRoleName = approverResult.rows[0]?.role || 'ADMIN';
       
       let notificationTitle = '';
       let notificationMessage = '';
       
       if (approval_status === 'APPROVED') {
         notificationTitle = 'Expense Approved ✓';
-        notificationMessage = `Your expense of UGX ${parseFloat(expense.amount).toLocaleString()} has been approved by ${approverName} (${approverRole}).`;
-        
-        if (approval_notes) {
-          notificationMessage += `\n\nNotes: ${approval_notes}`;
-        }
+        notificationMessage = `Your expense of UGX ${parseFloat(expense.amount).toLocaleString()} has been approved by ${approverName} (${userRoleName}).`;
+        if (approval_notes) notificationMessage += `\n\nNotes: ${approval_notes}`;
       } else {
-        // Professional rejection notification with clear guidance
         notificationTitle = 'Expense Rejected';
-        notificationMessage = `Your expense of UGX ${parseFloat(expense.amount).toLocaleString()} for "${expense.description}" has been rejected by ${approverName} (${approverRole}).\n\n`;
-        
-        if (rejection_reason) {
-          notificationMessage += `Reason: ${rejection_reason}\n\n`;
-        }
-        
-        notificationMessage += `Next Steps:\n`;
-        notificationMessage += `• Contact ${approverName} to discuss this expense\n`;
-        notificationMessage += `• If clarified, you may submit a new expense with updated details\n`;
-        notificationMessage += `• Ensure all receipts and documentation are attached`;
+        notificationMessage = `Your expense of UGX ${parseFloat(expense.amount).toLocaleString()} for "${expense.description}" has been rejected by ${approverName} (${userRoleName}).\n\n`;
+        if (rejection_reason) notificationMessage += `Reason: ${rejection_reason}\n\n`;
       }
 
       await query(
         `INSERT INTO notifications (user_id, type, title, message, link, created_at)
          VALUES ($1, 'expense', $2, $3, '/expenses', NOW())`,
-        [
-          expense.submitted_by,
-          notificationTitle,
-          notificationMessage
-        ]
+        [expense.submitted_by, notificationTitle, notificationMessage]
       );
     }
 
@@ -444,20 +420,29 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
 
   } catch (error) {
     console.error('Approve expense error:', error);
-    res.status(500).json({ error: 'Failed to approve expense' });
+    res.status(500).json({ error: 'Failed to approve/reject expense' });
   }
 };
 
 /**
- * Delete expense (only if not approved)
+ * Delete expense permanently
+ * Rules:
+ * - Administrators only.
+ * - REJECTED expenses: Can be deleted permanently at any time.
+ * - APPROVED expenses: Can be deleted ONLY if approved within the last 7 days.
+ * - PENDING expenses: Can be deleted freely.
  */
 export const deleteExpense = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const userRole = req.user?.role;
 
-    // Check if expense is already approved
+    if (userRole !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only administrators can permanently delete expenses' });
+    }
+
     const expenseCheck = await query(
-      'SELECT status FROM expenses WHERE id = $1',
+      'SELECT status, approved_at, created_at FROM expenses WHERE id = $1',
       [id]
     );
 
@@ -465,12 +450,36 @@ export const deleteExpense = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Expense not found' });
     }
 
-    if (expenseCheck.rows[0].status === 'APPROVED') {
-      return res.status(400).json({ error: 'Cannot delete approved expense' });
+    const { status, approved_at } = expenseCheck.rows[0];
+
+    // Rule 1: Rejected expenses can be deleted permanently at any time
+    if (status === 'REJECTED') {
+      await query('DELETE FROM expenses WHERE id = $1', [id]);
+      return res.json({ message: 'Rejected expense deleted permanently' });
     }
 
-    await query('DELETE FROM expenses WHERE id = $1', [id]);
+    // Rule 2: Approved expenses can only be deleted within 7 days of approval
+    if (status === 'APPROVED') {
+      if (!approved_at) {
+        return res.status(400).json({ error: 'Approval date missing. Cannot verify 7-day deletion limit.' });
+      }
 
+      const approvedTime = new Date(approved_at).getTime();
+      const currentTime = new Date().getTime();
+      const diffInDays = (currentTime - approvedTime) / (1000 * 60 * 60 * 24);
+
+      if (diffInDays > 7) {
+        return res.status(400).json({ 
+          error: 'Approved expenses older than 7 days cannot be deleted permanently' 
+        });
+      }
+
+      await query('DELETE FROM expenses WHERE id = $1', [id]);
+      return res.json({ message: 'Approved expense deleted permanently' });
+    }
+
+    // Rule 3: Pending expenses
+    await query('DELETE FROM expenses WHERE id = $1', [id]);
     res.json({ message: 'Expense deleted successfully' });
 
   } catch (error) {
@@ -484,7 +493,6 @@ export const deleteExpense = async (req: AuthRequest, res: Response) => {
  */
 export const getExpenseCategories = async (req: AuthRequest, res: Response) => {
   try {
-    // Return predefined categories since we're not using a separate table
     const categories = [
       { id: 1, name: 'Utilities', color: '#3B82F6', is_active: true },
       { id: 2, name: 'Supplies', color: '#10B981', is_active: true },
@@ -516,11 +524,9 @@ export const getExpenseStatistics = async (req: AuthRequest, res: Response) => {
       dateFilter = 'WHERE expense_date BETWEEN $1 AND $2';
       values.push(from_date, to_date);
     } else {
-      // Default to current month
       dateFilter = `WHERE DATE_TRUNC('month', expense_date) = DATE_TRUNC('month', CURRENT_DATE)`;
     }
 
-    // Total expenses
     const totalResult = await query(
       `SELECT 
         COALESCE(SUM(amount), 0) as total_expenses,
@@ -530,7 +536,6 @@ export const getExpenseStatistics = async (req: AuthRequest, res: Response) => {
       values
     );
 
-    // By category
     const categoryResult = await query(
       `SELECT 
         e.category,
@@ -546,7 +551,6 @@ export const getExpenseStatistics = async (req: AuthRequest, res: Response) => {
       values
     );
 
-    // Pending approvals
     const pendingResult = await query(
       `SELECT COUNT(*) as pending_count, COALESCE(SUM(amount), 0) as pending_amount
        FROM expenses 

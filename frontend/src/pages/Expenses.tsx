@@ -52,7 +52,30 @@ interface Category {
   color: string;
 }
 
+// Helpers for timezone-safe YYYY-MM and YYYY-MM-DD strings
+const getLocalDateString = (date: Date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getMonthBoundaries = (monthString: string) => {
+  const [yearStr, monthStr] = monthString.split('-');
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  
+  const firstDay = `${yearStr}-${monthStr}-01`;
+  const lastDayNum = new Date(year, month, 0).getDate();
+  const lastDay = `${yearStr}-${monthStr}-${String(lastDayNum).padStart(2, '0')}`;
+  
+  return { firstDay, lastDay };
+};
+
 const Expenses = () => {
+  const currentMonthStr = getLocalDateString().slice(0, 7);
+  const initialBoundaries = getMonthBoundaries(currentMonthStr);
+
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -62,17 +85,11 @@ const Expenses = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [monthlyStats, setMonthlyStats] = useState({ total: 0, count: 0, pending: 0 });
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM format
-  
-  // Set default filters to current month
-  const today = new Date();
-  const currentMonth = today.toISOString().slice(0, 7);
-  const firstDay = `${currentMonth}-01`;
-  const lastDay = `${currentMonth}-${new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()}`;
-  
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
+
   const [filters, setFilters] = useState({
-    from_date: firstDay,
-    to_date: lastDay,
+    from_date: initialBoundaries.firstDay,
+    to_date: initialBoundaries.lastDay,
     category: '',
     status: '',
     search: '',
@@ -80,7 +97,7 @@ const Expenses = () => {
   });
 
   const [formData, setFormData] = useState({
-    expense_date: new Date().toISOString().split('T')[0],
+    expense_date: getLocalDateString(),
     category: '',
     description: '',
     amount: '',
@@ -94,29 +111,28 @@ const Expenses = () => {
   const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
 
   const fetchExpenses = useCallback(async () => {
+    if (!token) return;
     try {
       setLoading(true);
-      // Use token from AuthContext instead of localStorage directly
-      if (!token) {
-        throw new Error('No authentication token');
-      }
-      
+      const activeFilters = Object.fromEntries(
+        Object.entries(filters).filter(([_, v]) => v !== '')
+      );
+
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: '20',
-        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v !== '')),
+        ...activeFilters,
       });
 
       const response = await axios.get(`${API_BASE_URL}/expenses?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      setExpenses(response.data.expenses);
-      setTotalPages(response.data.pagination.totalPages);
-    } catch (error) {
+      setExpenses(response.data.expenses || []);
+      setTotalPages(response.data.pagination?.totalPages || 1);
+    } catch (error: unknown) {
       console.error('Failed to fetch expenses:', error);
-      if (error && typeof error === 'object' && 'response' in error && 
-          (error as { response?: { status?: number } }).response?.status === 401) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
         toast.error('Session expired. Please login again.');
         return;
       }
@@ -127,41 +143,38 @@ const Expenses = () => {
   }, [currentPage, filters, token]);
 
   const fetchCategories = useCallback(async () => {
+    if (!token) return;
     try {
-      if (!token) return;
       const response = await axios.get(`${API_BASE_URL}/expenses/categories`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setCategories(response.data);
+      setCategories(response.data || []);
     } catch (error) {
       console.error('Failed to fetch categories:', error);
     }
   }, [token]);
 
   const fetchMonthlyStats = useCallback(async () => {
+    if (!token) return;
     try {
-      if (!token) return;
-      const [year, month] = selectedMonth.split('-');
-      const from_date = `${year}-${month}-01`;
-      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
-      const to_date = `${year}-${month}-${lastDay}`;
+      const { firstDay, lastDay } = getMonthBoundaries(selectedMonth);
 
       const response = await axios.get(`${API_BASE_URL}/expenses`, {
         headers: { Authorization: `Bearer ${token}` },
         params: {
-          from_date,
-          to_date,
+          from_date: firstDay,
+          to_date: lastDay,
           limit: 1000,
           ...(filters.branch_id ? { branch_id: filters.branch_id } : {}),
         },
       });
 
-      const allExpenses = response.data.expenses || [];
-      const approved = allExpenses.filter((e: Expense) => e.status === 'APPROVED');
-      const pending = allExpenses.filter((e: Expense) => e.status === 'PENDING');
+      const allExpenses: Expense[] = response.data.expenses || [];
+      const approved = allExpenses.filter((e) => e.status === 'APPROVED');
+      const pending = allExpenses.filter((e) => e.status === 'PENDING');
 
       setMonthlyStats({
-        total: approved.reduce((sum: number, e: Expense) => sum + parseFloat(e.amount), 0),
+        total: approved.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0),
         count: approved.length,
         pending: pending.length,
       });
@@ -172,7 +185,8 @@ const Expenses = () => {
 
   useEffect(() => {
     if (!token) return;
-    axios.get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
+    axios
+      .get(`${API_BASE_URL}/branches`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => setBranches(res.data.branches || []))
       .catch(() => setBranches([]));
   }, [token]);
@@ -185,35 +199,36 @@ const Expenses = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!token) return;
     try {
-      if (!token) return;
       await axios.post(`${API_BASE_URL}/expenses`, formData, {
         headers: { Authorization: `Bearer ${token}` },
       });
       toast.success('Expense recorded successfully');
       setShowAddDialog(false);
       setFormData({
-        expense_date: new Date().toISOString().split('T')[0],
+        expense_date: getLocalDateString(),
         category: '',
         description: '',
         amount: '',
         payment_method: 'CASH',
         receipt_number: '',
-        branch_id: '',
+        branch_id: user?.branch_id ? String(user.branch_id) : '',
       });
       fetchExpenses();
-    } catch (error) {
+      fetchMonthlyStats();
+    } catch (error: unknown) {
       console.error('Failed to record expense:', error);
-      const errorMessage = error && typeof error === 'object' && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      const errorMessage = axios.isAxiosError(error) 
+        ? error.response?.data?.error 
         : undefined;
       toast.error(errorMessage || 'Failed to record expense');
     }
   };
 
   const handleApprove = async (id: number, status: 'APPROVED' | 'REJECTED') => {
+    if (!token) return;
     try {
-      if (!token) return;
       await axios.patch(
         `${API_BASE_URL}/expenses/${id}/approve`,
         { approval_status: status },
@@ -221,10 +236,11 @@ const Expenses = () => {
       );
       toast.success(`Expense ${status.toLowerCase()}`);
       fetchExpenses();
-    } catch (error) {
+      fetchMonthlyStats();
+    } catch (error: unknown) {
       console.error('Failed to approve expense:', error);
-      const errorMessage = error && typeof error === 'object' && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      const errorMessage = axios.isAxiosError(error) 
+        ? error.response?.data?.error 
         : undefined;
       toast.error(errorMessage || 'Failed to approve expense');
     }
@@ -232,9 +248,9 @@ const Expenses = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'APPROVED': return 'bg-green-500';
-      case 'REJECTED': return 'bg-red-500';
-      default: return 'bg-yellow-500';
+      case 'APPROVED': return 'bg-green-500 hover:bg-green-600 text-white';
+      case 'REJECTED': return 'bg-red-500 hover:bg-red-600 text-white';
+      default: return 'bg-yellow-500 hover:bg-yellow-600 text-white';
     }
   };
 
@@ -257,30 +273,32 @@ const Expenses = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-6">
         <div className="flex items-center gap-4 w-full sm:w-auto">
           <div className="flex-1 sm:flex-initial">
-            <Label className="text-sm text-gray-600">Select Month</Label>
+            <Label className="text-sm text-gray-600 dark:text-gray-400">Select Month</Label>
             <Input
               type="month"
               value={selectedMonth}
               onChange={(e) => {
-                setSelectedMonth(e.target.value);
-                const [year, month] = e.target.value.split('-');
-                const from = `${year}-${month}-01`;
-                const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
-                const to = `${year}-${month}-${lastDay}`;
-                setFilters({ ...filters, from_date: from, to_date: to });
+                const monthVal = e.target.value;
+                if (!monthVal) return;
+                setSelectedMonth(monthVal);
+                const { firstDay, lastDay } = getMonthBoundaries(monthVal);
+                setFilters((prev) => ({ ...prev, from_date: firstDay, to_date: lastDay }));
                 setCurrentPage(1);
               }}
               className="w-full sm:w-48"
             />
           </div>
         </div>
-        <Button onClick={() => {
-          setFormData((prev) => ({
-            ...prev,
-            branch_id: user?.branch_id ? String(user.branch_id) : prev.branch_id,
-          }));
-          setShowAddDialog(true);
-        }} className="gap-2 w-full sm:w-auto">
+        <Button
+          onClick={() => {
+            setFormData((prev) => ({
+              ...prev,
+              branch_id: user?.branch_id ? String(user.branch_id) : prev.branch_id,
+            }));
+            setShowAddDialog(true);
+          }}
+          className="gap-2 w-full sm:w-auto"
+        >
           <Plus className="w-4 h-4" />
           Record Expense
         </Button>
@@ -290,15 +308,15 @@ const Expenses = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Expenses</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              Total Expenses
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
               <DollarSign className="w-8 h-8 text-red-500" />
               <div>
-                <p className="text-2xl font-bold text-red-600">
-                  {formatUGX(monthlyStats.total)}
-                </p>
+                <p className="text-2xl font-bold text-red-600">{formatUGX(monthlyStats.total)}</p>
                 <p className="text-sm text-gray-500">{monthlyStats.count} approved expenses</p>
               </div>
             </div>
@@ -307,7 +325,9 @@ const Expenses = () => {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">Pending Approval</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              Pending Approval
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
@@ -322,14 +342,19 @@ const Expenses = () => {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600">Selected Period</CardTitle>
+            <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+              Selected Period
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
               <Calendar className="w-8 h-8 text-blue-500" />
               <div>
                 <p className="text-2xl font-bold">
-                  {new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString('en-US', {
+                    month: 'long',
+                    year: 'numeric',
+                  })}
                 </p>
                 <p className="text-sm text-gray-500">expense history</p>
               </div>
@@ -339,9 +364,9 @@ const Expenses = () => {
       </div>
 
       {/* Filters */}
-      <Card>
+      <Card className="mb-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-base">
             <Filter className="w-5 h-5" />
             Filters
           </CardTitle>
@@ -353,7 +378,10 @@ const Expenses = () => {
               <Input
                 type="date"
                 value={filters.from_date}
-                onChange={(e) => setFilters({ ...filters, from_date: e.target.value })}
+                onChange={(e) => {
+                  setFilters({ ...filters, from_date: e.target.value });
+                  setCurrentPage(1);
+                }}
               />
             </div>
             <div>
@@ -361,14 +389,20 @@ const Expenses = () => {
               <Input
                 type="date"
                 value={filters.to_date}
-                onChange={(e) => setFilters({ ...filters, to_date: e.target.value })}
+                onChange={(e) => {
+                  setFilters({ ...filters, to_date: e.target.value });
+                  setCurrentPage(1);
+                }}
               />
             </div>
             <div>
               <Label>Category</Label>
               <Select
                 value={filters.category || 'all'}
-                onValueChange={(value) => setFilters({ ...filters, category: value === 'all' ? '' : value })}
+                onValueChange={(val) => {
+                  setFilters({ ...filters, category: val === 'all' ? '' : val });
+                  setCurrentPage(1);
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All Categories" />
@@ -387,7 +421,10 @@ const Expenses = () => {
               <Label>Status</Label>
               <Select
                 value={filters.status || 'all'}
-                onValueChange={(value) => setFilters({ ...filters, status: value === 'all' ? '' : value })}
+                onValueChange={(val) => {
+                  setFilters({ ...filters, status: val === 'all' ? '' : val });
+                  setCurrentPage(1);
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All Status" />
@@ -405,7 +442,10 @@ const Expenses = () => {
                 <Label>Branch</Label>
                 <Select
                   value={filters.branch_id || 'all'}
-                  onValueChange={(value) => setFilters({ ...filters, branch_id: value === 'all' ? '' : value })}
+                  onValueChange={(val) => {
+                    setFilters({ ...filters, branch_id: val === 'all' ? '' : val });
+                    setCurrentPage(1);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="All Branches" />
@@ -413,7 +453,9 @@ const Expenses = () => {
                   <SelectContent>
                     <SelectItem value="all">All Branches</SelectItem>
                     {branches.map((b) => (
-                      <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                      <SelectItem key={b.id} value={String(b.id)}>
+                        {b.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -424,7 +466,10 @@ const Expenses = () => {
               <Input
                 placeholder="Search..."
                 value={filters.search}
-                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                onChange={(e) => {
+                  setFilters({ ...filters, search: e.target.value });
+                  setCurrentPage(1);
+                }}
               />
             </div>
           </div>
@@ -466,14 +511,17 @@ const Expenses = () => {
                   expenses.map((expense) => (
                     <tr
                       key={expense.id}
-                      className="border-b dark:border-gray-700 hover:bg-muted/60 dark:hover:bg-gray-700 transition-colors duration-150 cursor-pointer"
-                      onClick={() => { setSelectedExpense(expense); setShowDetailsDialog(true); }}
+                      className="border-b dark:border-gray-700 hover:bg-muted/60 dark:hover:bg-gray-700/50 transition-colors duration-150 cursor-pointer"
+                      onClick={() => {
+                        setSelectedExpense(expense);
+                        setShowDetailsDialog(true);
+                      }}
                     >
                       <td className="px-4 py-3 text-sm dark:text-gray-300">
-                        {new Date(expense.expense_date).toLocaleDateString()}
+                        {new Date(`${expense.expense_date}T00:00:00`).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge style={{ backgroundColor: expense.category_color }}>
+                        <Badge style={{ backgroundColor: expense.category_color }} className="text-white">
                           {expense.category_name}
                         </Badge>
                       </td>
@@ -484,12 +532,12 @@ const Expenses = () => {
                         {formatUGX(expense.amount)}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="text-xs text-muted-foreground">{formatPaymentMethod(expense.payment_method)}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {formatPaymentMethod(expense.payment_method)}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge className={getStatusColor(expense.status)}>
-                          {expense.status}
-                        </Badge>
+                        <Badge className={getStatusColor(expense.status)}>{expense.status}</Badge>
                       </td>
                       <td className="px-4 py-3 text-sm dark:text-gray-300">{expense.branch_name || '—'}</td>
                       <td className="px-4 py-3 text-sm dark:text-gray-300">{expense.recorded_by_name}</td>
@@ -499,7 +547,11 @@ const Expenses = () => {
                             size="sm"
                             variant="outline"
                             title="View details"
-                            onClick={(e) => { e.stopPropagation(); setSelectedExpense(expense); setShowDetailsDialog(true); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedExpense(expense);
+                              setShowDetailsDialog(true);
+                            }}
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
@@ -507,17 +559,23 @@ const Expenses = () => {
                             <>
                               <Button
                                 size="sm"
-                                className="bg-green-500 hover:bg-green-600"
+                                className="bg-green-500 hover:bg-green-600 text-white"
                                 title="Approve"
-                                onClick={(e) => { e.stopPropagation(); handleApprove(expense.id, 'APPROVED'); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleApprove(expense.id, 'APPROVED');
+                                }}
                               >
                                 <Check className="w-4 h-4" />
                               </Button>
                               <Button
                                 size="sm"
-                                className="bg-red-500 hover:bg-red-600"
+                                className="bg-red-500 hover:bg-red-600 text-white"
                                 title="Reject"
-                                onClick={(e) => { e.stopPropagation(); handleApprove(expense.id, 'REJECTED'); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleApprove(expense.id, 'REJECTED');
+                                }}
                               >
                                 <X className="w-4 h-4" />
                               </Button>
@@ -534,21 +592,21 @@ const Expenses = () => {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex justify-center gap-2 p-4 border-t">
+            <div className="flex justify-center items-center gap-2 p-4 border-t dark:border-gray-700">
               <Button
                 variant="outline"
                 disabled={currentPage === 1}
-                onClick={() => setCurrentPage(currentPage - 1)}
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
               >
                 Previous
               </Button>
-              <span className="py-2 px-4">
+              <span className="py-2 px-4 text-sm">
                 Page {currentPage} of {totalPages}
               </span>
               <Button
                 variant="outline"
                 disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(currentPage + 1)}
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
               >
                 Next
               </Button>
@@ -562,9 +620,7 @@ const Expenses = () => {
         <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[96dvh] sm:max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Record New Expense</DialogTitle>
-            <DialogDescription>
-              Record a business expense for admin approval
-            </DialogDescription>
+            <DialogDescription>Record a business expense for admin approval</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
@@ -583,14 +639,16 @@ const Expenses = () => {
                   <Label>Branch *</Label>
                   <Select
                     value={formData.branch_id}
-                    onValueChange={(value) => setFormData({ ...formData, branch_id: value })}
+                    onValueChange={(val) => setFormData({ ...formData, branch_id: val })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select branch" />
                     </SelectTrigger>
                     <SelectContent>
                       {branches.map((b) => (
-                        <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
+                        <SelectItem key={b.id} value={String(b.id)}>
+                          {b.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -600,7 +658,7 @@ const Expenses = () => {
                 <Label htmlFor="category">Category *</Label>
                 <Select
                   value={formData.category}
-                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                  onValueChange={(val) => setFormData({ ...formData, category: val })}
                   required
                 >
                   <SelectTrigger>
@@ -615,16 +673,6 @@ const Expenses = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="md:col-span-2">
-                <Label htmlFor="description">Description *</Label>
-                <Textarea
-                  id="description"
-                  placeholder="What was this expense for?"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  required
-                />
-              </div>
               <div>
                 <Label htmlFor="amount">Amount (UGX) *</Label>
                 <Input
@@ -638,11 +686,21 @@ const Expenses = () => {
                   required
                 />
               </div>
+              <div className="sm:col-span-2">
+                <Label htmlFor="description">Description *</Label>
+                <Textarea
+                  id="description"
+                  placeholder="What was this expense for?"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  required
+                />
+              </div>
               <div>
                 <Label htmlFor="payment_method">Payment Method</Label>
                 <Select
                   value={formData.payment_method}
-                  onValueChange={(value) => setFormData({ ...formData, payment_method: value })}
+                  onValueChange={(val) => setFormData({ ...formData, payment_method: val })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -668,10 +726,17 @@ const Expenses = () => {
               </div>
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button type="button" variant="outline" onClick={() => setShowAddDialog(false)} className="w-full sm:w-auto">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowAddDialog(false)}
+                className="w-full sm:w-auto"
+              >
                 Cancel
               </Button>
-              <Button type="submit" className="w-full sm:w-auto">Record Expense</Button>
+              <Button type="submit" className="w-full sm:w-auto">
+                Record Expense
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -687,54 +752,57 @@ const Expenses = () => {
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-gray-600">Date</Label>
+                  <Label className="text-gray-600 dark:text-gray-400">Date</Label>
                   <p className="font-medium">
-                    {new Date(selectedExpense.expense_date).toLocaleDateString()}
+                    {new Date(`${selectedExpense.expense_date}T00:00:00`).toLocaleDateString()}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-gray-600">Category</Label>
-                  <Badge style={{ backgroundColor: selectedExpense.category_color }}>
+                  <Label className="text-gray-600 dark:text-gray-400">Category</Label>
+                  <Badge
+                    style={{ backgroundColor: selectedExpense.category_color }}
+                    className="text-white mt-1 block w-fit"
+                  >
                     {selectedExpense.category_name}
                   </Badge>
                 </div>
                 <div>
-                  <Label className="text-gray-600">Amount</Label>
-                  <p className="font-bold text-lg">
-                    {formatUGX(selectedExpense.amount)}
+                  <Label className="text-gray-600 dark:text-gray-400">Amount</Label>
+                  <p className="font-bold text-lg">{formatUGX(selectedExpense.amount)}</p>
+                </div>
+                <div>
+                  <Label className="text-gray-600 dark:text-gray-400">Payment Method</Label>
+                  <p className="font-medium">
+                    {formatPaymentMethod(selectedExpense.payment_method)}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-gray-600">Payment Method</Label>
-                  <p className="font-medium">{formatPaymentMethod(selectedExpense.payment_method)}</p>
-                </div>
-                <div>
-                  <Label className="text-gray-600">Receipt / Ref #</Label>
+                  <Label className="text-gray-600 dark:text-gray-400">Receipt / Ref #</Label>
                   <p className="font-medium">{selectedExpense.receipt_number || '—'}</p>
                 </div>
-                <div className="col-span-2">
-                  <Label className="text-gray-600">Description</Label>
-                  <p className="mt-1 text-sm leading-relaxed bg-muted/50 rounded p-3 whitespace-pre-wrap">
+                <div>
+                  <Label className="text-gray-600 dark:text-gray-400">Status</Label>
+                  <Badge className={`${getStatusColor(selectedExpense.status)} mt-1 block w-fit`}>
+                    {selectedExpense.status}
+                  </Badge>
+                </div>
+                <div className="sm:col-span-2">
+                  <Label className="text-gray-600 dark:text-gray-400">Description</Label>
+                  <p className="mt-1 text-sm leading-relaxed bg-muted/50 rounded p-3 whitespace-pre-wrap dark:bg-gray-800">
                     {selectedExpense.description}
                   </p>
                 </div>
                 <div>
-                  <Label className="text-gray-600">Recorded By</Label>
+                  <Label className="text-gray-600 dark:text-gray-400">Recorded By</Label>
                   <p className="font-medium">{selectedExpense.recorded_by_name}</p>
                 </div>
                 <div>
-                  <Label className="text-gray-600">Branch</Label>
+                  <Label className="text-gray-600 dark:text-gray-400">Branch</Label>
                   <p className="font-medium">{selectedExpense.branch_name || '—'}</p>
-                </div>
-                <div>
-                  <Label className="text-gray-600">Status</Label>
-                  <Badge className={getStatusColor(selectedExpense.status)}>
-                    {selectedExpense.status}
-                  </Badge>
                 </div>
                 {selectedExpense.approved_by_name && (
                   <div>
-                    <Label className="text-gray-600">Approved By</Label>
+                    <Label className="text-gray-600 dark:text-gray-400">Approved By</Label>
                     <p className="font-medium">{selectedExpense.approved_by_name}</p>
                   </div>
                 )}
@@ -742,7 +810,9 @@ const Expenses = () => {
             </div>
           )}
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button onClick={() => setShowDetailsDialog(false)} className="w-full sm:w-auto">Close</Button>
+            <Button onClick={() => setShowDetailsDialog(false)} className="w-full sm:w-auto">
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
