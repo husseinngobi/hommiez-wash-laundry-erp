@@ -30,7 +30,7 @@ router.post(
     body('category_id').optional().isInt().withMessage('Valid category ID required'),
     body('payment_method')
       .optional()
-      .isIn(['CASH', 'MOBILE_MONEY', 'BANK_TRANSFER', 'CARD'])
+      .isIn(['CASH', 'MOBILE_MONEY', 'MTN_MOBILE_MONEY', 'AIRTEL_MONEY', 'BANK_TRANSFER', 'CENTENARY', 'CARD'])
       .withMessage('Invalid payment method'),
   ],
   recordExpense as any

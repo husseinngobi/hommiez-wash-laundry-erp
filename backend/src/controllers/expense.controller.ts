@@ -5,6 +5,33 @@ import { AuthRequest } from '../middleware/auth';
 import { resolveWriteBranchId, resolveListBranchId } from '../utils/branchScope';
 import { notifyAdministrators } from './notifications.controller';
 
+function toDateOnly(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const raw = String(value);
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const y = parsed.getUTCFullYear();
+  const m = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(parsed.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function normalizeExpenseRow(row: Record<string, unknown>) {
+  return {
+    ...row,
+    expense_date: toDateOnly(row.expense_date ?? row.date),
+    status: row.status || row.approval_status,
+  };
+}
+
 /**
  * Record a new expense
  */
@@ -179,10 +206,12 @@ export const getAllExpenses = async (req: AuthRequest, res: Response) => {
         '#3B82F6' as category_color,
         u1.full_name as recorded_by_name,
         u2.full_name as approved_by_name,
+        u3.full_name as rejected_by_name,
         b.name as branch_name
        FROM expenses e
        LEFT JOIN users u1 ON e.submitted_by = u1.id
        LEFT JOIN users u2 ON e.approved_by = u2.id
+       LEFT JOIN users u3 ON e.rejected_by = u3.id
        LEFT JOIN branches b ON e.branch_id = b.id
        ${whereClause}
        ORDER BY e.expense_date DESC, e.created_at DESC
@@ -198,7 +227,7 @@ export const getAllExpenses = async (req: AuthRequest, res: Response) => {
     const totalCount = parseInt(countResult.rows[0].count);
 
     res.json({
-      expenses: result.rows,
+      expenses: result.rows.map((row) => normalizeExpenseRow(row)),
       pagination: {
         currentPage: Number(page),
         totalPages: Math.ceil(totalCount / Number(limit)),
@@ -227,10 +256,12 @@ export const getExpenseById = async (req: AuthRequest, res: Response) => {
         '#3B82F6' as category_color,
         u1.full_name as recorded_by_name,
         u1.email as recorded_by_email,
-        u2.full_name as approved_by_name
+        u2.full_name as approved_by_name,
+        u3.full_name as rejected_by_name
        FROM expenses e
        LEFT JOIN users u1 ON e.submitted_by = u1.id
        LEFT JOIN users u2 ON e.approved_by = u2.id
+       LEFT JOIN users u3 ON e.rejected_by = u3.id
        WHERE e.id = $1`,
       [id]
     );
@@ -239,7 +270,7 @@ export const getExpenseById = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Expense not found' });
     }
 
-    res.json(result.rows[0]);
+    res.json(normalizeExpenseRow(result.rows[0]));
 
   } catch (error) {
     console.error('Get expense by ID error:', error);
@@ -318,7 +349,7 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
     const expenseCheck = await query(
       `SELECT e.*, u.role as creator_role, u.full_name as creator_name
        FROM expenses e
-       JOIN users u ON e.submitted_by = u.id
+       LEFT JOIN users u ON e.submitted_by = u.id
        WHERE e.id = $1`,
       [id]
     );
@@ -329,6 +360,13 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
 
     const expenseToApprove = expenseCheck.rows[0];
     const creatorRole = expenseToApprove.creator_role;
+    const currentStatus = expenseToApprove.status || expenseToApprove.approval_status;
+
+    if (currentStatus !== 'PENDING' && approverRole !== 'ADMIN') {
+      return res.status(403).json({
+        error: 'Only administrators can change the status of an already decided expense',
+      });
+    }
 
     // Permission check
     if (creatorRole === 'DESKTOP_AGENT') {
@@ -337,7 +375,7 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
           error: 'Only Managers and Admins can approve/reject Desktop Agent expenses' 
         });
       }
-    } else if (creatorRole === 'MANAGER' || creatorRole === 'ADMIN') {
+    } else if (creatorRole === 'MANAGER' || creatorRole === 'ADMIN' || !creatorRole) {
       if (approverRole !== 'ADMIN') {
         return res.status(403).json({ 
           error: 'Only Admins can approve/reject this expense' 
@@ -350,16 +388,32 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
     
     if (approval_status === 'APPROVED') {
       updateQuery = `UPDATE expenses 
-       SET status = $1, approved_by = $2, approved_at = NOW(), approval_notes = $3, updated_at = NOW()
+       SET status = $1,
+           approval_status = $1,
+           approved_by = $2,
+           approved_at = NOW(),
+           approval_notes = $3,
+           rejected_by = NULL,
+           rejected_at = NULL,
+           rejection_reason = NULL,
+           updated_at = NOW()
        WHERE id = $4
        RETURNING *`;
-      queryParams = [approval_status, userId, approval_notes, id];
+      queryParams = [approval_status, userId, approval_notes || null, id];
     } else {
       updateQuery = `UPDATE expenses 
-       SET status = $1, rejected_by = $2, rejected_at = NOW(), rejection_reason = $3, updated_at = NOW()
+       SET status = $1,
+           approval_status = $1,
+           rejected_by = $2,
+           rejected_at = NOW(),
+           rejection_reason = $3,
+           approved_by = NULL,
+           approved_at = NULL,
+           approval_notes = NULL,
+           updated_at = NOW()
        WHERE id = $4
        RETURNING *`;
-      queryParams = [approval_status, userId, rejection_reason, id];
+      queryParams = [approval_status, userId, rejection_reason || null, id];
     }
 
     const result = await query(updateQuery, queryParams);
@@ -415,7 +469,7 @@ export const approveExpense = async (req: AuthRequest, res: Response) => {
 
     res.json({
       message: `Expense ${approval_status.toLowerCase()} successfully`,
-      expense: result.rows[0],
+      expense: normalizeExpenseRow(result.rows[0]),
     });
 
   } catch (error) {

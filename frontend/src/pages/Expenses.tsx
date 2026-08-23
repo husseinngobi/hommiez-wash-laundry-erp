@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, DollarSign, Check, X, Eye, Calendar, Filter, Clock } from 'lucide-react';
+import { Plus, DollarSign, Check, X, Eye, Calendar, Filter, Clock, Trash2, Loader2 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,6 +40,8 @@ interface Expense {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   recorded_by_name: string;
   approved_by_name: string;
+  rejected_by_name?: string;
+  rejection_reason?: string | null;
   created_at: string;
   branch_id?: number | null;
   branch_name?: string | null;
@@ -58,6 +60,16 @@ const getLocalDateString = (date: Date = new Date()) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const formatExpenseDate = (value?: string | null) => {
+  if (!value) return '—';
+  const dateOnly = String(value).match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  const parsed = dateOnly
+    ? new Date(`${dateOnly}T00:00:00`)
+    : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString();
 };
 
 const getMonthBoundaries = (monthString: string) => {
@@ -95,6 +107,11 @@ const Expenses = () => {
     search: '',
     branch_id: '',
   });
+
+  const [actionLoading, setActionLoading] = useState<{
+    id: number;
+    action: 'APPROVED' | 'REJECTED' | 'DELETE';
+  } | null>(null);
 
   const [formData, setFormData] = useState({
     expense_date: getLocalDateString(),
@@ -226,15 +243,26 @@ const Expenses = () => {
     }
   };
 
+  const isBusy = (id: number, action?: 'APPROVED' | 'REJECTED' | 'DELETE') =>
+    !!actionLoading && actionLoading.id === id && (!action || actionLoading.action === action);
+
+  const canChangeStatus = (expense: Expense, nextStatus: 'APPROVED' | 'REJECTED') => {
+    if (expense.status === nextStatus) return false;
+    if (expense.status === 'PENDING') return isAdmin || isManager;
+    return isAdmin;
+  };
+
   const handleApprove = async (id: number, status: 'APPROVED' | 'REJECTED') => {
-    if (!token) return;
+    if (!token || actionLoading) return;
     try {
+      setActionLoading({ id, action: status });
       await axios.patch(
         `${API_BASE_URL}/expenses/${id}/approve`,
         { approval_status: status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       toast.success(`Expense ${status.toLowerCase()}`);
+      setSelectedExpense((prev) => (prev && prev.id === id ? { ...prev, status } : prev));
       fetchExpenses();
       fetchMonthlyStats();
     } catch (error: unknown) {
@@ -243,6 +271,35 @@ const Expenses = () => {
         ? error.response?.data?.error 
         : undefined;
       toast.error(errorMessage || 'Failed to approve expense');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDelete = async (expense: Expense) => {
+    if (!token || !isAdmin || actionLoading) return;
+    const confirmed = window.confirm(
+      `Permanently delete this ${expense.status.toLowerCase()} expense of ${formatUGX(expense.amount)}? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    try {
+      setActionLoading({ id: expense.id, action: 'DELETE' });
+      await axios.delete(`${API_BASE_URL}/expenses/${expense.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      toast.success('Expense deleted');
+      setShowDetailsDialog(false);
+      setSelectedExpense(null);
+      fetchExpenses();
+      fetchMonthlyStats();
+    } catch (error: unknown) {
+      console.error('Failed to delete expense:', error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error
+        : undefined;
+      toast.error(errorMessage || 'Failed to delete expense');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -518,7 +575,7 @@ const Expenses = () => {
                       }}
                     >
                       <td className="px-4 py-3 text-sm dark:text-gray-300">
-                        {new Date(`${expense.expense_date}T00:00:00`).toLocaleDateString()}
+                        {formatExpenseDate(expense.expense_date)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge style={{ backgroundColor: expense.category_color }} className="text-white">
@@ -555,31 +612,41 @@ const Expenses = () => {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
-                          {(isAdmin || isManager) && expense.status === 'PENDING' && (
-                            <>
+                          {canChangeStatus(expense, 'APPROVED') && (
                               <Button
                                 size="sm"
-                                className="bg-green-500 hover:bg-green-600 text-white"
+                                className="bg-green-500 hover:bg-green-600 text-white disabled:opacity-50"
                                 title="Approve"
+                                disabled={!!actionLoading}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleApprove(expense.id, 'APPROVED');
                                 }}
                               >
-                                <Check className="w-4 h-4" />
+                                {isBusy(expense.id, 'APPROVED') ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Check className="w-4 h-4" />
+                                )}
                               </Button>
+                          )}
+                          {canChangeStatus(expense, 'REJECTED') && (
                               <Button
                                 size="sm"
-                                className="bg-red-500 hover:bg-red-600 text-white"
+                                className="bg-red-500 hover:bg-red-600 text-white disabled:opacity-50"
                                 title="Reject"
+                                disabled={!!actionLoading}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleApprove(expense.id, 'REJECTED');
                                 }}
                               >
-                                <X className="w-4 h-4" />
+                                {isBusy(expense.id, 'REJECTED') ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <X className="w-4 h-4" />
+                                )}
                               </Button>
-                            </>
                           )}
                         </div>
                       </td>
@@ -754,7 +821,7 @@ const Expenses = () => {
                 <div>
                   <Label className="text-gray-600 dark:text-gray-400">Date</Label>
                   <p className="font-medium">
-                    {new Date(`${selectedExpense.expense_date}T00:00:00`).toLocaleDateString()}
+                    {formatExpenseDate(selectedExpense.expense_date)}
                   </p>
                 </div>
                 <div>
@@ -800,17 +867,81 @@ const Expenses = () => {
                   <Label className="text-gray-600 dark:text-gray-400">Branch</Label>
                   <p className="font-medium">{selectedExpense.branch_name || '—'}</p>
                 </div>
-                {selectedExpense.approved_by_name && (
+                {selectedExpense.status === 'APPROVED' && selectedExpense.approved_by_name && (
                   <div>
                     <Label className="text-gray-600 dark:text-gray-400">Approved By</Label>
                     <p className="font-medium">{selectedExpense.approved_by_name}</p>
                   </div>
                 )}
+                {selectedExpense.status === 'REJECTED' && selectedExpense.rejected_by_name && (
+                  <div>
+                    <Label className="text-gray-600 dark:text-gray-400">Rejected By</Label>
+                    <p className="font-medium">{selectedExpense.rejected_by_name}</p>
+                  </div>
+                )}
+                {selectedExpense.status === 'REJECTED' && selectedExpense.rejection_reason && (
+                  <div className="sm:col-span-2">
+                    <Label className="text-gray-600 dark:text-gray-400">Rejection Reason</Label>
+                    <p className="mt-1 text-sm leading-relaxed bg-muted/50 rounded p-3 whitespace-pre-wrap dark:bg-gray-800">
+                      {selectedExpense.rejection_reason}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button onClick={() => setShowDetailsDialog(false)} className="w-full sm:w-auto">
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:justify-between">
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              {selectedExpense && canChangeStatus(selectedExpense, 'APPROVED') && (
+                <Button
+                  className="bg-green-500 hover:bg-green-600 text-white w-full sm:w-auto disabled:opacity-50"
+                  disabled={!!actionLoading}
+                  onClick={() => handleApprove(selectedExpense.id, 'APPROVED')}
+                >
+                  {isBusy(selectedExpense.id, 'APPROVED') ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4 mr-2" />
+                  )}
+                  {selectedExpense.status === 'REJECTED' ? 'Approve instead' : 'Approve'}
+                </Button>
+              )}
+              {selectedExpense && canChangeStatus(selectedExpense, 'REJECTED') && (
+                <Button
+                  className="bg-red-500 hover:bg-red-600 text-white w-full sm:w-auto disabled:opacity-50"
+                  disabled={!!actionLoading}
+                  onClick={() => handleApprove(selectedExpense.id, 'REJECTED')}
+                >
+                  {isBusy(selectedExpense.id, 'REJECTED') ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <X className="w-4 h-4 mr-2" />
+                  )}
+                  {selectedExpense.status === 'APPROVED' ? 'Change to Rejected' : 'Reject'}
+                </Button>
+              )}
+              {isAdmin && selectedExpense?.status === 'REJECTED' && (
+                <Button
+                  variant="destructive"
+                  className="w-full sm:w-auto disabled:opacity-50"
+                  disabled={!!actionLoading}
+                  onClick={() => handleDelete(selectedExpense)}
+                >
+                  {isBusy(selectedExpense.id, 'DELETE') ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  Delete
+                </Button>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => setShowDetailsDialog(false)}
+              disabled={!!actionLoading}
+              className="w-full sm:w-auto"
+            >
               Close
             </Button>
           </DialogFooter>
