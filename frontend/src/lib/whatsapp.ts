@@ -190,21 +190,15 @@ function buildItemLines(items: OrderWhatsAppItem[]): string[] {
   items.forEach((item, index) => {
     const discount = Number(item.discount_amount || 0);
     const surcharge = Number(item.surcharge_amount || 0);
-    const hasAdj = discount > 0 || surcharge > 0;
-    const gross = Number(item.total_price || 0) + discount - surcharge;
+    const hasAdjustment = discount > 0 || surcharge > 0;
+    const baseAmount = Number(item.total_price || 0) + discount - surcharge;
     // Service type (wash / iron / express) is an internal workflow detail —
     // customers only see the item name and the price charged.
-    if (hasAdj) {
-      lines.push(
-        `${index + 1}. ${item.item_name} x${item.quantity} — ${formatUGX(gross)}`
-      );
-      if (discount > 0) lines.push(`   Discount: -${formatUGX(discount)}`);
-      if (surcharge > 0) lines.push(`   Price up: +${formatUGX(surcharge)}`);
-      lines.push(`   Total: ${formatUGX(item.total_price)}`);
-    } else {
-      lines.push(
-        `${index + 1}. ${item.item_name} x${item.quantity} — ${formatUGX(item.total_price)}`
-      );
+    lines.push(`${index + 1}. ${item.item_name} x${item.quantity} — ${formatUGX(baseAmount)}`);
+    if (hasAdjustment) {
+      if (surcharge > 0) lines.push(`   Special handling: +${formatUGX(surcharge)}`);
+      if (discount > 0) lines.push(`   Discount applied: -${formatUGX(discount)}`);
+      lines.push(`   Item total: ${formatUGX(item.total_price)}`);
     }
   });
   lines.push('');
@@ -221,6 +215,10 @@ function buildPaymentSummaryLines(
   // back for a clear gross → discount → net story on the receipt.
   const itemDiscountTotal = items.reduce(
     (sum, item) => sum + Number(item.discount_amount || 0),
+    0
+  );
+  const itemSurchargeTotal = items.reduce(
+    (sum, item) => sum + Number(item.surcharge_amount || 0),
     0
   );
   const orderDiscount = Number(order.discount_amount || 0);
@@ -241,19 +239,18 @@ function buildPaymentSummaryLines(
     lines.push(`Bargain discount: -${formatUGX(bargainDiscount)}`);
   }
 
-  const surcharge = Number(order.surcharge_amount || 0);
-  const itemSurchargeTotal = items.reduce((sum, item) => sum + Number((item as any).surcharge_amount || 0), 0);
-  const totalSurcharge = surcharge + itemSurchargeTotal;
   if (itemSurchargeTotal > 0) {
-    lines.push(`Item price-ups: +${formatUGX(itemSurchargeTotal)}`);
-  }
-  if (surcharge > 0) {
-    lines.push(`Order price up: +${formatUGX(surcharge)}`);
+    lines.push(`Item special handling: +${formatUGX(itemSurchargeTotal)}`);
   }
 
   const totalDiscount = itemDiscountTotal + orderDiscount + bargainDiscount;
   if (totalDiscount > 0) {
     lines.push(`*You saved: ${formatUGX(totalDiscount)}*`);
+  }
+
+  const orderSurcharge = Number(order.surcharge_amount || 0);
+  if (orderSurcharge > 0) {
+    lines.push(`Additional service: +${formatUGX(orderSurcharge)}`);
   }
 
   if (Number(order.tax_amount || 0) > 0) {
