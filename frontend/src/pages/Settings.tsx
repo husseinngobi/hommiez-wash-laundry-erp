@@ -157,6 +157,9 @@ export default function Settings() {
   const [desktopAgentItemLimit, setDesktopAgentItemLimit] = useState('1000');
   const [managerItemLimit, setManagerItemLimit] = useState('2000');
   const [adminItemLimit, setAdminItemLimit] = useState('10000');
+  const [desktopAgentDiscountPercent, setDesktopAgentDiscountPercent] = useState('10');
+  const [managerDiscountPercent, setManagerDiscountPercent] = useState('20');
+  const [adminDiscountPercent, setAdminDiscountPercent] = useState('100');
   const [savingBargainLimits, setSavingBargainLimits] = useState(false);
 
   // Payment accounts for on-account / partial WhatsApp receipts
@@ -384,6 +387,9 @@ export default function Settings() {
       setDesktopAgentItemLimit(toLimit(response.data.desktop_agent_per_item, 1000));
       setManagerItemLimit(toLimit(response.data.manager_per_item, 2000));
       setAdminItemLimit(toLimit(response.data.admin_per_item, 10000));
+      setDesktopAgentDiscountPercent(toLimit(response.data.desktop_agent_discount_percent, 10));
+      setManagerDiscountPercent(toLimit(response.data.manager_discount_percent, 20));
+      setAdminDiscountPercent(toLimit(response.data.admin_discount_percent, 100));
     } catch (error) {
       console.error('Failed to load bargain limits:', error);
     }
@@ -678,16 +684,28 @@ export default function Settings() {
     const desktopAgentItem = parseLimit(desktopAgentItemLimit);
     const managerItem      = parseLimit(managerItemLimit);
     const adminItem        = parseLimit(adminItemLimit);
+    const parsePercent = (value: string): number | null => {
+      const parsed = Number(String(value ?? '').trim());
+      return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
+    };
+    const desktopAgentDiscount = parsePercent(desktopAgentDiscountPercent);
+    const managerDiscount = parsePercent(managerDiscountPercent);
+    const adminDiscount = parsePercent(adminDiscountPercent);
 
     if (
       desktopAgent === null || manager === null || admin === null ||
       desktopAgentItem === null || managerItem === null || adminItem === null
+      || desktopAgentDiscount === null || managerDiscount === null || adminDiscount === null
     ) {
       toast({
         title: 'Enter valid amounts',
         description: 'All bargain limits must be whole numbers in UGX (e.g. 5000).',
         variant: 'destructive',
       });
+      return;
+    }
+    if (managerDiscount < desktopAgentDiscount || adminDiscount < managerDiscount) {
+      toast({ title: 'Check discount percentages', description: 'Discount percentages must follow Desktop Agent <= Manager <= Administrator.', variant: 'destructive' });
       return;
     }
     if (desktopAgentItem > desktopAgent) {
@@ -719,6 +737,9 @@ export default function Settings() {
           desktop_agent_item_limit: desktopAgentItem,
           manager_item_limit:       managerItem,
           admin_item_limit:         adminItem,
+          desktop_agent_discount_percent: desktopAgentDiscount,
+          manager_discount_percent: managerDiscount,
+          admin_discount_percent: adminDiscount,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -729,6 +750,9 @@ export default function Settings() {
       setDesktopAgentItemLimit(String(desktopAgentItem));
       setManagerItemLimit(String(managerItem));
       setAdminItemLimit(String(adminItem));
+      setDesktopAgentDiscountPercent(String(desktopAgentDiscount));
+      setManagerDiscountPercent(String(managerDiscount));
+      setAdminDiscountPercent(String(adminDiscount));
 
       toast({
         title: 'Bargain limits updated',
@@ -2396,6 +2420,25 @@ Don't miss out! ✨`;
                       <Label htmlFor={id}>{label}</Label>
                       <Input id={id} type="number" inputMode="numeric" min="0" step="500"
                         value={value} onChange={(e) => set(e.target.value)} onFocus={(e) => e.target.select()}
+                        placeholder={placeholder} className="mt-2" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase">Percentage Discount Limit</h3>
+                <p className="text-xs text-muted-foreground">Maximum percentage discount permitted on an order. This is separate from fixed-amount bargains and price-ups.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {[
+                    { id: 'da-discount', label: 'Desktop Agent', value: desktopAgentDiscountPercent, set: setDesktopAgentDiscountPercent, placeholder: '10' },
+                    { id: 'mgr-discount', label: 'Manager', value: managerDiscountPercent, set: setManagerDiscountPercent, placeholder: '20' },
+                    { id: 'adm-discount', label: 'Administrator', value: adminDiscountPercent, set: setAdminDiscountPercent, placeholder: '100' },
+                  ].map(({ id, label, value, set, placeholder }) => (
+                    <div key={id}>
+                      <Label htmlFor={id}>{label} (%)</Label>
+                      <Input id={id} type="number" min="0" max="100" step="1" value={value}
+                        onChange={(e) => set(e.target.value)} onFocus={(e) => e.target.select()}
                         placeholder={placeholder} className="mt-2" />
                     </div>
                   ))}

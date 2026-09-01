@@ -195,7 +195,7 @@ const BRANCH_PREFERENCE_KEY = 'newOrderBranchId';
 export default function NewOrder() {
   const { token, user } = useAuth();
   const { toast } = useToast();
-  const maxDiscountPercent = MAX_DISCOUNT_BY_ROLE[user?.role ?? 'DESKTOP_AGENT'] ?? 10;
+  const defaultMaxDiscountPercent = MAX_DISCOUNT_BY_ROLE[user?.role ?? 'DESKTOP_AGENT'] ?? 10;
   const canChooseBranch = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const isAdminUser = user?.role === 'ADMIN';
   const canPriceUp = !!user; // All authenticated staff can apply price-up (surcharge)
@@ -249,6 +249,7 @@ export default function NewOrder() {
   const [orderSurchargeAmount, setOrderSurchargeAmount] = useState(0);
   const [maxBargainAmount, setMaxBargainAmount] = useState(0);
   const [maxItemBargainAmount, setMaxItemBargainAmount] = useState(0);
+  const [maxDiscountPercent, setMaxDiscountPercent] = useState(defaultMaxDiscountPercent);
   const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'UNPAID' | 'PARTIAL'>('UNPAID');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'ON_ACCOUNT'>('ON_ACCOUNT');
   const [mobileProvider, setMobileProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
@@ -368,12 +369,17 @@ export default function NewOrder() {
       });
       setMaxBargainAmount(Number(response.data.user.max_bargain_amount) || 0);
       setMaxItemBargainAmount(Number(response.data.user.max_item_bargain_amount) || 0);
+      const configuredDiscount = Number(response.data.user.max_discount_percent);
+      setMaxDiscountPercent(Number.isFinite(configuredDiscount) && configuredDiscount >= 0
+        ? configuredDiscount
+        : defaultMaxDiscountPercent);
     } catch (error) {
       console.error('Error fetching user bargain limit:', error);
       setMaxBargainAmount(0);
       setMaxItemBargainAmount(0);
+      setMaxDiscountPercent(defaultMaxDiscountPercent);
     }
-  }, [token]);
+  }, [defaultMaxDiscountPercent, token]);
 
   useEffect(() => {
     if (token) {

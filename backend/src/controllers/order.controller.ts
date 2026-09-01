@@ -439,7 +439,21 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     
     // 2. Validate and calculate discount (role-based limit)
     const discountPercentageValue = parseFloat(discount_percentage.toString()) || 0;
-    const maxDiscountForRole = getMaxDiscountForRole(req.user!.role);
+    let maxDiscountForRole = getMaxDiscountForRole(req.user!.role);
+    const discountSetting = await client.query(
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits'`
+    );
+    if (discountSetting.rows[0]?.setting_value) {
+      try {
+        const configured = JSON.parse(discountSetting.rows[0].setting_value);
+        const key = req.user!.role === 'DESKTOP_AGENT' ? 'desktop_agent'
+          : req.user!.role === 'MANAGER' ? 'manager' : 'admin';
+        const value = Number(configured[key]);
+        if (Number.isFinite(value) && value >= 0 && value <= 100) maxDiscountForRole = value;
+      } catch {
+        // Keep the role default when the setting is malformed.
+      }
+    }
     
     if (discountPercentageValue < 0 || discountPercentageValue > maxDiscountForRole) {
       throw new Error(

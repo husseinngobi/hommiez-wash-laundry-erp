@@ -385,6 +385,20 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     user.is_system_admin = isSystemAdminEmail(user.email);
     user.max_bargain_amount = getEffectiveBargainLimit(user.role, user.max_bargain_amount);
     user.max_item_bargain_amount = Number(user.max_item_bargain_amount) || 0;
+    user.max_discount_percent = user.role === 'DESKTOP_AGENT' ? 10 : user.role === 'MANAGER' ? 20 : 100;
+    const discountSetting = await query(
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits'`
+    );
+    if (discountSetting.rows[0]?.setting_value) {
+      try {
+        const configured = JSON.parse(discountSetting.rows[0].setting_value);
+        const key = user.role === 'DESKTOP_AGENT' ? 'desktop_agent' : user.role === 'MANAGER' ? 'manager' : 'admin';
+        const value = Number(configured[key]);
+        if (Number.isFinite(value) && value >= 0 && value <= 100) user.max_discount_percent = value;
+      } catch {
+        // Retain the role default when the setting is malformed.
+      }
+    }
     res.json({ user });
   } catch (error) {
     console.error('Get user error:', error);

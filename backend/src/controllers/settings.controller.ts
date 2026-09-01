@@ -333,7 +333,19 @@ export const getBargainLimits = async (req: AuthRequest, res: Response) => {
       if (Number.isFinite(perItem) && perItem >= 0)  limits[key].per_item = perItem;
     });
 
-    // Flat structure for backward-compat + new per_item fields
+    const discountResult = await query(
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits'`
+    );
+    let discountLimits = { desktop_agent: 10, manager: 20, admin: 100 };
+    if (discountResult.rows[0]?.setting_value) {
+      try {
+        discountLimits = { ...discountLimits, ...JSON.parse(discountResult.rows[0].setting_value) };
+      } catch {
+        // Keep role defaults when the stored setting is malformed.
+      }
+    }
+
+    // Flat structure for backward-compat + per-item and percentage fields
     res.json({
       desktop_agent:          limits.desktop_agent.overall,
       desktop_agent_per_item: limits.desktop_agent.per_item,
@@ -341,6 +353,9 @@ export const getBargainLimits = async (req: AuthRequest, res: Response) => {
       manager_per_item:       limits.manager.per_item,
       admin:                  limits.admin.overall,
       admin_per_item:         limits.admin.per_item,
+      desktop_agent_discount_percent: Number.isFinite(Number(discountLimits.desktop_agent)) ? Number(discountLimits.desktop_agent) : 10,
+      manager_discount_percent: Number.isFinite(Number(discountLimits.manager)) ? Number(discountLimits.manager) : 20,
+      admin_discount_percent: Number.isFinite(Number(discountLimits.admin)) ? Number(discountLimits.admin) : 100,
     });
   } catch (error) {
     console.error('Get bargain limits error:', error);
@@ -353,6 +368,7 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
     const {
       desktop_agent_limit,       manager_limit,       admin_limit,
       desktop_agent_item_limit,  manager_item_limit,  admin_item_limit,
+      desktop_agent_discount_percent, manager_discount_percent, admin_discount_percent,
     } = req.body;
 
     // Accept numbers, numeric strings, and comma-formatted amounts ("5,000").
@@ -378,11 +394,17 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
     const desktopAgentItem = parseLimit(desktop_agent_item_limit);
     const managerItem      = parseLimit(manager_item_limit);
     const adminItem        = parseLimit(admin_item_limit);
+    const desktopAgentDiscount = parsePercent(desktop_agent_discount_percent, 10);
+    const managerDiscount = parsePercent(manager_discount_percent, 20);
+    const adminDiscount = parsePercent(admin_discount_percent, 100);
 
     if (desktopAgent === null || manager === null) {
       return res.status(400).json({
         error: 'Desktop agent and manager overall bargain limits must be valid numbers (e.g. 5000)',
       });
+    }
+    if (desktopAgentDiscount === null || managerDiscount === null || adminDiscount === null) {
+      return res.status(400).json({ error: 'Discount percentages must be between 0 and 100' });
     }
     if (desktopAgentItem === null || managerItem === null) {
       return res.status(400).json({
@@ -402,6 +424,9 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
         error: 'Per-item limit cannot exceed the overall limit for managers',
       });
     }
+    if (managerDiscount < desktopAgentDiscount || adminDiscount < managerDiscount) {
+      return res.status(400).json({ error: 'Discount percentages must follow Desktop Agent <= Manager <= Administrator' });
+    }
 
     await query(
       `UPDATE users SET max_bargain_amount = $1, max_item_bargain_amount = $2 WHERE role = 'DESKTOP_AGENT'`,
@@ -417,6 +442,13 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
         [admin, adminItem ?? 0]
       );
     }
+
+    await query(
+      `INSERT INTO business_settings (setting_key, setting_value, updated_at)
+       VALUES ('discount_limits', $1, NOW())
+       ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = NOW()`,
+      [JSON.stringify({ desktop_agent: desktopAgentDiscount, manager: managerDiscount, admin: adminDiscount })]
+    );
 
     console.log(
       `✅ Bargain limits updated by ${req.user?.email} — ` +
@@ -436,6 +468,12 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Failed to update bargain limits' });
   }
 };
+
+function parsePercent(value: unknown, fallback: number): number | null {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
+}
 
 const DEFAULT_PAYMENT_ACCOUNTS = {
   centenary_account: '3205564146',
