@@ -263,7 +263,7 @@ function buildPaymentSummaryLines(
   if (Number(order.balance || 0) > 0) {
     lines.push(`*Balance Due: ${formatUGX(order.balance)}*`);
   } else {
-    lines.push('Status: Fully Paid');
+    lines.push('Payment confirmed: Full payment received for this order.');
   }
 
   const method = paymentMethodLabel(order.payment_method);
@@ -347,7 +347,7 @@ function buildCompactPaymentLines(
     if (modes.airtel_merchant)  lines.push(`Airtel Money: ${modes.airtel_merchant}`);
     lines.push('Kindly clear the balance before collection.');
   } else {
-    lines.push('Payment: *Fully Settled* ✓');
+    lines.push('Payment confirmed: *Full payment received* ✓');
   }
 
   return lines;
