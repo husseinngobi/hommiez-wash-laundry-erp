@@ -38,6 +38,7 @@ interface OrderDetails {
   discount_percentage?: number;
   discount_amount?: number;
   bargain_amount?: number;
+  surcharge_amount?: number;
   tax_rate: number;
   tax_amount: number;
   total_amount: number;
@@ -57,6 +58,7 @@ interface OrderItem {
   total_price?: number;
   subtotal?: number;
   discount_amount?: number;
+  surcharge_amount?: number;
 }
 
 export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
@@ -260,8 +262,9 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
             <tbody>
               {orderItems.map((item, index) => {
                 const itemDiscount = Number(item.discount_amount || 0);
+                const itemSurcharge = Number(item.surcharge_amount || 0);
                 const lineTotal = Number(item.total_price ?? item.subtotal ?? 0);
-                const gross = lineTotal + itemDiscount;
+                const gross = lineTotal + itemDiscount - itemSurcharge;
                 return (
                   <tr key={index}>
                     <td className="py-1">
@@ -269,6 +272,11 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
                       {itemDiscount > 0 && (
                         <div className="text-[10px] text-red-700">
                           Discount -{formatUGX(itemDiscount)}
+                        </div>
+                      )}
+                      {itemSurcharge > 0 && (
+                        <div className="text-[10px] text-amber-700">
+                          Special handling +{formatUGX(itemSurcharge)}
                         </div>
                       )}
                     </td>
@@ -292,6 +300,11 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
               );
               const orderDiscount = Number(order.discount_amount || 0);
               const bargainDiscount = Number(order.bargain_amount || 0);
+              const itemSurchargeTotal = orderItems.reduce(
+                (sum, item) => sum + Number(item.surcharge_amount || 0),
+                0
+              );
+              const orderSurcharge = Number(order.surcharge_amount || 0);
               const totalSaved = itemDiscountTotal + orderDiscount + bargainDiscount;
               return (
                 <>
@@ -320,6 +333,18 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
                     <div className="flex justify-between">
                       <span>Bargain Discount:</span>
                       <span>-{formatUGX(bargainDiscount)}</span>
+                    </div>
+                  )}
+                  {itemSurchargeTotal > 0 && (
+                    <div className="flex justify-between">
+                      <span>Item Special Handling:</span>
+                      <span>+{formatUGX(itemSurchargeTotal)}</span>
+                    </div>
+                  )}
+                  {orderSurcharge > 0 && (
+                    <div className="flex justify-between">
+                      <span>Additional Service:</span>
+                      <span>+{formatUGX(orderSurcharge)}</span>
                     </div>
                   )}
                   {totalSaved > 0 && (

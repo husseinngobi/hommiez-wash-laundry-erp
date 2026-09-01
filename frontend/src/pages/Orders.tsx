@@ -63,6 +63,7 @@ import {
 interface Order {
   id: number;
   order_number: string;
+  invoice_number?: string;
   customer_id: number;
   customer_name: string;
   customer_phone: string;
@@ -2682,6 +2683,27 @@ export default function Orders() {
                   <p className="text-sm text-gray-600 dark:text-gray-400 w-full mt-2">
                     Opens the print dialog for thermal (80mm) or regular printers connected to this computer.
                   </p>
+                </div>
+
+                <h3 className="font-semibold text-lg flex items-center gap-2 mt-6">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                  Invoice
+                </h3>
+                <div className="flex flex-wrap items-center gap-3 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <p className="text-sm text-muted-foreground flex-1 min-w-[12rem]">
+                    Invoice number: <strong>{selectedOrder.invoice_number || 'Assigned to this order'}</strong>
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setInvoiceOrderId(selectedOrder.id);
+                      setShowInvoiceDialog(true);
+                    }}
+                    variant="outline"
+                    className="gap-2 border-blue-600 text-blue-700 dark:text-blue-300"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Open Invoice
+                  </Button>
                 </div>
 
                 <h3 className="font-semibold text-lg">Order Actions</h3>
