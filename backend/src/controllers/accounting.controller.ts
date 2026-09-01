@@ -112,7 +112,7 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
         COUNT(*) as count
       FROM expenses
       ${appendFilter(
-        appendFilter(expenseDateFilter, "approval_status = 'APPROVED'"),
+        appendFilter(expenseDateFilter, "COALESCE(status, approval_status) = 'APPROVED'"),
         "category != 'Salaries'"
       )}
       GROUP BY category
@@ -133,7 +133,7 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
       SELECT COALESCE(SUM(amount), 0) as total_expenses
       FROM expenses
       ${appendFilter(
-        appendFilter(expenseDateFilter, "approval_status = 'APPROVED'"),
+        appendFilter(expenseDateFilter, "COALESCE(status, approval_status) = 'APPROVED'"),
         "category != 'Salaries'"
       )}
     `);
@@ -242,7 +242,7 @@ export const getBalanceSheet = async (req: AuthRequest, res: Response) => {
     const accountsPayableResult = await query(`
       SELECT COALESCE(SUM(amount), 0) as accounts_payable
       FROM expenses
-      WHERE approval_status IN ('PENDING', 'APPROVED')
+      WHERE COALESCE(status, approval_status) IN ('PENDING', 'APPROVED')
         AND expense_date <= $1
     `, [as_of_date]);
 
@@ -362,7 +362,7 @@ export const getCashFlowStatement = async (req: AuthRequest, res: Response) => {
     const cashForExpensesResult = await query(`
       SELECT COALESCE(SUM(amount), 0) as cash_for_expenses
       FROM expenses
-      ${appendFilter(dateFilter.replace('created_at', 'expense_date'), "approval_status = 'APPROVED'")}
+      ${appendFilter(dateFilter.replace('created_at', 'expense_date'), "COALESCE(status, approval_status) = 'APPROVED'")}
     `);
 
     const cashForSalariesResult = await query(`
@@ -435,7 +435,7 @@ export const getTrialBalance = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(amount), 0) as balance
       FROM expenses
       WHERE expense_date <= $1
-        AND approval_status = 'APPROVED'
+        AND COALESCE(status, approval_status) = 'APPROVED'
       GROUP BY category
     `, [as_of_date]);
 
@@ -598,7 +598,7 @@ export const getFinancialRatios = async (req: AuthRequest, res: Response) => {
 
     // Get income statement data
     const revenueResult = await query(`SELECT COALESCE(SUM(amount_paid), 0) as revenue FROM orders ${dateFilter}`);
-    const expensesResult = await query(`SELECT COALESCE(SUM(amount), 0) as expenses FROM expenses ${appendFilter(dateFilter.replace('created_at', 'expense_date'), "approval_status = 'APPROVED'")}`);
+    const expensesResult = await query(`SELECT COALESCE(SUM(amount), 0) as expenses FROM expenses ${appendFilter(dateFilter.replace('created_at', 'expense_date'), "COALESCE(status, approval_status) = 'APPROVED'")}`);
     const salariesResult = await query(`SELECT COALESCE(SUM(net_amount), 0) as salaries FROM salary_payments ${appendFilter(dateFilter.replace('created_at', 'payment_date'), "payment_status = 'PAID'")}`);
 
     // Get balance sheet data
@@ -609,7 +609,7 @@ export const getFinancialRatios = async (req: AuthRequest, res: Response) => {
       ), 0) as assets
       FROM orders WHERE payment_status = 'PAID'
     `);
-    const liabilitiesResult = await query(`SELECT COALESCE(SUM(amount), 0) as liabilities FROM expenses WHERE approval_status IN ('PENDING', 'APPROVED')`);
+    const liabilitiesResult = await query(`SELECT COALESCE(SUM(amount), 0) as liabilities FROM expenses WHERE COALESCE(status, approval_status) IN ('PENDING', 'APPROVED')`);
 
     const revenue = parseFloat(revenueResult.rows[0].revenue);
     const expenses = parseFloat(expensesResult.rows[0].expenses);
@@ -707,7 +707,7 @@ export const getBranchSummary = async (req: AuthRequest, res: Response) => {
           SELECT SUM(e.amount)
           FROM expenses e
           WHERE e.branch_id = b.id
-            AND e.status = 'APPROVED'
+            AND COALESCE(e.status, e.approval_status) = 'APPROVED'
             AND ${expenseDateSql}
         ), 0) AS expenses,
         COALESCE((

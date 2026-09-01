@@ -92,8 +92,11 @@ const Expenses = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [pendingRejection, setPendingRejection] = useState<number | null>(null);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [monthlyStats, setMonthlyStats] = useState({ total: 0, count: 0, pending: 0 });
@@ -218,6 +221,7 @@ const Expenses = () => {
     e.preventDefault();
     if (!token) return;
     try {
+      setSubmitting(true);
       await axios.post(`${API_BASE_URL}/expenses`, formData, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -240,6 +244,8 @@ const Expenses = () => {
         ? error.response?.data?.error 
         : undefined;
       toast.error(errorMessage || 'Failed to record expense');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -250,6 +256,15 @@ const Expenses = () => {
     if (expense.status === nextStatus) return false;
     if (expense.status === 'PENDING') return isAdmin || isManager;
     return isAdmin;
+  };
+
+  const canChangeStatusFromList = (expense: Expense, nextStatus: 'APPROVED' | 'REJECTED') =>
+    expense.status === 'PENDING' && canChangeStatus(expense, nextStatus);
+
+  const requestReject = (id: number) => {
+    if (actionLoading) return;
+    setPendingRejection(id);
+    setShowRejectDialog(true);
   };
 
   const handleApprove = async (id: number, status: 'APPROVED' | 'REJECTED') => {
@@ -612,7 +627,7 @@ const Expenses = () => {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
-                          {canChangeStatus(expense, 'APPROVED') && (
+                          {canChangeStatusFromList(expense, 'APPROVED') && (
                               <Button
                                 size="sm"
                                 className="bg-green-500 hover:bg-green-600 text-white disabled:opacity-50"
@@ -630,7 +645,7 @@ const Expenses = () => {
                                 )}
                               </Button>
                           )}
-                          {canChangeStatus(expense, 'REJECTED') && (
+                          {canChangeStatusFromList(expense, 'REJECTED') && (
                               <Button
                                 size="sm"
                                 className="bg-red-500 hover:bg-red-600 text-white disabled:opacity-50"
@@ -638,7 +653,7 @@ const Expenses = () => {
                                 disabled={!!actionLoading}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleApprove(expense.id, 'REJECTED');
+                                  requestReject(expense.id);
                                 }}
                               >
                                 {isBusy(expense.id, 'REJECTED') ? (
@@ -801,8 +816,9 @@ const Expenses = () => {
               >
                 Cancel
               </Button>
-              <Button type="submit" className="w-full sm:w-auto">
-                Record Expense
+              <Button type="submit" className="w-full sm:w-auto" disabled={submitting}>
+                {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {submitting ? 'Recording...' : 'Record Expense'}
               </Button>
             </DialogFooter>
           </form>
@@ -910,7 +926,7 @@ const Expenses = () => {
                 <Button
                   className="bg-red-500 hover:bg-red-600 text-white w-full sm:w-auto disabled:opacity-50"
                   disabled={!!actionLoading}
-                  onClick={() => handleApprove(selectedExpense.id, 'REJECTED')}
+                  onClick={() => requestReject(selectedExpense.id)}
                 >
                   {isBusy(selectedExpense.id, 'REJECTED') ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -943,6 +959,40 @@ const Expenses = () => {
               className="w-full sm:w-auto"
             >
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showRejectDialog}
+        onOpenChange={(open) => {
+          setShowRejectDialog(open);
+          if (!open) setPendingRejection(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject expense?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to reject this expense? The rejection will be recorded and the submitter will be notified.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRejectDialog(false)} disabled={!!actionLoading}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!!actionLoading || pendingRejection === null}
+              onClick={() => {
+                if (pendingRejection === null) return;
+                setShowRejectDialog(false);
+                handleApprove(pendingRejection, 'REJECTED');
+                setPendingRejection(null);
+              }}
+            >
+              Reject expense
             </Button>
           </DialogFooter>
         </DialogContent>

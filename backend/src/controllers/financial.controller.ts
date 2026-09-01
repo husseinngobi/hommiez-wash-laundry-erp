@@ -88,14 +88,14 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
       `SELECT COALESCE(SUM(amount), 0) as total_expenses,
               COUNT(*) as total_expense_records
        FROM expenses 
-       ${expensesDateFilter ? `${expensesDateFilter} AND` : 'WHERE'} approval_status = 'APPROVED'`
+      ${expensesDateFilter ? `${expensesDateFilter} AND` : 'WHERE'} COALESCE(status, approval_status) = 'APPROVED'`
     );
 
     const salariesResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as total_salaries
        FROM expenses 
        ${expensesDateFilter ? `${expensesDateFilter} AND` : 'WHERE'} category = 'Salaries'
-       AND approval_status = 'APPROVED'`
+      AND COALESCE(status, approval_status) = 'APPROVED'`
     );
 
     const summaryData = {
@@ -126,7 +126,7 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
         COALESCE(SUM(e.amount), 0) as amount,
         COUNT(e.id) as count
        FROM expenses e
-       ${expensesDateFilter ? `${expensesDateFilter} AND` : 'WHERE'} e.approval_status = 'APPROVED'
+      ${expensesDateFilter ? `${expensesDateFilter} AND` : 'WHERE'} COALESCE(e.status, e.approval_status) = 'APPROVED'
        GROUP BY e.category
        HAVING COALESCE(SUM(e.amount), 0) > 0
        ORDER BY amount DESC
@@ -145,8 +145,9 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
         0 as salaries,
         COALESCE(SUM(o.amount_paid), 0) - COALESCE(SUM(e.amount), 0) as profit
        FROM orders o
-       LEFT JOIN expenses e ON DATE(e.expense_date) = DATE(o.created_at) 
-         AND e.approval_status = 'APPROVED'
+      LEFT JOIN expenses e ON DATE(e.expense_date) = DATE(o.created_at)
+        AND COALESCE(e.status, e.approval_status) = 'APPROVED'
+        ${branchId ? `AND e.branch_id = ${Number(branchId)}` : ''}
        ${trendDateFilter}
        GROUP BY DATE(o.created_at)
        ORDER BY date ASC`
@@ -182,7 +183,7 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
         COUNT(*) as count,
         COALESCE(SUM(amount), 0) as amount
        FROM expenses 
-       ${expensesDateFilter ? `${expensesDateFilter} AND` : 'WHERE'} approval_status = 'PENDING'`
+      ${expensesDateFilter ? `${expensesDateFilter} AND` : 'WHERE'} COALESCE(status, approval_status) = 'PENDING'`
     );
 
     // Payment methods breakdown (respects period filter)

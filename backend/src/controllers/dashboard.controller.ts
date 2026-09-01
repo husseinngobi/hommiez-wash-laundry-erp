@@ -216,8 +216,8 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
       ? `WHERE delivered_at >= $1 AND delivered_at <= $2`
       : `WHERE TRUE`;
     const expensesWhere = dateRange
-      ? `WHERE expense_date >= $1 AND expense_date <= $2 AND approval_status = 'APPROVED'`
-      : `WHERE approval_status = 'APPROVED'`;
+      ? `WHERE expense_date >= $1 AND expense_date <= $2 AND COALESCE(status, approval_status) = 'APPROVED'`
+      : `WHERE COALESCE(status, approval_status) = 'APPROVED'`;
     const params = dateRange ? dateRange : [];
 
     const revenueResult = await query(
@@ -252,7 +252,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 
     // Include salary payments in total expenses so dashboard profit is accurate
     const salaryParams = params; // same date params apply
-    const salaryWhere = expensesWhere.replace('expense_date', 'payment_date').replace('approval_status', 'payment_status').replace("'APPROVED'", "'PAID'");
+    const salaryWhere = expensesWhere.replace('expense_date', 'payment_date').replace('COALESCE(status, approval_status)', 'payment_status').replace("'APPROVED'", "'PAID'");
     let salaries = 0;
     try {
       const salaryResult = await query(
