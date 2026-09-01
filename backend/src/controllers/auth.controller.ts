@@ -52,6 +52,19 @@ export const register = async (req: AuthRequest, res: Response) => {
     const allowedRoles = [UserRole.ADMIN, UserRole.MANAGER, UserRole.DESKTOP_AGENT];
     const userRole = allowedRoles.includes(role) ? role : UserRole.DESKTOP_AGENT;
 
+    // New users inherit the current role limits configured in Settings.
+    // This prevents a newly registered agent from falling back to stale/null defaults.
+    const roleLimitsResult = await query(
+      `SELECT MAX(max_bargain_amount) AS max_bargain_amount,
+              MAX(max_item_bargain_amount) AS max_item_bargain_amount
+       FROM users
+       WHERE role = $1`,
+      [userRole]
+    );
+    const configuredLimits = roleLimitsResult.rows[0] || {};
+    const maxBargainAmount = getEffectiveBargainLimit(userRole, configuredLimits.max_bargain_amount);
+    const maxItemBargainAmount = Number(configuredLimits.max_item_bargain_amount) || Math.round(maxBargainAmount * 0.25);
+
     const existingUserResult = await query(
       `SELECT id, email, deleted_at
        FROM users
@@ -82,8 +95,10 @@ export const register = async (req: AuthRequest, res: Response) => {
                  failed_login_attempts = 0,
                  account_locked_until = NULL,
                  last_failed_login = NULL,
+                 max_bargain_amount = $7,
+                 max_item_bargain_amount = $8,
                  updated_at = NOW()
-             WHERE id = $7
+               WHERE id = $9
              RETURNING id, email, full_name, phone, role, status, created_at`
           : `UPDATE users
              SET password = $1,
@@ -102,15 +117,29 @@ export const register = async (req: AuthRequest, res: Response) => {
              WHERE id = $7
              RETURNING id, email, full_name, phone, role, status, created_at`;
 
-        const result = await query(restoreQuery, [
-          hashedPassword,
-          full_name,
-          phone,
-          userRole,
-          status,
-          req.user?.id || null,
-          existingUser.id,
-        ]);
+        const restoreValues = hasDeletedBy
+          ? [
+              hashedPassword,
+              full_name,
+              phone,
+              userRole,
+              status,
+              req.user?.id || null,
+              maxBargainAmount,
+              maxItemBargainAmount,
+              existingUser.id,
+            ]
+          : [
+              hashedPassword,
+              full_name,
+              phone,
+              userRole,
+              status,
+              req.user?.id || null,
+              existingUser.id,
+            ];
+
+        const result = await query(restoreQuery, restoreValues);
 
         newUser = result.rows[0];
       } else {
@@ -118,10 +147,12 @@ export const register = async (req: AuthRequest, res: Response) => {
       }
     } else {
       const result = await query(
-        `INSERT INTO users (email, password, full_name, phone, role, status, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO users (email, password, full_name, phone, role, status, created_by,
+                           max_bargain_amount, max_item_bargain_amount)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING id, email, full_name, phone, role, status, created_at`,
-        [email, hashedPassword, full_name, phone, userRole, status, req.user?.id || null]
+        [email, hashedPassword, full_name, phone, userRole, status, req.user?.id || null,
+          maxBargainAmount, maxItemBargainAmount]
       );
 
       newUser = result.rows[0];
@@ -293,7 +324,7 @@ export const login = async (req: AuthRequest, res: Response) => {
            last_failed_login = NULL
        WHERE id = $1 
        RETURNING id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
-                 branch_id, created_at, updated_at, last_login, max_bargain_amount`,
+                 branch_id, created_at, updated_at, last_login, max_bargain_amount, max_item_bargain_amount`,
       [user.id]
     );
     
@@ -303,6 +334,7 @@ export const login = async (req: AuthRequest, res: Response) => {
       updatedUser.role,
       updatedUser.max_bargain_amount
     );
+    updatedUser.max_item_bargain_amount = Number(updatedUser.max_item_bargain_amount) || 0;
     
     // Auto-cancel any pending password reset requests (user successfully logged in, so they remember their password)
     try {
@@ -338,7 +370,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     const result = await query(
       `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.status, u.profile_picture,
               u.profile_picture_url, u.created_at, u.updated_at, u.last_login, u.auth_provider,
-              u.max_bargain_amount, u.branch_id, b.name AS branch_name
+              u.max_bargain_amount, u.max_item_bargain_amount, u.branch_id, b.name AS branch_name
        FROM users u
        LEFT JOIN branches b ON b.id = u.branch_id
        WHERE u.id = $1`,
@@ -352,6 +384,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     const user = result.rows[0];
     user.is_system_admin = isSystemAdminEmail(user.email);
     user.max_bargain_amount = getEffectiveBargainLimit(user.role, user.max_bargain_amount);
+    user.max_item_bargain_amount = Number(user.max_item_bargain_amount) || 0;
     res.json({ user });
   } catch (error) {
     console.error('Get user error:', error);
