@@ -113,6 +113,8 @@ interface OrderItem {
   surcharge_basis_amount?: number;
   /** Explicit per-unit price-up entered by the operator */
   surcharge_per_unit?: number;
+  /** Whether the price-up was entered at quantity one and should scale */
+  surcharge_scales_with_quantity?: boolean;
   /** Net line total: quantity × unit price + surcharge − discount */
   subtotal: number;
   unit?: string;
@@ -158,12 +160,11 @@ function getScaledLineDiscount(
 }
 
 function getScaledLineSurcharge(
-  item: Pick<OrderItem, 'surcharge_amount' | 'surcharge_basis_quantity' | 'surcharge_basis_amount' | 'surcharge_per_unit'>,
+  item: Pick<OrderItem, 'surcharge_amount' | 'surcharge_basis_quantity' | 'surcharge_basis_amount' | 'surcharge_per_unit' | 'surcharge_scales_with_quantity'>,
   quantity: number
 ): number {
-  const perUnitAmount = Number(item.surcharge_per_unit);
-  if (Number.isFinite(perUnitAmount) && perUnitAmount > 0) {
-    return Math.max(0, Math.round(perUnitAmount * Number(quantity)));
+  if (!item.surcharge_scales_with_quantity) {
+    return Math.max(0, Math.round(Number(item.surcharge_amount || 0)));
   }
 
   const basisQuantity = Number(item.surcharge_basis_quantity || 0);
@@ -561,9 +562,10 @@ export default function NewOrder() {
     const roleCeiling = Math.round(gross * (maxDiscountPercent / 100));
     const configuredCeiling = maxItemBargainAmount > 0 ? maxItemBargainAmount : roleCeiling;
     const parsed = Math.max(0, Math.round(Number(rawValue) || 0));
-    const discount = Math.min(parsed * Number(current.quantity), configuredCeiling, gross);
+    const shouldScale = Number(current.quantity) === 1;
+    const discount = Math.min(parsed, configuredCeiling, gross);
 
-    if (parsed * Number(current.quantity) > configuredCeiling) {
+    if (parsed > configuredCeiling) {
       toast({
         variant: 'destructive',
         title: 'Discount limit reached',
@@ -579,7 +581,7 @@ export default function NewOrder() {
       discount_amount: discount,
       discount_basis_quantity: current.quantity,
       discount_basis_amount: discount,
-      discount_scales_with_quantity: true,
+      discount_scales_with_quantity: shouldScale,
       subtotal: computeLineSubtotal(current.quantity, current.unit_price, discount, current.surcharge_amount || 0),
     };
     setOrderItems(updated);
@@ -590,12 +592,14 @@ export default function NewOrder() {
     const current = orderItems[index];
     if (!current) return;
     const parsed = Math.max(0, Math.round(Number(rawValue) || 0));
-    const totalSurcharge = Math.round(parsed * Number(current.quantity));
+    const shouldScale = Number(current.quantity) === 1;
+    const totalSurcharge = parsed;
     const updated = [...orderItems];
     updated[index] = {
       ...updated[index],
       surcharge_amount: totalSurcharge,
       surcharge_per_unit: parsed,
+      surcharge_scales_with_quantity: shouldScale,
       surcharge_basis_quantity: current.quantity,
       surcharge_basis_amount: totalSurcharge,
       subtotal: computeLineSubtotal(
@@ -1263,7 +1267,11 @@ export default function NewOrder() {
                           value={
                             canPriceUp
                               ? getItemAdjMode(index) === 'bargain'
-                                ? (item.discount_amount ? String(Math.round(Number(item.discount_amount) / Number(item.quantity))) : '')
+                                ? (item.discount_amount
+                                  ? String(item.discount_scales_with_quantity
+                                    ? Math.round(Number(item.discount_amount) / Number(item.quantity))
+                                    : item.discount_amount)
+                                  : '')
                                 : (item.surcharge_per_unit ? String(item.surcharge_per_unit) : '')
                               : (item.discount_amount ? String(Math.round(Number(item.discount_amount) / Number(item.quantity))) : '')
                           }
