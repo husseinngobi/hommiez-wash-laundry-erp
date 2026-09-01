@@ -30,6 +30,7 @@ interface OrderDetails {
   id: number;
   order_number: string;
   invoice_number: string;
+  order_status?: string;
   created_at: string;
   customer_name: string;
   customer_phone: string;
@@ -236,6 +237,7 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
             <div>
               <p><strong>Invoice No:</strong> {order.invoice_number}</p>
               <p><strong>Order No:</strong> {order.order_number}</p>
+              <p><strong>Order Status:</strong> {order.order_status || 'Processing'}</p>
               <p><strong>Date:</strong> {new Date(order.created_at).toLocaleString('en-GB')}</p>
               <p><strong>Cashier:</strong> {order.staff_name}</p>
             </div>

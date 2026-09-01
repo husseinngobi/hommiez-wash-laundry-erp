@@ -27,6 +27,7 @@ export function openWhatsAppMessenger(phone: string, message: string): boolean {
 
 export type OrderWhatsAppPayload = {
   order_number: string;
+  invoice_number?: string;
   customer_name: string;
   created_at?: string;
   subtotal: number;
@@ -88,7 +89,7 @@ export const COLLECTION_GRACE_DAYS = 3;
 /** Months after which uncollected items are donated */
 export const UNCOLLECTED_DONATION_MONTHS = 3;
 
-export type OrderMessageKind = 'confirmation' | 'receipt' | 'ready' | 'delivered';
+export type OrderMessageKind = 'confirmation' | 'receipt' | 'invoice' | 'ready' | 'delivered';
 
 function formatShortDate(value?: string): string {
   if (!value) return new Date().toLocaleDateString('en-UG');
@@ -174,6 +175,8 @@ function headerFor(kind: OrderMessageKind): string {
   switch (kind) {
     case 'confirmation':
       return '*ORDER CONFIRMATION*';
+    case 'invoice':
+      return '*INVOICE*';
     case 'ready':
       return '*YOUR ORDER IS READY FOR PICKUP*';
     case 'delivered':
@@ -384,6 +387,7 @@ export function buildOrderWhatsAppMessage(
     headerFor(kind),
     '',
     `Order #: *${order.order_number}*`,
+    ...(kind === 'invoice' && order.invoice_number ? [`Invoice #: *${order.invoice_number}*`] : []),
     `Date: ${formatShortDate(order.created_at)}`,
   ];
 
@@ -410,6 +414,16 @@ export function buildOrderWhatsAppMessage(
       lines.push('We will notify you as soon as your order is ready for collection.');
       lines.push('');
       lines.push('Please contact us if you have any questions.');
+      break;
+
+    case 'invoice':
+      if (paid) {
+        lines.push('This invoice has been fully paid. Thank you for settling your order.');
+      } else if (Number(order.amount_paid || 0) > 0) {
+        lines.push('This invoice records your payment and the remaining balance due.');
+      } else {
+        lines.push('This invoice records the amount due for your order.');
+      }
       break;
 
     case 'ready':
@@ -464,6 +478,20 @@ export function buildOrderReceiptWhatsAppMessage(
 ): string {
   return buildOrderWhatsAppMessage(order, items, {
     kind: 'receipt',
+    business: typeof business === 'string' ? { phone: business } : business,
+    paymentModes,
+  });
+}
+
+/** Invoice message with the order's current status and payment position. */
+export function buildOrderInvoiceWhatsAppMessage(
+  order: OrderWhatsAppPayload,
+  items: OrderWhatsAppItem[],
+  business?: BusinessInfo | string | null,
+  paymentModes?: PaymentModeDetails | null
+): string {
+  return buildOrderWhatsAppMessage(order, items, {
+    kind: 'invoice',
     business: typeof business === 'string' ? { phone: business } : business,
     paymentModes,
   });

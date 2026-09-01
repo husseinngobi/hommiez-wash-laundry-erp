@@ -50,6 +50,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   openWhatsAppMessenger,
   buildOrderReceiptWhatsAppMessage,
+  buildOrderInvoiceWhatsAppMessage,
   buildOrderReadyWhatsAppMessage,
   COLLECTION_GRACE_DAYS,
   UNCOLLECTED_DONATION_MONTHS,
@@ -228,6 +229,7 @@ const toWhatsAppOrder = (order: Order, includeBranch = false): OrderWhatsAppPayl
   payment_method: order.payment_method,
   order_status: order.order_status,
   branch_name: includeBranch ? order.branch_name : undefined,
+  invoice_number: order.invoice_number,
 });
 
 const toWhatsAppItems = (items: OrderItem[]): OrderWhatsAppItem[] =>
@@ -237,6 +239,7 @@ const toWhatsAppItems = (items: OrderItem[]): OrderWhatsAppItem[] =>
     quantity: item.quantity,
     total_price: Number(item.total_price),
     discount_amount: Number(item.discount_amount || 0),
+    surcharge_amount: Number(item.surcharge_amount || 0),
   }));
 
 const generateOrderReceiptMessage = (
@@ -700,7 +703,7 @@ export default function Orders() {
   const [businessPhone, setBusinessPhone] = useState('');
 
   // Manual WhatsApp Messenger compose (editable before send)
-  type WhatsAppComposeKind = 'receipt' | 'ready' | 'reminder' | 'custom';
+  type WhatsAppComposeKind = 'receipt' | 'invoice' | 'ready' | 'reminder' | 'custom';
   const [showWhatsAppCompose, setShowWhatsAppCompose] = useState(false);
   const [whatsAppComposeKind, setWhatsAppComposeKind] = useState<WhatsAppComposeKind>('receipt');
   const [whatsAppComposeMessage, setWhatsAppComposeMessage] = useState('');
@@ -920,6 +923,13 @@ export default function Orders() {
     switch (kind) {
       case 'receipt':
         return generateOrderReceiptMessage(order, items, effectivePaymentModes, effectiveBusiness, multiBranch);
+      case 'invoice':
+        return buildOrderInvoiceWhatsAppMessage(
+          toWhatsAppOrder(order, multiBranch),
+          toWhatsAppItems(items),
+          effectiveBusiness,
+          effectivePaymentModes
+        );
       case 'ready':
         return generateOrderReadyMessage(order, items, effectivePaymentModes, effectiveBusiness, multiBranch);
       case 'reminder':
@@ -1829,6 +1839,14 @@ export default function Orders() {
                               <MessageCircle className="h-4 w-4 mr-2" />
                               WhatsApp Receipt
                             </DropdownMenuCheckboxItem>
+                            <DropdownMenuCheckboxItem
+                              onClick={() => {
+                                void openWhatsAppCompose(order, 'invoice');
+                              }}
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              WhatsApp Invoice
+                            </DropdownMenuCheckboxItem>
                             {order.order_status === 'ready' && (
                               <DropdownMenuCheckboxItem
                                 onClick={() => {
@@ -2703,6 +2721,14 @@ export default function Orders() {
                   >
                     <FileText className="h-4 w-4" />
                     Open Invoice
+                  </Button>
+                  <Button
+                    onClick={() => void openWhatsAppCompose(selectedOrder, 'invoice', orderItems)}
+                    variant="outline"
+                    className="gap-2 border-green-600 text-green-700 dark:text-green-300"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Send via WhatsApp
                   </Button>
                 </div>
 
