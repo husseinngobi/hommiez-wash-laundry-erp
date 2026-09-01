@@ -111,6 +111,8 @@ interface OrderItem {
   surcharge_basis_quantity?: number;
   /** Price-up amount at the basis quantity */
   surcharge_basis_amount?: number;
+  /** Explicit per-unit price-up entered by the operator */
+  surcharge_per_unit?: number;
   /** Net line total: quantity × unit price + surcharge − discount */
   subtotal: number;
   unit?: string;
@@ -156,9 +158,14 @@ function getScaledLineDiscount(
 }
 
 function getScaledLineSurcharge(
-  item: Pick<OrderItem, 'surcharge_amount' | 'surcharge_basis_quantity' | 'surcharge_basis_amount'>,
+  item: Pick<OrderItem, 'surcharge_amount' | 'surcharge_basis_quantity' | 'surcharge_basis_amount' | 'surcharge_per_unit'>,
   quantity: number
 ): number {
+  const perUnitAmount = Number(item.surcharge_per_unit);
+  if (Number.isFinite(perUnitAmount) && perUnitAmount > 0) {
+    return Math.max(0, Math.round(perUnitAmount * Number(quantity)));
+  }
+
   const basisQuantity = Number(item.surcharge_basis_quantity || 0);
   const basisAmount = Number(item.surcharge_basis_amount ?? item.surcharge_amount ?? 0);
 
@@ -588,6 +595,7 @@ export default function NewOrder() {
     updated[index] = {
       ...updated[index],
       surcharge_amount: totalSurcharge,
+      surcharge_per_unit: parsed,
       surcharge_basis_quantity: current.quantity,
       surcharge_basis_amount: totalSurcharge,
       subtotal: computeLineSubtotal(
@@ -1256,7 +1264,7 @@ export default function NewOrder() {
                             canPriceUp
                               ? getItemAdjMode(index) === 'bargain'
                                 ? (item.discount_amount ? String(Math.round(Number(item.discount_amount) / Number(item.quantity))) : '')
-                                : (item.surcharge_amount ? String(Math.round(Number(item.surcharge_amount) / Number(item.quantity))) : '')
+                                : (item.surcharge_per_unit ? String(item.surcharge_per_unit) : '')
                               : (item.discount_amount ? String(Math.round(Number(item.discount_amount) / Number(item.quantity))) : '')
                           }
                           placeholder="0"
