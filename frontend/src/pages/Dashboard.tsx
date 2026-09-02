@@ -295,8 +295,8 @@ export default function Dashboard() {
 
       const branchParams = canPickBranch && branchFilter !== 'all' ? { branch_id: branchFilter } : {};
       
-      // Fetch all data in parallel
-      const requests = [
+      // Core dashboard data should not wait for optional financial panels.
+      const coreResponses = await Promise.all([
         axios.get(`${API_BASE_URL}/dashboard/stats`, {
           headers: { Authorization: `Bearer ${token}` },
           params: { period: dashboardPeriod, ...branchParams },
@@ -308,53 +308,44 @@ export default function Dashboard() {
         axios.get(`${API_BASE_URL}/settings/business-hours`, {
           headers: { Authorization: `Bearer ${token}` }
         })
-      ];
-
-      // Only fetch financial data for admins
-      if (isAdmin) {
-        requests.push(
-          axios.get(`${API_BASE_URL}/dashboard/financial-summary`, {
-            headers: { Authorization: `Bearer ${token}` },
-            params: { period: dashboardPeriod, ...branchParams },
-          }),
-          axios.get(`${API_BASE_URL}/dashboard/payment-methods-breakdown`, {
-            headers: { Authorization: `Bearer ${token}` },
-            params: { period: dashboardPeriod, ...branchParams },
-          }),
-          axios.get(`${API_BASE_URL}/dashboard/outstanding-balances`, {
-            headers: { Authorization: `Bearer ${token}` },
-            params: branchParams,
-          }),
-          axios.get(`${API_BASE_URL}/dashboard/month-over-month`, {
-            headers: { Authorization: `Bearer ${token}` },
-            params: branchParams,
-          })
-        );
-      }
-
-      const responses = await Promise.all(requests);
+      ]);
       if (requestId !== dashboardRequestId.current) return;
       
-      setStats(responses[0].data);
-      setRecentOrders(responses[1].data.orders || []);
-      setBusinessHours(responses[2].data);
-      
-      // Set financial data only if admin
-      if (isAdmin && responses.length > 3) {
-        setFinancialSummary(responses[3].data);
-        setPaymentBreakdown(responses[4].data);
-        setOutstandingBalances(responses[5].data);
-        setMonthGrowth(responses[6].data);
+      const [statsResponse, recentOrdersResponse, businessHoursResponse] = coreResponses;
+      setStats(statsResponse.data);
+      setRecentOrders(recentOrdersResponse.data.orders || []);
+      setBusinessHours(businessHoursResponse.data);
+      setLoading(false);
+
+      let financialData: [FinancialSummary | null, PaymentMethodBreakdown[], OutstandingBalances | null, MonthOverMonth | null] = [null, [], null, null];
+      if (isAdmin) {
+        const financialResponses = await Promise.allSettled([
+          axios.get(`${API_BASE_URL}/dashboard/financial-summary`, { headers: { Authorization: `Bearer ${token}` }, params: { period: dashboardPeriod, ...branchParams } }),
+          axios.get(`${API_BASE_URL}/dashboard/payment-methods-breakdown`, { headers: { Authorization: `Bearer ${token}` }, params: { period: dashboardPeriod, ...branchParams } }),
+          axios.get(`${API_BASE_URL}/dashboard/outstanding-balances`, { headers: { Authorization: `Bearer ${token}` }, params: branchParams }),
+          axios.get(`${API_BASE_URL}/dashboard/month-over-month`, { headers: { Authorization: `Bearer ${token}` }, params: branchParams }),
+        ]);
+        if (requestId !== dashboardRequestId.current) return;
+        financialData = [
+          financialResponses[0].status === 'fulfilled' ? financialResponses[0].value.data : null,
+          financialResponses[1].status === 'fulfilled' ? financialResponses[1].value.data : [],
+          financialResponses[2].status === 'fulfilled' ? financialResponses[2].value.data : null,
+          financialResponses[3].status === 'fulfilled' ? financialResponses[3].value.data : null,
+        ];
+        setFinancialSummary(financialData[0]);
+        setPaymentBreakdown(financialData[1]);
+        setOutstandingBalances(financialData[2]);
+        setMonthGrowth(financialData[3]);
       }
 
       writeDashboardCache(dashboardPeriod, isAdmin, {
-        stats: responses[0].data,
-        recentOrders: responses[1].data.orders || [],
-        businessHours: responses[2].data,
-        financialSummary: isAdmin && responses.length > 3 ? responses[3].data : null,
-        paymentBreakdown: isAdmin && responses.length > 3 ? responses[4].data : [],
-        outstandingBalances: isAdmin && responses.length > 3 ? responses[5].data : null,
-        monthGrowth: isAdmin && responses.length > 3 ? responses[6].data : null,
+        stats: statsResponse.data,
+        recentOrders: recentOrdersResponse.data.orders || [],
+        businessHours: businessHoursResponse.data,
+        financialSummary: financialData[0],
+        paymentBreakdown: financialData[1],
+        outstandingBalances: financialData[2],
+        monthGrowth: financialData[3],
         branchPerformance: [],
       }, branchFilter);
     } catch (error) {
