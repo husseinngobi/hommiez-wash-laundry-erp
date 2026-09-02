@@ -98,7 +98,7 @@ interface OrderItem {
   unit_price: number;
   base_unit_price?: number;
   pricing_type?: 'FIXED' | 'PER_KG';
-  pricing_mode?: 'piece' | 'kg';
+  pricing_mode?: 'piece' | 'kg' | 'catalogue_kg';
   kg_rate?: number;
   /** Per-item bargain given to this customer on this line */
   discount_amount?: number;
@@ -256,6 +256,7 @@ export default function NewOrder() {
   // Order state
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [globalKgMode, setGlobalKgMode] = useState(false);
+  const [catalogueKg, setCatalogueKg] = useState(0);
   const [standardKgRate, setStandardKgRate] = useState(10000);
   const [transactionDiscount, setTransactionDiscount] = useState(0);
   const [bargainAmount, setBargainAmount] = useState(0);
@@ -418,15 +419,39 @@ export default function NewOrder() {
   };
 
   const getOrderKgRate = (item: Pick<OrderItem, 'kg_rate'>) => (
-    globalKgMode ? standardKgRate : Number(item.kg_rate) > 0 ? Number(item.kg_rate) : standardKgRate
+    Number(item.kg_rate) > 0 ? Number(item.kg_rate) : standardKgRate
   );
+
+  const recalculateCatalogueLines = (items: OrderItem[], weight: number) => {
+    const totalUnits = items.reduce((sum, item) => sum + Math.max(1, Number(item.quantity) || 1), 0);
+    const catalogueTotal = Math.round(Math.max(0, weight) * standardKgRate);
+    let allocated = 0;
+
+    return items.map((item, index) => {
+      const lineBase = index === items.length - 1
+        ? catalogueTotal - allocated
+        : Math.round(catalogueTotal * Math.max(1, Number(item.quantity) || 1) / totalUnits);
+      allocated += lineBase;
+      const quantity = Math.max(1, Math.round(Number(item.quantity) || 1));
+      const unitPrice = Math.round(lineBase / quantity);
+      return {
+        ...item,
+        pricing_mode: 'catalogue_kg' as const,
+        unit: 'piece',
+        unit_price: unitPrice,
+        kg_rate: standardKgRate,
+        subtotal: computeLineSubtotal(quantity, unitPrice, Number(item.discount_amount || 0), Number(item.surcharge_amount || 0)),
+      };
+    });
+  };
 
   const setOrderItemPricingMode = (index: number, nextMode: 'piece' | 'kg') => {
     const current = orderItems[index];
     if (!current) return;
 
     const currentBaseRate = Number(current.base_unit_price ?? current.unit_price ?? 0) || 0;
-    const kgRate = globalKgMode ? standardKgRate : (Number(current.kg_rate) > 0 ? Number(current.kg_rate) : standardKgRate);
+    const kgRate = getOrderKgRate(current);
+    if (globalKgMode) return;
     const nextUnitPrice = nextMode === 'kg' ? kgRate : currentBaseRate || current.unit_price;
 
     const updated = [...orderItems];
@@ -470,7 +495,7 @@ export default function NewOrder() {
     }
 
     const kgRate = globalKgMode ? standardKgRate : getEffectiveKgRate(item);
-    const preferredMode = (globalKgMode || item.pricing_type === 'PER_KG' || item.unit === 'kg') ? 'kg' : 'piece';
+    const preferredMode = globalKgMode ? 'catalogue_kg' : (item.pricing_type === 'PER_KG' || item.unit === 'kg') ? 'kg' : 'piece';
     const currentUnitPrice = preferredMode === 'kg' ? kgRate : unitPrice;
 
     // Check if item already exists
@@ -480,28 +505,23 @@ export default function NewOrder() {
 
     if (existingIndex >= 0) {
       const updated = [...orderItems];
-      const step = preferredMode === 'kg' ? 0.5 : 1;
+      const step = 1;
       const nextQty = Number(updated[existingIndex].quantity) + step;
       const nextDiscount = getScaledLineDiscount(updated[existingIndex], nextQty);
       const nextSurcharge = getScaledLineSurcharge(updated[existingIndex], nextQty);
       updated[existingIndex] = {
         ...updated[existingIndex],
         pricing_mode: preferredMode,
-        unit: preferredMode === 'kg' ? 'kg' : (updated[existingIndex].unit === 'kg' ? 'piece' : updated[existingIndex].unit || 'piece'),
+        unit: preferredMode === 'kg' ? 'kg' : 'piece',
         unit_price: currentUnitPrice,
         base_unit_price: updated[existingIndex].base_unit_price ?? updated[existingIndex].unit_price,
         kg_rate: kgRate,
         quantity: nextQty,
         discount_amount: nextDiscount,
         surcharge_amount: nextSurcharge,
-        subtotal: computeLineSubtotal(
-          nextQty,
-          currentUnitPrice,
-          nextDiscount,
-          nextSurcharge
-        ),
+        subtotal: computeLineSubtotal(nextQty, currentUnitPrice, nextDiscount, nextSurcharge),
       };
-      setOrderItems(updated);
+      setOrderItems(globalKgMode ? recalculateCatalogueLines(updated, catalogueKg) : updated);
     } else {
       const startQty = 1;
       setOrderItems([
@@ -515,12 +535,15 @@ export default function NewOrder() {
           base_unit_price: unitPrice,
           discount_amount: 0,
           subtotal: computeLineSubtotal(startQty, currentUnitPrice, 0),
-          unit: preferredMode === 'kg' ? 'kg' : (item.unit || 'piece'),
+          unit: preferredMode === 'kg' ? 'kg' : 'piece',
           pricing_type: item.pricing_type,
           pricing_mode: preferredMode,
           kg_rate: kgRate,
         },
       ]);
+      if (globalKgMode) {
+        setOrderItems((prev) => recalculateCatalogueLines(prev, catalogueKg));
+      }
     }
 
     toast({
@@ -566,7 +589,7 @@ export default function NewOrder() {
         nextSurcharge
       ),
     };
-    setOrderItems(updated);
+    setOrderItems(globalKgMode ? recalculateCatalogueLines(updated, catalogueKg) : updated);
     setQuantityDrafts((prev) => {
       const next = { ...prev };
       delete next[index];
@@ -613,7 +636,7 @@ export default function NewOrder() {
         nextSurcharge
       ),
     };
-    setOrderItems(updated);
+    setOrderItems(globalKgMode ? recalculateCatalogueLines(updated, catalogueKg) : updated);
   };
 
   /** Per-item bargain, capped at the line's gross value and the role's discount limit */
@@ -720,10 +743,7 @@ export default function NewOrder() {
   const itemSurchargeTotal = Math.round(
     orderItems.reduce((sum, item) => sum + Number(item.surcharge_amount || 0), 0)
   );
-  const totalCatalogueKg = orderItems.reduce(
-    (sum, item) => sum + (globalKgMode ? Number(item.quantity) : 0),
-    0
-  );
+  const totalCatalogueKg = globalKgMode ? catalogueKg : 0;
   const discountAmount = Math.round((itemsSubtotal * transactionDiscount) / 100);
   const bargainLimitRemaining = Math.max(0, maxBargainAmount - itemDiscountTotal);
   const safeBargain = Math.min(
@@ -854,6 +874,7 @@ export default function NewOrder() {
     setSelectedCustomer(null);
     setOrderItems([]);
     setGlobalKgMode(false);
+    setCatalogueKg(0);
     setQuantityDrafts({});
     setItemAdjModes({});
     setTransactionDiscount(0);
@@ -933,10 +954,11 @@ export default function NewOrder() {
         items: orderItems.map((item) => ({
           ...item,
           pricing_mode: item.pricing_mode || 'piece',
-          kg_rate: item.pricing_mode === 'kg'
+          kg_rate: item.pricing_mode === 'kg' || item.pricing_mode === 'catalogue_kg'
             ? (globalKgMode ? standardKgRate : Number(item.kg_rate ?? standardKgRate))
             : undefined,
         })),
+        catalogue_kg: globalKgMode ? catalogueKg : undefined,
         subtotal: subtotalAfterDiscount,
         tax_rate: VAT_RATE,
         tax_amount: taxAmount,
@@ -1178,11 +1200,12 @@ export default function NewOrder() {
               </div>
               
               <div className="p-2 space-y-1">
-                <div className="mb-2 flex items-center justify-between rounded-md border bg-muted/30 px-2 py-1.5">
-                  <div>
+                <div className="mb-2 rounded-md border bg-muted/30 px-2 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
                     <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Bulk pricing</p>
-                    <p className="text-xs font-medium">{globalKgMode ? `Catalogue: ${formatUGX(standardKgRate)} / kg` : 'Per-piece mode'}</p>
-                  </div>
+                    <p className="text-xs font-medium">{globalKgMode ? `Entire bag: ${formatUGX(standardKgRate)} / kg` : 'Per-piece mode'}</p>
+                    </div>
                   <Button
                     type="button"
                     size="sm"
@@ -1191,29 +1214,45 @@ export default function NewOrder() {
                     onClick={() => {
                       const nextMode = !globalKgMode;
                       setGlobalKgMode(nextMode);
-                      setOrderItems((prev) => prev.map((item) => {
-                        const kgRate = nextMode
-                          ? standardKgRate
-                          : (Number(item.kg_rate) > 0 ? Number(item.kg_rate) : standardKgRate);
-                        const nextPrice = nextMode ? standardKgRate : (item.base_unit_price ?? item.unit_price);
-                        return {
-                          ...item,
-                          pricing_mode: nextMode ? 'kg' : 'piece',
-                          unit: nextMode ? 'kg' : (item.unit === 'kg' ? 'piece' : item.unit || 'piece'),
-                          unit_price: nextPrice,
-                          kg_rate: kgRate,
-                          subtotal: computeLineSubtotal(
-                            Number(item.quantity),
-                            nextPrice,
-                            Number(item.discount_amount || 0),
-                            Number(item.surcharge_amount || 0)
-                          ),
-                        };
-                      }));
+                      setOrderItems((prev) => nextMode
+                        ? recalculateCatalogueLines(prev, catalogueKg)
+                        : prev.map((item) => {
+                          const isItemKg = item.pricing_type === 'PER_KG' || item.unit === 'kg';
+                          const nextPrice = isItemKg ? getOrderKgRate(item) : (item.base_unit_price ?? item.unit_price);
+                          return {
+                            ...item,
+                            pricing_mode: isItemKg ? 'kg' : 'piece',
+                            unit: isItemKg ? 'kg' : 'piece',
+                            unit_price: nextPrice,
+                            subtotal: computeLineSubtotal(Number(item.quantity), nextPrice, Number(item.discount_amount || 0), Number(item.surcharge_amount || 0)),
+                          };
+                        }));
                     }}
                   >
                     {globalKgMode ? 'Kg mode on' : 'Switch to kg'}
                   </Button>
+                  </div>
+                  {globalKgMode && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <Label htmlFor="catalogue-kg" className="text-xs whitespace-nowrap">Total bag weight (kg)</Label>
+                      <Input
+                        id="catalogue-kg"
+                        type="number"
+                        inputMode="decimal"
+                        min="0.1"
+                        step="0.1"
+                        value={catalogueKg || ''}
+                        onChange={(event) => {
+                          const value = Math.max(0, Number(event.target.value) || 0);
+                          setCatalogueKg(value);
+                          setOrderItems((prev) => recalculateCatalogueLines(prev, value));
+                        }}
+                        className="h-8 w-24 text-right text-sm font-semibold"
+                        placeholder="0.0"
+                      />
+                      <span className="text-xs text-muted-foreground">= {formatUGX(Math.round(catalogueKg * standardKgRate))}</span>
+                    </div>
+                  )}
                 </div>
                 {orderItems.length === 0 ? (
                   <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">

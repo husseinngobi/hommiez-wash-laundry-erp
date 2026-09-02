@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { Link } from 'react-router-dom';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import axios from 'axios';
 
@@ -174,7 +174,13 @@ export default function Dashboard() {
     }
     return 'all';
   })();
-  const cachedDashboard = readDashboardCache(initialStatsPeriod, isAdmin);
+  const initialBranchFilter = typeof window === 'undefined'
+    ? 'all'
+    : (() => {
+      const saved = localStorage.getItem('dashboardBranchFilter');
+      return saved && (saved === 'all' || /^\d+$/.test(saved)) ? saved : 'all';
+    })();
+  const cachedDashboard = readDashboardCache(initialStatsPeriod, isAdmin, initialBranchFilter);
   const [stats, setStats] = useState<DashboardStats>(() => cachedDashboard?.stats ?? {
     totalOrders: 0,
     totalRevenue: 0,
@@ -200,12 +206,9 @@ export default function Dashboard() {
   const [outstandingBalances, setOutstandingBalances] = useState<OutstandingBalances | null>(() => cachedDashboard?.outstandingBalances ?? null);
   const [monthGrowth, setMonthGrowth] = useState<MonthOverMonth | null>(() => cachedDashboard?.monthGrowth ?? null);
   const [branchPerformance, setBranchPerformance] = useState<BranchPerformance[]>(() => cachedDashboard?.branchPerformance ?? []);
-  const [branchFilter, setBranchFilter] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'all';
-    const saved = localStorage.getItem('dashboardBranchFilter');
-    return saved && (saved === 'all' || /^\d+$/.test(saved)) ? saved : 'all';
-  });
+  const [branchFilter, setBranchFilter] = useState<string>(initialBranchFilter);
   const [branchList, setBranchList] = useState<Array<{ id: number; name: string }>>([]);
+  const dashboardRequestId = useRef(0);
 
   const TODAY_KEY = DAY_KEYS[new Date().getDay()];
   const dashboardPeriod = statsPeriod;
@@ -275,6 +278,7 @@ export default function Dashboard() {
     if (!token) return;
     
     try {
+      const requestId = ++dashboardRequestId.current;
       setLoading(true);
       setStats((prev) => ({
         ...prev,
@@ -331,6 +335,7 @@ export default function Dashboard() {
       }
 
       const responses = await Promise.all(requests);
+      if (requestId !== dashboardRequestId.current) return;
       
       setStats(responses[0].data);
       setRecentOrders(responses[1].data.orders || []);
@@ -357,7 +362,9 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
-      setLoading(false);
+      if (dashboardRequestId.current === requestId) {
+        setLoading(false);
+      }
     }
   }, [token, dashboardPeriod, isAdmin, canPickBranch, branchFilter]);
 

@@ -268,6 +268,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       tax_amount: frontendTaxAmount,
       order_date,          // optional back-date
       payment_date: requestedCreatePaymentDate,
+      catalogue_kg,
     } = req.body;
 
     // Past-date (historical) orders only. Same-day orders stay unmarked even if
@@ -315,8 +316,25 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     let totalItemDiscount = 0;
     const validatedItems: any[] = [];
     
-    for (const item of items) {
-      const requestedPricingMode = item.pricing_mode === 'kg' ? 'kg' : 'piece';
+    const catalogueWeight = Number(catalogue_kg || 0);
+    const catalogueMode = catalogueWeight > 0;
+    const catalogueRateResult = catalogueMode
+      ? await client.query(
+        `SELECT setting_value FROM business_settings WHERE setting_key IN ('standard_kg_rate', 'kilogram_rate') ORDER BY setting_key = 'standard_kg_rate' DESC LIMIT 1`
+      )
+      : { rows: [] };
+    const catalogueRate = catalogueMode
+      ? Number(parseSettingJson(catalogueRateResult.rows[0]?.setting_value) || 10000) || 10000
+      : 0;
+    const catalogueTotal = Math.round(catalogueWeight * catalogueRate);
+    const catalogueUnits = items.reduce((sum: number, entry: any) => sum + Math.max(1, Math.round(Number(entry.quantity) || 1)), 0);
+    let catalogueAllocated = 0;
+
+    for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+      const item = items[itemIndex];
+      const requestedPricingMode = item.pricing_mode === 'catalogue_kg'
+        ? 'catalogue_kg'
+        : item.pricing_mode === 'kg' ? 'kg' : 'piece';
       const requestedKgRate = Number(item.kg_rate ?? 0);
       const standardKgRateResult = await client.query(
         `SELECT setting_value FROM business_settings WHERE setting_key IN ('standard_kg_rate', 'kilogram_rate') ORDER BY setting_key = 'standard_kg_rate' DESC LIMIT 1`
@@ -374,12 +392,23 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       }
 
       const isPerKg = requestedPricingMode === 'kg' || priceItem.pricing_type === 'PER_KG' || priceItem.unit === 'kg';
+      const isCatalogueLine = catalogueMode && requestedPricingMode === 'catalogue_kg';
+      if (isCatalogueLine && !Number.isInteger(quantity)) {
+        throw new Error(`${priceItem.name} must use a whole number quantity in catalogue kg mode`);
+      }
       if (!isPerKg && !Number.isInteger(quantity)) {
         throw new Error(`${priceItem.name} must use a whole number quantity`);
       }
       
       let actualUnitPrice = 0;
-      if (isPerKg) {
+      if (isCatalogueLine) {
+        const lineUnits = Math.max(1, Math.round(quantity));
+        const lineGross = itemIndex === items.length - 1
+          ? catalogueTotal - catalogueAllocated
+          : Math.round(catalogueTotal * lineUnits / catalogueUnits);
+        catalogueAllocated += lineGross;
+        actualUnitPrice = Math.round(lineGross / lineUnits);
+      } else if (isPerKg) {
         // Manual kg entry uses the configured standard rate unless this item has an item-specific kg rate.
         const baseKgRate = requestedKgRate > 0
           ? requestedKgRate
@@ -643,15 +672,16 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         order_number, customer_id, user_id, subtotal, tax_rate, tax_amount,
         discount_percentage, discount_amount, bargain_amount, surcharge_amount,
         total_amount, payment_status, payment_method, amount_paid, balance,
-        status, transaction_reference, invoice_number, notes, branch_id,
+        status, transaction_reference, invoice_number, notes, branch_id, catalogue_kg,
         created_at, recorded_at, is_backdated
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NOW(),$22)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW(),$23)
       RETURNING *`,
       [
         order_number, customer_id, req.user!.id, subtotal, tax_rate, tax_amount,
         discount_percentage, discount_amount, bargainAmountValue, surchargeAmountValue,
         total_amount, finalPaymentStatus, finalPaymentMethod, finalAmountPaidValue,
         balance, 'pending', transaction_reference || null, invoice_number, notes, branchId,
+        catalogueMode ? catalogueWeight : null,
         customOrderDate
           ? ymdToPgTimestamp(extractYmd(customOrderDate) || toKampalaYmd(new Date(customOrderDate)))
           : new Date().toISOString(),

@@ -155,6 +155,7 @@ CREATE TABLE orders (
     subtotal DECIMAL(10, 2) NOT NULL DEFAULT 0,
     discount DECIMAL(10, 2) DEFAULT 0,
     total_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    catalogue_kg DECIMAL(10, 2),
     amount_paid DECIMAL(10, 2) DEFAULT 0,
     balance DECIMAL(10, 2) DEFAULT 0,
     payment_method VARCHAR(50),

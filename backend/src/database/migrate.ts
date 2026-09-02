@@ -92,6 +92,7 @@ const migrate = async () => {
         discount INTEGER NOT NULL DEFAULT 0,
         tax INTEGER NOT NULL DEFAULT 0,
         total INTEGER NOT NULL DEFAULT 0,
+        catalogue_kg DECIMAL(10, 2),
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
