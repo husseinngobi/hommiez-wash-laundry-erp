@@ -50,6 +50,8 @@ interface OrderDetails {
   fiscal_verification_code: string;
   staff_name: string;
   branch_name?: string | null;
+  catalogue_kg?: number | null;
+  catalogue_kg_rate?: number | null;
 }
 
 interface OrderItem {
@@ -240,6 +242,9 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
               <p><strong>Order Status:</strong> {order.order_status || 'Processing'}</p>
               <p><strong>Date:</strong> {new Date(order.created_at).toLocaleString('en-GB')}</p>
               <p><strong>Cashier:</strong> {order.staff_name}</p>
+              {Number(order.catalogue_kg) > 0 && (
+                <p><strong>Bulk laundry:</strong> {Number(order.catalogue_kg).toFixed(2)} kg{Number(order.catalogue_kg_rate) > 0 ? ` @ ${formatUGX(Number(order.catalogue_kg_rate))}/kg` : ''}</p>
+              )}
             </div>
             <div className="text-right">
               <p><strong>Customer:</strong> {order.customer_name}</p>

@@ -45,6 +45,8 @@ export type OrderWhatsAppPayload = {
   order_status?: string;
   pickup_date?: string;
   branch_name?: string;
+  catalogue_kg?: number;
+  catalogue_kg_rate?: number;
 };
 
 export type OrderWhatsAppItem = {
@@ -394,6 +396,9 @@ export function buildOrderWhatsAppMessage(
   const statusLabel = orderStatusLabel(order);
   if (statusLabel) lines.push(`Status: ${statusLabel}`);
   if (branchName) lines.push(`Branch: ${branchName}`);
+  if (Number(order.catalogue_kg) > 0) {
+    lines.push(`Bulk laundry: ${Number(order.catalogue_kg).toFixed(2)} kg at ${formatUGX(Number(order.catalogue_kg_rate) || 0)}/kg`);
+  }
   lines.push('');
 
   if (showItemDetail) {

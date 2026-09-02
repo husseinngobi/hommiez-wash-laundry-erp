@@ -1007,6 +1007,8 @@ export default function NewOrder() {
           payment_status: order.payment_status || paymentStatus,
           payment_method: order.payment_method || orderData.payment_method,
           order_status: order.order_status || 'pending',
+          catalogue_kg: globalKgMode ? catalogueKg : undefined,
+          catalogue_kg_rate: globalKgMode ? standardKgRate : undefined,
           // Only name the branch on receipts when the business actually has more than one
           branch_name:
             branches.length > 1

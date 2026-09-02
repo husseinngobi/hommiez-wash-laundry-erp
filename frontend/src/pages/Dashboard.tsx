@@ -276,24 +276,22 @@ export default function Dashboard() {
   // Fetch dashboard data (memoized to prevent unnecessary re-renders)
   const fetchDashboardData = useCallback(async () => {
     if (!token) return;
-    
+    const requestId = dashboardRequestId.current + 1;
+    dashboardRequestId.current = requestId;
+    const cached = readDashboardCache(dashboardPeriod, isAdmin, branchFilter);
     try {
-      const requestId = ++dashboardRequestId.current;
-      setLoading(true);
-      setStats((prev) => ({
-        ...prev,
-        totalOrders: 0,
-        totalRevenue: 0,
-        activeCustomers: 0,
-        averageOrderValue: 0,
-        pendingOrders: 0,
-        processingOrders: 0,
-        readyOrders: 0,
-        deliveredOrders: 0,
-        cancelledOrders: 0,
-        totalPayments: 0,
-      }));
-      setRecentOrders([]);
+      if (cached) {
+        setStats(cached.stats);
+        setRecentOrders(cached.recentOrders);
+        setBusinessHours(cached.businessHours);
+        setFinancialSummary(cached.financialSummary);
+        setPaymentBreakdown(cached.paymentBreakdown);
+        setOutstandingBalances(cached.outstandingBalances);
+        setMonthGrowth(cached.monthGrowth);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
 
       const branchParams = canPickBranch && branchFilter !== 'all' ? { branch_id: branchFilter } : {};
       
