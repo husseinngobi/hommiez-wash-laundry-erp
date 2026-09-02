@@ -417,12 +417,16 @@ export default function NewOrder() {
     return standardKgRate;
   };
 
+  const getOrderKgRate = (item: Pick<OrderItem, 'kg_rate'>) => (
+    globalKgMode ? standardKgRate : Number(item.kg_rate) > 0 ? Number(item.kg_rate) : standardKgRate
+  );
+
   const setOrderItemPricingMode = (index: number, nextMode: 'piece' | 'kg') => {
     const current = orderItems[index];
     if (!current) return;
 
     const currentBaseRate = Number(current.base_unit_price ?? current.unit_price ?? 0) || 0;
-    const kgRate = Number(current.kg_rate) > 0 ? Number(current.kg_rate) : standardKgRate;
+    const kgRate = globalKgMode ? standardKgRate : (Number(current.kg_rate) > 0 ? Number(current.kg_rate) : standardKgRate);
     const nextUnitPrice = nextMode === 'kg' ? kgRate : currentBaseRate || current.unit_price;
 
     const updated = [...orderItems];
@@ -465,7 +469,7 @@ export default function NewOrder() {
       return;
     }
 
-    const kgRate = getEffectiveKgRate(item);
+    const kgRate = globalKgMode ? standardKgRate : getEffectiveKgRate(item);
     const preferredMode = (globalKgMode || item.pricing_type === 'PER_KG' || item.unit === 'kg') ? 'kg' : 'piece';
     const currentUnitPrice = preferredMode === 'kg' ? kgRate : unitPrice;
 
@@ -546,7 +550,7 @@ export default function NewOrder() {
     const nextDiscount = getScaledLineDiscount(updated[index], normalizedQuantity);
     const nextSurcharge = getScaledLineSurcharge(updated[index], normalizedQuantity);
     const currentUnitPrice = Number(updated[index].pricing_mode === 'kg'
-      ? (updated[index].kg_rate ?? standardKgRate)
+      ? getOrderKgRate(updated[index])
       : (updated[index].base_unit_price ?? updated[index].unit_price)) || Number(updated[index].unit_price || 0);
 
     updated[index] = {
@@ -593,7 +597,7 @@ export default function NewOrder() {
     const nextDiscount = getScaledLineDiscount(updated[index], quantity);
     const nextSurcharge = getScaledLineSurcharge(updated[index], quantity);
     const currentUnitPrice = Number(updated[index].pricing_mode === 'kg'
-      ? (updated[index].kg_rate ?? standardKgRate)
+      ? getOrderKgRate(updated[index])
       : (updated[index].base_unit_price ?? updated[index].unit_price)) || Number(updated[index].unit_price || 0);
 
     updated[index] = {
@@ -715,6 +719,10 @@ export default function NewOrder() {
   );
   const itemSurchargeTotal = Math.round(
     orderItems.reduce((sum, item) => sum + Number(item.surcharge_amount || 0), 0)
+  );
+  const totalCatalogueKg = orderItems.reduce(
+    (sum, item) => sum + (globalKgMode ? Number(item.quantity) : 0),
+    0
   );
   const discountAmount = Math.round((itemsSubtotal * transactionDiscount) / 100);
   const bargainLimitRemaining = Math.max(0, maxBargainAmount - itemDiscountTotal);
@@ -925,7 +933,9 @@ export default function NewOrder() {
         items: orderItems.map((item) => ({
           ...item,
           pricing_mode: item.pricing_mode || 'piece',
-          kg_rate: item.pricing_mode === 'kg' ? Number(item.kg_rate ?? standardKgRate) : undefined,
+          kg_rate: item.pricing_mode === 'kg'
+            ? (globalKgMode ? standardKgRate : Number(item.kg_rate ?? standardKgRate))
+            : undefined,
         })),
         subtotal: subtotalAfterDiscount,
         tax_rate: VAT_RATE,
@@ -1161,7 +1171,9 @@ export default function NewOrder() {
                 <span className="text-xs text-muted-foreground">
                   {orderItems.length === 0
                     ? 'No items'
-                    : orderItems.reduce((sum, i) => sum + i.quantity, 0).toFixed(1).replace(/\.0$/, '') + ' units'}
+                    : globalKgMode
+                      ? `${totalCatalogueKg.toFixed(1).replace(/\.0$/, '')} kg total`
+                      : orderItems.reduce((sum, i) => sum + i.quantity, 0).toFixed(1).replace(/\.0$/, '') + ' units'}
                 </span>
               </div>
               
@@ -1169,7 +1181,7 @@ export default function NewOrder() {
                 <div className="mb-2 flex items-center justify-between rounded-md border bg-muted/30 px-2 py-1.5">
                   <div>
                     <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Bulk pricing</p>
-                    <p className="text-xs font-medium">{globalKgMode ? 'All items in kg mode' : 'Per-piece mode'}</p>
+                    <p className="text-xs font-medium">{globalKgMode ? `Catalogue: ${formatUGX(standardKgRate)} / kg` : 'Per-piece mode'}</p>
                   </div>
                   <Button
                     type="button"
@@ -1180,8 +1192,10 @@ export default function NewOrder() {
                       const nextMode = !globalKgMode;
                       setGlobalKgMode(nextMode);
                       setOrderItems((prev) => prev.map((item) => {
-                        const kgRate = Number(item.kg_rate) > 0 ? Number(item.kg_rate) : standardKgRate;
-                        const nextPrice = nextMode ? kgRate : (item.base_unit_price ?? item.unit_price);
+                        const kgRate = nextMode
+                          ? standardKgRate
+                          : (Number(item.kg_rate) > 0 ? Number(item.kg_rate) : standardKgRate);
+                        const nextPrice = nextMode ? standardKgRate : (item.base_unit_price ?? item.unit_price);
                         return {
                           ...item,
                           pricing_mode: nextMode ? 'kg' : 'piece',
@@ -1291,6 +1305,8 @@ export default function NewOrder() {
                           variant={item.pricing_mode === 'kg' || item.unit === 'kg' ? 'default' : 'outline'}
                           size="sm"
                           className="h-8 px-2 text-[10px] font-medium"
+                          disabled={globalKgMode}
+                          title={globalKgMode ? 'Turn off catalogue kg mode to price this item separately' : 'Switch this item between piece and kg pricing'}
                           onClick={() => setOrderItemPricingMode(index, item.pricing_mode === 'kg' || item.unit === 'kg' ? 'piece' : 'kg')}
                         >
                           {item.pricing_mode === 'kg' || item.unit === 'kg' ? 'Kg' : 'Piece'}

@@ -86,9 +86,12 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     const totalRevenue =
       parseFloat(revenueResult.rows[0].order_revenue) + deliveryRevenue;
 
-    // Total active customers (always all-time)
+    // Total active customers should follow the selected branch when a branch is in use.
+    // Otherwise the dashboard shows a company-wide count even while the other stats are scoped.
     const activeCustomersResult = await query(
-      `SELECT COUNT(*) as count FROM customers`
+      branchId
+        ? `SELECT COUNT(DISTINCT customer_id) as count FROM orders WHERE branch_id = ${Number(branchId)}`
+        : `SELECT COUNT(*) as count FROM customers`
     );
 
     // Average order value (for selected period)

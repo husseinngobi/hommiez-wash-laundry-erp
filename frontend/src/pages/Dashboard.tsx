@@ -275,10 +275,21 @@ export default function Dashboard() {
     if (!token) return;
     
     try {
-      const hasCachedData = Boolean(readDashboardCache(dashboardPeriod, isAdmin, branchFilter));
-      if (!hasCachedData) {
-        setLoading(true);
-      }
+      setLoading(true);
+      setStats((prev) => ({
+        ...prev,
+        totalOrders: 0,
+        totalRevenue: 0,
+        activeCustomers: 0,
+        averageOrderValue: 0,
+        pendingOrders: 0,
+        processingOrders: 0,
+        readyOrders: 0,
+        deliveredOrders: 0,
+        cancelledOrders: 0,
+        totalPayments: 0,
+      }));
+      setRecentOrders([]);
 
       const branchParams = canPickBranch && branchFilter !== 'all' ? { branch_id: branchFilter } : {};
       
