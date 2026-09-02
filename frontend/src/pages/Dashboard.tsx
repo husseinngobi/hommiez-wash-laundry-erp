@@ -200,11 +200,21 @@ export default function Dashboard() {
   const [outstandingBalances, setOutstandingBalances] = useState<OutstandingBalances | null>(() => cachedDashboard?.outstandingBalances ?? null);
   const [monthGrowth, setMonthGrowth] = useState<MonthOverMonth | null>(() => cachedDashboard?.monthGrowth ?? null);
   const [branchPerformance, setBranchPerformance] = useState<BranchPerformance[]>(() => cachedDashboard?.branchPerformance ?? []);
-  const [branchFilter, setBranchFilter] = useState('all');
+  const [branchFilter, setBranchFilter] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'all';
+    const saved = localStorage.getItem('dashboardBranchFilter');
+    return saved && (saved === 'all' || /^\d+$/.test(saved)) ? saved : 'all';
+  });
   const [branchList, setBranchList] = useState<Array<{ id: number; name: string }>>([]);
 
   const TODAY_KEY = DAY_KEYS[new Date().getDay()];
   const dashboardPeriod = statsPeriod;
+
+  useEffect(() => {
+    if (canPickBranch) {
+      localStorage.setItem('dashboardBranchFilter', branchFilter);
+    }
+  }, [branchFilter, canPickBranch]);
 
   // Whether the shop is trading right now, per today's configured hours
   const openStatus = useMemo(() => {

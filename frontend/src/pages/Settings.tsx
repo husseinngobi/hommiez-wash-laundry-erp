@@ -143,6 +143,7 @@ export default function Settings() {
   const [savingBranch, setSavingBranch] = useState(false);
   const [newBranch, setNewBranch] = useState({ name: '', location: '', phone: '', email: '' });
   const [vatRate, setVatRate] = useState('18.00');
+  const [standardKgRate, setStandardKgRate] = useState('10000');
   const [enableEfris, setEnableEfris] = useState(false);
   const [invoicePrefix, setInvoicePrefix] = useState('INV');
   const [invoiceFooter, setInvoiceFooter] = useState('');
@@ -357,6 +358,7 @@ export default function Settings() {
       setBusinessName(settings.business_name || 'Lush Dry Cleaners & Laundromat');
       setBusinessLocation(settings.business_location || '');
       setVatRate(settings.vat_rate || '18.00');
+      setStandardKgRate(String(Number(settings.standard_kg_rate ?? settings.kilogram_rate ?? 10000) || 10000));
       setEnableEfris(settings.enable_efris === 'true' || settings.enable_efris === true);
       setInvoicePrefix(settings.invoice_prefix || 'INV');
       setInvoiceFooter(settings.invoice_footer_text || '');
@@ -643,6 +645,7 @@ export default function Settings() {
         business_phone: businessPhone,
         business_email: businessEmail,
         vat_rate: vatRate,
+        standard_kg_rate: Number(standardKgRate) || 10000,
         enable_efris: enableEfris.toString(),
         invoice_prefix: invoicePrefix,
         invoice_footer_text: invoiceFooter,
@@ -656,7 +659,7 @@ export default function Settings() {
 
       toast({
         title: 'URA settings updated',
-        description: 'Your URA compliance settings have been saved successfully.',
+        description: 'Your URA compliance and kilogram pricing settings have been saved successfully.',
       });
     } catch (error) {
       toast({
@@ -2191,6 +2194,21 @@ Don't miss out! ✨`;
                     className="mt-2"
                   />
                   <p className="text-xs text-muted-foreground mt-1">Current Uganda VAT: 18%</p>
+                </div>
+
+                <div>
+                  <Label htmlFor="standard-kg-rate">Standard KG Rate (UGX)</Label>
+                  <Input
+                    id="standard-kg-rate"
+                    type="number"
+                    min="0"
+                    step="100"
+                    placeholder="10000"
+                    value={standardKgRate}
+                    onChange={(e) => setStandardKgRate(e.target.value)}
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Used when staff switch bulk laundry items into kg mode.</p>
                 </div>
 
                 <div>

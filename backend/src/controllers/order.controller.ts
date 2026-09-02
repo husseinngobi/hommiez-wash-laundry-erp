@@ -316,6 +316,17 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     const validatedItems: any[] = [];
     
     for (const item of items) {
+      const requestedPricingMode = item.pricing_mode === 'kg' ? 'kg' : 'piece';
+      const requestedKgRate = Number(item.kg_rate ?? 0);
+      const standardKgRateResult = await client.query(
+        `SELECT setting_value FROM business_settings WHERE setting_key IN ('standard_kg_rate', 'kilogram_rate') ORDER BY setting_key = 'standard_kg_rate' DESC LIMIT 1`
+      );
+      const standardKgRate = Number(
+        standardKgRateResult.rows[0]?.setting_value && !Number.isNaN(Number(JSON.parse(standardKgRateResult.rows[0].setting_value)))
+          ? JSON.parse(standardKgRateResult.rows[0].setting_value)
+          : 10000
+      ) || 10000;
+
       // Fetch actual price from database (prevent price manipulation)
       const priceResult = await client.query(
         `SELECT id, name, unit,
@@ -362,15 +373,17 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         throw new Error(`Invalid quantity for item ID ${item.price_item_id}`);
       }
 
-      const isPerKg = priceItem.pricing_type === 'PER_KG' || priceItem.unit === 'kg';
+      const isPerKg = requestedPricingMode === 'kg' || priceItem.pricing_type === 'PER_KG' || priceItem.unit === 'kg';
       if (!isPerKg && !Number.isInteger(quantity)) {
         throw new Error(`${priceItem.name} must use a whole number quantity`);
       }
       
       let actualUnitPrice = 0;
       if (isPerKg) {
-        // PER_KG items: rate per kg. EXPRESS doubles, IRON uses the same kg rate.
-        const baseKgRate = Number(priceItem.price_per_kg) > 0 ? Number(priceItem.price_per_kg) : Number(priceItem.effective_price);
+        // Manual kg entry uses the configured standard rate unless this item has an item-specific kg rate.
+        const baseKgRate = requestedKgRate > 0
+          ? requestedKgRate
+          : (Number(priceItem.price_per_kg) > 0 ? Number(priceItem.price_per_kg) : Number(priceItem.effective_price) || standardKgRate);
         if (serviceType === 'EXPRESS') {
           actualUnitPrice = baseKgRate * 2;
         } else {

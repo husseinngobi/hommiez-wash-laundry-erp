@@ -96,7 +96,10 @@ interface OrderItem {
   service_type: 'WASH' | 'IRON' | 'EXPRESS';
   quantity: number;
   unit_price: number;
+  base_unit_price?: number;
   pricing_type?: 'FIXED' | 'PER_KG';
+  pricing_mode?: 'piece' | 'kg';
+  kg_rate?: number;
   /** Per-item bargain given to this customer on this line */
   discount_amount?: number;
   /** Quantity used when the current bargain was entered */
@@ -252,6 +255,8 @@ export default function NewOrder() {
 
   // Order state
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
+  const [globalKgMode, setGlobalKgMode] = useState(false);
+  const [standardKgRate, setStandardKgRate] = useState(10000);
   const [transactionDiscount, setTransactionDiscount] = useState(0);
   const [bargainAmount, setBargainAmount] = useState(0);
   const [orderSurchargeAmount, setOrderSurchargeAmount] = useState(0);
@@ -347,6 +352,7 @@ export default function NewOrder() {
       const settings = response.data;
       setUraComplianceEnabled(settings.ura_compliance_enabled === 'true' || settings.ura_compliance_enabled === true);
       setVatRate(parseFloat(String(settings.vat_rate ?? 18)) || 18);
+      setStandardKgRate(Number(settings.standard_kg_rate ?? settings.kilogram_rate ?? 10000) || 10000);
       setBusinessPhone(settings.business_phone || '');
       setBusinessInfo({
         name: settings.business_name || 'LUSH DRY CLEANERS & LAUNDROMAT',
@@ -405,6 +411,38 @@ export default function NewOrder() {
     item.item_id.toLowerCase().includes(itemSearch.toLowerCase())
   );
 
+  const getEffectiveKgRate = (priceItem: Pick<PriceItem, 'price_per_kg' | 'price' | 'pricing_type' | 'unit'>) => {
+    if (Number(priceItem.price_per_kg) > 0) return Number(priceItem.price_per_kg);
+    if (priceItem.pricing_type === 'PER_KG' || priceItem.unit === 'kg') return Number(priceItem.price) || standardKgRate;
+    return standardKgRate;
+  };
+
+  const setOrderItemPricingMode = (index: number, nextMode: 'piece' | 'kg') => {
+    const current = orderItems[index];
+    if (!current) return;
+
+    const currentBaseRate = Number(current.base_unit_price ?? current.unit_price ?? 0) || 0;
+    const kgRate = Number(current.kg_rate) > 0 ? Number(current.kg_rate) : standardKgRate;
+    const nextUnitPrice = nextMode === 'kg' ? kgRate : currentBaseRate || current.unit_price;
+
+    const updated = [...orderItems];
+    updated[index] = {
+      ...updated[index],
+      pricing_mode: nextMode,
+      unit: nextMode === 'kg' ? 'kg' : (current.unit === 'kg' ? 'piece' : current.unit || 'piece'),
+      unit_price: nextUnitPrice,
+      kg_rate: kgRate,
+      base_unit_price: current.base_unit_price ?? current.unit_price,
+      subtotal: computeLineSubtotal(
+        Number(updated[index].quantity),
+        nextUnitPrice,
+        Number(updated[index].discount_amount || 0),
+        Number(updated[index].surcharge_amount || 0)
+      ),
+    };
+    setOrderItems(updated);
+  };
+
   // Add item to order
   const addItemToOrder = (item: PriceItem, serviceType: 'WASH' | 'IRON' | 'EXPRESS') => {
     let unitPrice = 0;
@@ -427,6 +465,10 @@ export default function NewOrder() {
       return;
     }
 
+    const kgRate = getEffectiveKgRate(item);
+    const preferredMode = (globalKgMode || item.pricing_type === 'PER_KG' || item.unit === 'kg') ? 'kg' : 'piece';
+    const currentUnitPrice = preferredMode === 'kg' ? kgRate : unitPrice;
+
     // Check if item already exists
     const existingIndex = orderItems.findIndex(
       (oi) => oi.price_item_id === item.id && oi.service_type === serviceType
@@ -434,25 +476,30 @@ export default function NewOrder() {
 
     if (existingIndex >= 0) {
       const updated = [...orderItems];
-      const step = item.unit === 'kg' ? 0.5 : 1;
+      const step = preferredMode === 'kg' ? 0.5 : 1;
       const nextQty = Number(updated[existingIndex].quantity) + step;
       const nextDiscount = getScaledLineDiscount(updated[existingIndex], nextQty);
       const nextSurcharge = getScaledLineSurcharge(updated[existingIndex], nextQty);
       updated[existingIndex] = {
         ...updated[existingIndex],
+        pricing_mode: preferredMode,
+        unit: preferredMode === 'kg' ? 'kg' : (updated[existingIndex].unit === 'kg' ? 'piece' : updated[existingIndex].unit || 'piece'),
+        unit_price: currentUnitPrice,
+        base_unit_price: updated[existingIndex].base_unit_price ?? updated[existingIndex].unit_price,
+        kg_rate: kgRate,
         quantity: nextQty,
         discount_amount: nextDiscount,
         surcharge_amount: nextSurcharge,
         subtotal: computeLineSubtotal(
           nextQty,
-          Number(updated[existingIndex].unit_price),
+          currentUnitPrice,
           nextDiscount,
           nextSurcharge
         ),
       };
       setOrderItems(updated);
     } else {
-      const startQty = item.unit === 'kg' ? 1 : 1;
+      const startQty = 1;
       setOrderItems([
         ...orderItems,
         {
@@ -460,11 +507,14 @@ export default function NewOrder() {
           item_name: item.name,
           service_type: serviceType,
           quantity: startQty,
-          unit_price: unitPrice,
+          unit_price: currentUnitPrice,
+          base_unit_price: unitPrice,
           discount_amount: 0,
-          subtotal: computeLineSubtotal(startQty, unitPrice, 0),
-          unit: item.unit || 'piece',
+          subtotal: computeLineSubtotal(startQty, currentUnitPrice, 0),
+          unit: preferredMode === 'kg' ? 'kg' : (item.unit || 'piece'),
           pricing_type: item.pricing_type,
+          pricing_mode: preferredMode,
+          kg_rate: kgRate,
         },
       ]);
     }
@@ -480,7 +530,7 @@ export default function NewOrder() {
     const currentItem = orderItems[index];
     if (!currentItem) return;
 
-    const isKg = currentItem.unit === 'kg';
+    const isKg = currentItem.pricing_mode === 'kg' || currentItem.unit === 'kg';
     const minimumQuantity = isKg ? 0.1 : 1;
     let normalizedQuantity = Number(newQuantity);
 
@@ -488,7 +538,6 @@ export default function NewOrder() {
       normalizedQuantity = minimumQuantity;
     }
 
-    // Pieces: whole numbers. Kg: keep up to 2 decimals (type any weight; +/− uses 0.5)
     normalizedQuantity = isKg
       ? Math.round(normalizedQuantity * 100) / 100
       : Math.max(1, Math.round(normalizedQuantity));
@@ -496,14 +545,19 @@ export default function NewOrder() {
     const updated = [...orderItems];
     const nextDiscount = getScaledLineDiscount(updated[index], normalizedQuantity);
     const nextSurcharge = getScaledLineSurcharge(updated[index], normalizedQuantity);
+    const currentUnitPrice = Number(updated[index].pricing_mode === 'kg'
+      ? (updated[index].kg_rate ?? standardKgRate)
+      : (updated[index].base_unit_price ?? updated[index].unit_price)) || Number(updated[index].unit_price || 0);
+
     updated[index] = {
       ...updated[index],
       quantity: normalizedQuantity,
+      unit_price: currentUnitPrice,
       discount_amount: nextDiscount,
       surcharge_amount: nextSurcharge,
       subtotal: computeLineSubtotal(
         normalizedQuantity,
-        Number(updated[index].unit_price),
+        currentUnitPrice,
         nextDiscount,
         nextSurcharge
       ),
@@ -530,7 +584,7 @@ export default function NewOrder() {
     if (!Number.isFinite(parsed)) return;
     const currentItem = orderItems[index];
     if (!currentItem) return;
-    const isKg = currentItem.unit === 'kg';
+    const isKg = currentItem.pricing_mode === 'kg' || currentItem.unit === 'kg';
     const minimumQuantity = isKg ? 0.1 : 1;
     if (parsed < minimumQuantity) return;
 
@@ -538,14 +592,19 @@ export default function NewOrder() {
     const updated = [...orderItems];
     const nextDiscount = getScaledLineDiscount(updated[index], quantity);
     const nextSurcharge = getScaledLineSurcharge(updated[index], quantity);
+    const currentUnitPrice = Number(updated[index].pricing_mode === 'kg'
+      ? (updated[index].kg_rate ?? standardKgRate)
+      : (updated[index].base_unit_price ?? updated[index].unit_price)) || Number(updated[index].unit_price || 0);
+
     updated[index] = {
       ...updated[index],
       quantity,
+      unit_price: currentUnitPrice,
       discount_amount: nextDiscount,
       surcharge_amount: nextSurcharge,
       subtotal: computeLineSubtotal(
         quantity,
-        Number(updated[index].unit_price),
+        currentUnitPrice,
         nextDiscount,
         nextSurcharge
       ),
@@ -786,6 +845,7 @@ export default function NewOrder() {
   const resetOrderForm = () => {
     setSelectedCustomer(null);
     setOrderItems([]);
+    setGlobalKgMode(false);
     setQuantityDrafts({});
     setItemAdjModes({});
     setTransactionDiscount(0);
@@ -862,7 +922,11 @@ export default function NewOrder() {
 
       const orderData = {
         customer_id: selectedCustomer.id,
-        items: orderItems,
+        items: orderItems.map((item) => ({
+          ...item,
+          pricing_mode: item.pricing_mode || 'piece',
+          kg_rate: item.pricing_mode === 'kg' ? Number(item.kg_rate ?? standardKgRate) : undefined,
+        })),
         subtotal: subtotalAfterDiscount,
         tax_rate: VAT_RATE,
         tax_amount: taxAmount,
@@ -1102,6 +1166,41 @@ export default function NewOrder() {
               </div>
               
               <div className="p-2 space-y-1">
+                <div className="mb-2 flex items-center justify-between rounded-md border bg-muted/30 px-2 py-1.5">
+                  <div>
+                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Bulk pricing</p>
+                    <p className="text-xs font-medium">{globalKgMode ? 'All items in kg mode' : 'Per-piece mode'}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={globalKgMode ? 'default' : 'outline'}
+                    className="h-8 px-3 text-xs"
+                    onClick={() => {
+                      const nextMode = !globalKgMode;
+                      setGlobalKgMode(nextMode);
+                      setOrderItems((prev) => prev.map((item) => {
+                        const kgRate = Number(item.kg_rate) > 0 ? Number(item.kg_rate) : standardKgRate;
+                        const nextPrice = nextMode ? kgRate : (item.base_unit_price ?? item.unit_price);
+                        return {
+                          ...item,
+                          pricing_mode: nextMode ? 'kg' : 'piece',
+                          unit: nextMode ? 'kg' : (item.unit === 'kg' ? 'piece' : item.unit || 'piece'),
+                          unit_price: nextPrice,
+                          kg_rate: kgRate,
+                          subtotal: computeLineSubtotal(
+                            Number(item.quantity),
+                            nextPrice,
+                            Number(item.discount_amount || 0),
+                            Number(item.surcharge_amount || 0)
+                          ),
+                        };
+                      }));
+                    }}
+                  >
+                    {globalKgMode ? 'Kg mode on' : 'Switch to kg'}
+                  </Button>
+                </div>
                 {orderItems.length === 0 ? (
                   <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
                     <div className="text-center">
@@ -1145,15 +1244,15 @@ export default function NewOrder() {
                           className="h-9 w-9 lg:h-7 lg:w-7"
                           type="button"
                           aria-label="Decrease quantity"
-                          onClick={() => adjustQuantity(index, item.unit === 'kg' ? -0.5 : -1)}
+                          onClick={() => adjustQuantity(index, item.pricing_mode === 'kg' || item.unit === 'kg' ? -0.5 : -1)}
                         >
                           <Minus className="h-4 w-4 lg:h-3 lg:w-3" />
                         </Button>
                         <Input
                           type="number"
                           inputMode="decimal"
-                          min={item.unit === 'kg' ? 0.1 : 1}
-                          step={item.unit === 'kg' ? 0.1 : 1}
+                          min={item.pricing_mode === 'kg' || item.unit === 'kg' ? 0.1 : 1}
+                          step={item.pricing_mode === 'kg' || item.unit === 'kg' ? 0.1 : 1}
                           value={
                             quantityDrafts[index] !== undefined
                               ? quantityDrafts[index]
@@ -1174,7 +1273,7 @@ export default function NewOrder() {
                             }
                           }}
                           className="h-9 lg:h-7 w-[4.5rem] text-center text-sm font-bold px-1"
-                          title={item.unit === 'kg' ? 'Enter weight in kg (e.g. 2.5)' : 'Type quantity, or use + / −'}
+                          title={item.pricing_mode === 'kg' || item.unit === 'kg' ? 'Enter weight in kg (e.g. 2.5)' : 'Type quantity, or use + / −'}
                         />
                         <Button
                           size="icon"
@@ -1182,9 +1281,19 @@ export default function NewOrder() {
                           className="h-9 w-9 lg:h-7 lg:w-7"
                           type="button"
                           aria-label="Increase quantity"
-                          onClick={() => adjustQuantity(index, item.unit === 'kg' ? 0.5 : 1)}
+                          onClick={() => adjustQuantity(index, item.pricing_mode === 'kg' || item.unit === 'kg' ? 0.5 : 1)}
                         >
                           <Plus className="h-4 w-4 lg:h-3 lg:w-3" />
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant={item.pricing_mode === 'kg' || item.unit === 'kg' ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-8 px-2 text-[10px] font-medium"
+                          onClick={() => setOrderItemPricingMode(index, item.pricing_mode === 'kg' || item.unit === 'kg' ? 'piece' : 'kg')}
+                        >
+                          {item.pricing_mode === 'kg' || item.unit === 'kg' ? 'Kg' : 'Piece'}
                         </Button>
 
                         {/* Push the row actions away from the quantity stepper */}
