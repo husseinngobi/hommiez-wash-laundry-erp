@@ -377,7 +377,7 @@ export default function Dashboard() {
         }
       })
       .catch(() => setBranchPerformance([]));
-  }, [token, canPickBranch, dashboardPeriod]);
+  }, [token, canPickBranch, dashboardPeriod, branchFilter, isAdmin]);
 
   useEffect(() => {
     if (!token || !canPickBranch) return;
