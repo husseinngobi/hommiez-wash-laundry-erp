@@ -1886,7 +1886,7 @@ export default function NewOrder() {
                     {cat === 'ALL' ? '🏠 All' 
                       : cat === 'gents' ? '👔 Gents' 
                       : cat === 'ladies' ? '👗 Ladies' 
-                      : cat === 'general' ? '🏠 Household' 
+                      : cat === 'general' ? '🏠 General'
                       : '👶 Kids'}
                   </Button>
                 ))}
