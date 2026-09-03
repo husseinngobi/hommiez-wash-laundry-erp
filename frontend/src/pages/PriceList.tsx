@@ -72,7 +72,7 @@ interface PriceItem {
 const categoryConfig = {
   gents: { label: 'Gents', icon: '👔', color: 'blue' },
   ladies: { label: 'Ladies', icon: '👗', color: 'pink' },
-  general: { label: 'Household', icon: '🏠', color: 'green' },
+  general: { label: 'General', icon: '🏠', color: 'green' },
   kids: { label: 'Kids', icon: '👶', color: 'yellow' },
 };
 
@@ -104,6 +104,8 @@ export default function PriceList() {
   const [deleteConfirmStep, setDeleteConfirmStep] = useState<1 | 2>(1);
   const [selectedItem, setSelectedItem] = useState<PriceItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [catalogueKgRate, setCatalogueKgRate] = useState('10000');
+  const [savingCatalogueKgRate, setSavingCatalogueKgRate] = useState(false);
 
   // Category management
   interface CategoryRow { name: string; item_count: number }
@@ -142,7 +144,42 @@ export default function PriceList() {
   /** All known category names (from DB + hardcoded fallback), excluding dismissed ones */
   const allCategoryNames = Array.from(
     new Set([...categories.map(c => c.name), ...Object.keys(categoryConfig)])
-  ).filter(name => !dismissedCategories.has(name));
+  ).filter(name => !dismissedCategories.has(name) || name in categoryConfig);
+
+  const fetchCatalogueKgRate = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/settings/all`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCatalogueKgRate(String(Number(response.data.standard_kg_rate ?? response.data.kilogram_rate ?? 10000) || 10000));
+    } catch { /* non-critical */ }
+  }, [token]);
+
+  useEffect(() => {
+    if (token && isAdmin) fetchCatalogueKgRate();
+  }, [token, isAdmin, fetchCatalogueKgRate]);
+
+  const saveCatalogueKgRate = async () => {
+    const rate = Number(catalogueKgRate);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      toast({ variant: 'destructive', title: 'Invalid rate', description: 'Enter a catalogue rate greater than zero.' });
+      return;
+    }
+    try {
+      setSavingCatalogueKgRate(true);
+      await axios.post(
+        `${API_BASE_URL}/settings/bulk-update`,
+        { settings: { standard_kg_rate: Math.round(rate) } },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast({ title: 'Catalogue rate saved', description: `New bulk orders will use ${formatUGX(Math.round(rate))} per kilogram.` });
+    } catch (error) {
+      const axiosError = error as AxiosError<{ error?: string }>;
+      toast({ variant: 'destructive', title: 'Save failed', description: axiosError.response?.data?.error || 'Could not save catalogue rate.' });
+    } finally {
+      setSavingCatalogueKgRate(false);
+    }
+  };
 
   /** Build a merged list for the dialog: all categories with their item counts */
   const allCategoriesForDialog: CategoryRow[] = allCategoryNames.map(name => ({
@@ -568,6 +605,36 @@ export default function PriceList() {
           </Card>
         ))}
       </div>
+
+      {isAdmin && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900 dark:bg-amber-950/20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">Catalogue bag pricing</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Set the rate for one kilogram when staff weigh an entire mixed bag. This affects new orders only.
+              </p>
+            </div>
+            <div className="flex w-full items-end gap-2 sm:w-auto">
+              <div className="flex-1 sm:w-40 sm:flex-none">
+                <Label htmlFor="price-list-catalogue-kg-rate" className="text-xs">Rate per kilogram (UGX)</Label>
+                <Input
+                  id="price-list-catalogue-kg-rate"
+                  type="number"
+                  min="1"
+                  step="100"
+                  value={catalogueKgRate}
+                  onChange={(event) => setCatalogueKgRate(event.target.value)}
+                  className="mt-1 h-9 bg-background"
+                />
+              </div>
+              <Button type="button" size="sm" onClick={saveCatalogueKgRate} disabled={savingCatalogueKgRate}>
+                {savingCatalogueKgRate ? 'Saving...' : 'Save rate'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Category Filters & Actions */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">

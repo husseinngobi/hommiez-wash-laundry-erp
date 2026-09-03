@@ -2197,7 +2197,7 @@ Don't miss out! ✨`;
                 </div>
 
                 <div>
-                  <Label htmlFor="standard-kg-rate">Standard KG Rate (UGX)</Label>
+                  <Label htmlFor="standard-kg-rate">Catalogue Bag Rate (UGX per kg)</Label>
                   <Input
                     id="standard-kg-rate"
                     type="number"
@@ -2208,7 +2208,7 @@ Don't miss out! ✨`;
                     onChange={(e) => setStandardKgRate(e.target.value)}
                     className="mt-2"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">Used when staff switch bulk laundry items into kg mode.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Administrator default for an entire bag in catalogue kg mode. Applies to new orders only; previous orders keep their saved price.</p>
                 </div>
 
                 <div>
