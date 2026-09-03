@@ -25,6 +25,7 @@ import { ensureNotificationColumns } from './database/ensureNotificationColumns'
 import { ensureDeliveryPaymentColumns } from './database/ensureDeliveryPaymentColumns';
 import { ensureItemBargainLimit } from './database/ensureItemBargainLimit';
 import { ensureWeightPricing } from './database/ensureWeightPricing';
+import { ensureCatalogueKgColumn } from './database/ensureCatalogueKgColumn';
 import { ensureDamageClaims } from './database/ensureDamageClaims';
 import { ensureSurcharges } from './database/ensureSurcharges';
 import { ensureNotificationReads } from './database/ensureNotificationReads';
@@ -190,6 +191,13 @@ const startServer = async () => {
       await ensureWeightPricing();
     } catch (weightErr) {
       console.error('⚠️ weight pricing migration skipped or failed:', weightErr);
+    }
+
+    // Bag-level catalogue kilogram pricing on orders
+    try {
+      await ensureCatalogueKgColumn();
+    } catch (catalogueKgErr) {
+      console.error('⚠️ catalogue kg migration skipped or failed:', catalogueKgErr);
     }
 
     // Damage/Loss claims table
