@@ -38,7 +38,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
-import { Users, Plus, DollarSign, Calendar, CreditCard, Edit, Trash2 } from 'lucide-react';
+import { Users, Plus, DollarSign, Calendar, CreditCard, Edit, Trash2, Eye } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -99,6 +99,10 @@ export default function Payroll() {
   const [showProcessPayment, setShowProcessPayment] = useState(false);
   const [showEditEmployee, setShowEditEmployee] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [showEmployeeDetails, setShowEmployeeDetails] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [employeeSalaryHistory, setEmployeeSalaryHistory] = useState<SalaryPayment[]>([]);
+  const [loadingEmployeeHistory, setLoadingEmployeeHistory] = useState(false);
   
   // Add Employee Form
   const [newEmployee, setNewEmployee] = useState({
@@ -305,6 +309,25 @@ export default function Payroll() {
       toast.error(errorMessage || 'Failed to update employee');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleViewEmployee = async (employee: Employee) => {
+    setSelectedEmployee(employee);
+    setEmployeeSalaryHistory([]);
+    setShowEmployeeDetails(true);
+    setLoadingEmployeeHistory(true);
+    try {
+      if (!token) return;
+      const response = await axios.get(`${API_BASE_URL}/payroll/employees/${employee.id}/payments`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setEmployeeSalaryHistory(response.data);
+    } catch (error) {
+      console.error('Failed to fetch employee salary history:', error);
+      toast.error('Failed to load salary history');
+    } finally {
+      setLoadingEmployeeHistory(false);
     }
   };
 
@@ -850,6 +873,14 @@ export default function Payroll() {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => handleViewEmployee(employee)}
+                        title="View employee and salary history"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => {
                           setEditingEmployee(employee);
                           setShowEditEmployee(true);
@@ -925,6 +956,60 @@ export default function Payroll() {
           )}
         </CardContent>
       </Card>
+
+      {/* Employee details and salary history */}
+      <Dialog open={showEmployeeDetails} onOpenChange={setShowEmployeeDetails}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedEmployee?.employee_name}</DialogTitle>
+            <DialogDescription>
+              {selectedEmployee?.position} · {paymentFrequencyLabel(selectedEmployee?.payment_frequency || 'MONTHLY')} ·
+              {' '}{formatUGX(selectedEmployee?.salary_amount || 0)} per period
+            </DialogDescription>
+          </DialogHeader>
+          {selectedEmployee && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div><span className="text-muted-foreground">Employee ID:</span> {selectedEmployee.employee_id_number}</div>
+                <div><span className="text-muted-foreground">Phone:</span> {selectedEmployee.phone || '—'}</div>
+                <div><span className="text-muted-foreground">Email:</span> {selectedEmployee.email || '—'}</div>
+                <div><span className="text-muted-foreground">Branch:</span> {selectedEmployee.branch_name || '—'}</div>
+                <div><span className="text-muted-foreground">Hire date:</span> {new Date(selectedEmployee.hire_date).toLocaleDateString()}</div>
+                <div><span className="text-muted-foreground">Status:</span> {selectedEmployee.employment_status}</div>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2">Salary payment history</h3>
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Period</TableHead>
+                        <TableHead>Net amount</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Paid date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {loadingEmployeeHistory ? (
+                        <TableRow><TableCell colSpan={4} className="text-center py-6">Loading history…</TableCell></TableRow>
+                      ) : employeeSalaryHistory.length === 0 ? (
+                        <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No salary payments recorded</TableCell></TableRow>
+                      ) : employeeSalaryHistory.map((payment) => (
+                        <TableRow key={payment.id}>
+                          <TableCell>{payment.payment_period}</TableCell>
+                          <TableCell className="font-semibold">{formatUGX(payment.net_amount)}</TableCell>
+                          <TableCell>{payment.payment_method}</TableCell>
+                          <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Employee Dialog */}
       <Dialog open={showEditEmployee} onOpenChange={setShowEditEmployee}>

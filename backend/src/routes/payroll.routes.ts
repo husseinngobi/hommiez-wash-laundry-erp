@@ -26,6 +26,41 @@ router.get('/employees', authenticate as any, requireAdmin as any, (async (req: 
   }
 }) as any);
 
+// Get salary history for one employee
+router.get('/employees/:id/payments', authenticate as any, requireAdmin as any, (async (req: AuthRequest, res: Response) => {
+  try {
+    const employeeId = Number(req.params.id);
+    if (!Number.isInteger(employeeId) || employeeId <= 0) {
+      return res.status(400).json({ error: 'Invalid employee ID' });
+    }
+
+    const result = await query(`
+      SELECT
+        sp.*,
+        pe.employee_name,
+        pe.position,
+        pe.payment_frequency,
+        b.name as branch_name
+      FROM salary_payments sp
+      JOIN payroll_employees pe ON pe.id = sp.employee_id
+      LEFT JOIN branches b ON b.id = pe.branch_id
+      WHERE sp.employee_id = $1
+      ORDER BY sp.payment_date DESC, sp.id DESC
+    `, [employeeId]);
+
+    res.json(result.rows.map((row) => ({
+      ...row,
+      amount_paid: parseFloat(row.amount_paid),
+      deductions: parseFloat(row.deductions),
+      bonuses: parseFloat(row.bonuses),
+      net_amount: parseFloat(row.net_amount),
+    })));
+  } catch (error: any) {
+    console.error('Error fetching employee salary history:', error);
+    res.status(500).json({ error: 'Failed to fetch employee salary history' });
+  }
+}) as any);
+
 // Add new employee
 router.post('/employees', authenticate as any, requireAdmin as any, (async (req: AuthRequest, res: Response) => {
   try {

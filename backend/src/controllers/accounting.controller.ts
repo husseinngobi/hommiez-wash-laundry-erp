@@ -21,9 +21,17 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
     const yearEnd = hasSelectedYear ? `${selectedYear + 1}-01-01` : '';
     
     if (from_date && to_date) {
-      dateFilter = `WHERE created_at >= '${from_date}' AND created_at <= '${to_date}'`;
-      paymentDateFilter = `WHERE p.payment_date >= '${from_date}' AND p.payment_date <= '${to_date}'`;
-      expenseDateFilter = `WHERE expense_date >= '${from_date}' AND expense_date <= '${to_date}'`;
+      const validRange = typeof from_date === 'string'
+        && typeof to_date === 'string'
+        && /^\d{4}-\d{2}-\d{2}$/.test(from_date)
+        && /^\d{4}-\d{2}-\d{2}$/.test(to_date)
+        && from_date <= to_date;
+      if (!validRange) {
+        return res.status(400).json({ error: 'Valid from_date and to_date are required' });
+      }
+      dateFilter = `WHERE created_at >= DATE '${from_date}' AND created_at < DATE '${to_date}' + INTERVAL '1 day'`;
+      paymentDateFilter = `WHERE p.payment_date >= DATE '${from_date}' AND p.payment_date < DATE '${to_date}' + INTERVAL '1 day'`;
+      expenseDateFilter = `WHERE expense_date >= DATE '${from_date}' AND expense_date < DATE '${to_date}' + INTERVAL '1 day'`;
     } else {
       switch (period) {
         case 'all':

@@ -8,7 +8,7 @@ import { resolveListBranchId, andBranchFilter, paymentsFrom } from '../utils/bra
  */
 export const getFinancialDashboard = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'all', branch_id } = req.query;
+    const { period = 'all', from_date, to_date, branch_id } = req.query;
     const branchId = resolveListBranchId(req, branch_id);
 
     let dateFilter = '';
@@ -17,8 +17,21 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
     let expensesDateFilter = '';
     let trendDays = 30;
 
+    const hasCustomRange = period === 'custom' && typeof from_date === 'string' && typeof to_date === 'string'
+      && /^\d{4}-\d{2}-\d{2}$/.test(from_date)
+      && /^\d{4}-\d{2}-\d{2}$/.test(to_date)
+      && from_date <= to_date;
+
     // Check if period is a specific year (e.g., '2021', '2022', '2023')
-    if (period && /^\d{4}$/.test(period as string)) {
+    if (hasCustomRange) {
+      dateFilter = `WHERE summary_date >= DATE '${from_date}' AND summary_date < DATE '${to_date}' + INTERVAL '1 day'`;
+      paymentsDateFilter = `WHERE payment_date >= DATE '${from_date}' AND payment_date < DATE '${to_date}' + INTERVAL '1 day'`;
+      ordersDateFilter = `WHERE created_at >= DATE '${from_date}' AND created_at < DATE '${to_date}' + INTERVAL '1 day'`;
+      expensesDateFilter = `WHERE expense_date >= DATE '${from_date}' AND expense_date < DATE '${to_date}' + INTERVAL '1 day'`;
+      trendDays = 0;
+    } else if (period === 'custom') {
+      return res.status(400).json({ error: 'Valid from_date and to_date are required for a custom range' });
+    } else if (period && /^\d{4}$/.test(period as string)) {
       const year = period as string;
       dateFilter = `WHERE DATE_TRUNC('year', summary_date) = DATE_TRUNC('year', DATE '${year}-01-01')`;
       paymentsDateFilter = `WHERE DATE_TRUNC('year', payment_date) = DATE_TRUNC('year', DATE '${year}-01-01')`;
@@ -79,9 +92,11 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
     const revenueResult = await query(
       `SELECT 
         COALESCE(SUM(amount), 0) as total_revenue,
-        COUNT(*) as total_orders
+        COUNT(DISTINCT order_id) as total_orders
        ${payFrom} 
-       ${paymentsDateFilter}`
+       ${paymentsDateFilter}
+       ${paymentsDateFilter ? 'AND' : 'WHERE'} COALESCE(is_cancelled, FALSE) = FALSE
+       AND COALESCE(is_refund, FALSE) = FALSE`
     );
 
     const expensesResult = await query(
@@ -159,7 +174,9 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
     const cashInResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as cash_in
        ${payFrom} 
-       ${paymentsDateFilter}`
+       ${paymentsDateFilter}
+       ${paymentsDateFilter ? 'AND' : 'WHERE'} COALESCE(is_cancelled, FALSE) = FALSE
+       AND COALESCE(is_refund, FALSE) = FALSE`
     );
 
     const outstandingResult = await query(

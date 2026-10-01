@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import axios from 'axios';
@@ -148,6 +149,8 @@ export default function Accounting() {
   const [period, setPeriod] = useState('all');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [branchFilter, setBranchFilter] = useState('all');
+  const [customFromDate, setCustomFromDate] = useState('');
+  const [customToDate, setCustomToDate] = useState('');
   const [branches, setBranches] = useState<Array<{ id: number; name: string }>>([]);
   const [branchSummary, setBranchSummary] = useState<{
     overall: { revenue: number; expenses: number; net_profit: number; order_count: number };
@@ -173,7 +176,9 @@ export default function Accounting() {
   const [trialBalance, setTrialBalance] = useState<TrialBalance | null>(null);
 
   const getAccountingPeriodParams = () => {
-    const parts = period === 'year'
+    const parts = period === 'custom' && customFromDate && customToDate
+      ? [`period=custom`, `from_date=${customFromDate}`, `to_date=${customToDate}`]
+      : period === 'year'
       ? [`period=${period}`, `year=${selectedYear}`]
       : [`period=${period}`];
     if (branchFilter !== 'all') {
@@ -198,6 +203,7 @@ export default function Accounting() {
   }, [token]);
 
   useEffect(() => {
+    if (period === 'custom' && (!customFromDate || !customToDate)) return;
     if (activeTab === 'income-statement') {
       fetchIncomeStatement();
     } else if (activeTab === 'balance-sheet') {
@@ -208,7 +214,7 @@ export default function Accounting() {
       fetchTrialBalance();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, period, selectedYear, token, branchFilter]);
+  }, [activeTab, period, selectedYear, customFromDate, customToDate, token, branchFilter]);
 
   const fetchIncomeStatement = async () => {
     try {
@@ -675,9 +681,32 @@ export default function Accounting() {
                 <SelectItem value="week">This Week</SelectItem>
                 <SelectItem value="month">This Month</SelectItem>
                 <SelectItem value="year">This Year</SelectItem>
+                <SelectItem value="custom">Custom Range</SelectItem>
                 <SelectItem value="all">All Time</SelectItem>
               </SelectContent>
             </Select>
+            {period === 'custom' && (
+              <>
+                <div className="w-full sm:w-auto">
+                  <Label htmlFor="accounting-from-date" className="sr-only">From date</Label>
+                  <Input
+                    id="accounting-from-date"
+                    type="date"
+                    value={customFromDate}
+                    onChange={(event) => setCustomFromDate(event.target.value)}
+                  />
+                </div>
+                <div className="w-full sm:w-auto">
+                  <Label htmlFor="accounting-to-date" className="sr-only">To date</Label>
+                  <Input
+                    id="accounting-to-date"
+                    type="date"
+                    value={customToDate}
+                    onChange={(event) => setCustomToDate(event.target.value)}
+                  />
+                </div>
+              </>
+            )}
             {branches.length > 1 && (
               <Select value={branchFilter} onValueChange={setBranchFilter}>
                 <SelectTrigger className="w-full sm:w-[200px]">

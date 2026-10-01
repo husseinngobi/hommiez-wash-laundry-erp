@@ -533,7 +533,6 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
       INNER JOIN orders o ON u.id = o.user_id ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
       LEFT JOIN payments p ON o.id = p.order_id ${dateFilter !== '1=1' ? `AND ${dateFilter}` : ''}
       WHERE ${staffWhereSql}
-        AND COALESCE(u.status, 'ACTIVE') = 'ACTIVE'
         ${ghostNameClause}
       GROUP BY u.id, u.full_name, u.role, u.status
       HAVING COUNT(DISTINCT o.id) > 0
@@ -569,7 +568,6 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
         ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
         AND COALESCE(p.is_cancelled, FALSE) = FALSE
         AND COALESCE(p.is_refund, FALSE) = FALSE
-        AND COALESCE(u.status, 'ACTIVE') = 'ACTIVE'
         AND LOWER(REGEXP_REPLACE(COALESCE(u.full_name, ''), '\\s+', ' ', 'g')) NOT LIKE '%mutoni blessing%'
       GROUP BY DATE(p.payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi'), u.full_name
       ORDER BY date DESC, revenue DESC

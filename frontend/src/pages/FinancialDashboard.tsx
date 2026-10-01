@@ -121,6 +121,9 @@ const FinancialDashboard = () => {
           headers: { Authorization: `Bearer ${token}` },
           params: {
             period,
+            ...(period === 'custom' && dateRange.from_date && dateRange.to_date
+              ? dateRange
+              : {}),
             ...(branchFilter !== 'all' ? { branch_id: branchFilter } : {}),
           },
         }
@@ -140,11 +143,12 @@ const FinancialDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [period, token, branchFilter]);
+  }, [period, dateRange, token, branchFilter]);
 
   useEffect(() => {
+    if (period === 'custom' && (!dateRange.from_date || !dateRange.to_date)) return;
     fetchDashboard();
-  }, [fetchDashboard]);
+  }, [fetchDashboard, period, dateRange.from_date, dateRange.to_date]);
 
   useEffect(() => {
     if (!token) return;
@@ -412,6 +416,7 @@ const FinancialDashboard = () => {
               <SelectItem value="today">Today</SelectItem>
               <SelectItem value="week">This Week</SelectItem>
               <SelectItem value="month">This Month</SelectItem>
+              <SelectItem value="custom">Custom Range</SelectItem>
               <SelectItem value="year">This Year (2026)</SelectItem>
               <SelectItem value="2027">Year 2027</SelectItem>
               <SelectItem value="2026">Year 2026</SelectItem>
@@ -422,6 +427,30 @@ const FinancialDashboard = () => {
               <SelectItem value="2021">Year 2021</SelectItem>
             </SelectContent>
           </Select>
+          {period === 'custom' && (
+            <>
+              <div className="w-full sm:w-auto">
+                <Label htmlFor="financial-from-date" className="sr-only">From date</Label>
+                <Input
+                  id="financial-from-date"
+                  type="date"
+                  value={dateRange.from_date}
+                  onChange={(event) => setDateRange((current) => ({ ...current, from_date: event.target.value }))}
+                  className="w-full"
+                />
+              </div>
+              <div className="w-full sm:w-auto">
+                <Label htmlFor="financial-to-date" className="sr-only">To date</Label>
+                <Input
+                  id="financial-to-date"
+                  type="date"
+                  value={dateRange.to_date}
+                  onChange={(event) => setDateRange((current) => ({ ...current, to_date: event.target.value }))}
+                  className="w-full"
+                />
+              </div>
+            </>
+          )}
           {branches.length > 1 && (
             <Select value={branchFilter} onValueChange={setBranchFilter}>
               <SelectTrigger className="w-full sm:w-48">
