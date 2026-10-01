@@ -76,6 +76,7 @@ export const getAllOrders = async (req: AuthRequest, res: Response) => {
       whereClause += ` AND (
         o.order_number ILIKE $${paramCount} OR 
         c.name ILIKE $${paramCount} OR 
+        c.customer_id ILIKE $${paramCount} OR
         c.phone ILIKE $${paramCount} OR
         u.full_name ILIKE $${paramCount}
       )`;

@@ -302,6 +302,8 @@ export const getAllPayments = async (req: AuthRequest, res: Response) => {
       whereConditions.push(`(
         o.order_number ILIKE $${paramCount} OR
         c.name ILIKE $${paramCount} OR
+        c.customer_id ILIKE $${paramCount} OR
+        c.phone ILIKE $${paramCount} OR
         p.transaction_reference ILIKE $${paramCount}
       )`);
       values.push(`%${search}%`);

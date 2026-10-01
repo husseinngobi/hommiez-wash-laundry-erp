@@ -197,6 +197,13 @@ const getDaysOld = (createdAt: string): string => {
   return years === 1 ? '1 year ago' : `${years} years ago`;
 };
 
+const isUnpaidOlderThanFiveDays = (order: Order): boolean => {
+  if (order.payment_status !== 'UNPAID') return false;
+  const created = new Date(order.created_at);
+  const ageInDays = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
+  return ageInDays > 5;
+};
+
 const isOverdue = (order: Order): boolean => {
   const created = new Date(order.created_at);
   const now = new Date();
@@ -1759,7 +1766,9 @@ export default function Orders() {
                   {visibleColumns.daysOld && (
                     <TableCell>
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm">{getDaysOld(order.created_at)}</span>
+                        <span className={`text-sm ${isUnpaidOlderThanFiveDays(order) ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>
+                          {getDaysOld(order.created_at)}
+                        </span>
                         {isOverdue(order) && (
                           <Badge variant="destructive" className="text-xs w-fit">OVERDUE</Badge>
                         )}
