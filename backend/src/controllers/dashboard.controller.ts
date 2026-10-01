@@ -5,8 +5,12 @@ import { resolveListBranchId, andBranchFilter, paymentsFrom } from '../utils/bra
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
-    const { period = 'today', branch_id } = req.query; // 'today', 'week', 'month', 'year', 'all'
+    const { period = 'today', branch_id, from_date, to_date } = req.query;
     const branchId = resolveListBranchId(req, branch_id);
+    const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+    if (period === 'custom' && (!validDate(from_date) || !validDate(to_date) || String(from_date) > String(to_date))) {
+      return res.status(400).json({ error: 'Custom ranges require valid from_date and to_date values' });
+    }
 
     // Build date filters based on period (using timezone-aware dates)
     // Use 'Africa/Nairobi' timezone (EAT = UTC+3) for local business time
@@ -39,6 +43,12 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
         paymentsDateFilter = "WHERE DATE_TRUNC('year', payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi') = DATE_TRUNC('year', NOW() AT TIME ZONE 'Africa/Nairobi')";
         deliveriesDateFilter = "WHERE DATE_TRUNC('year', delivered_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi') = DATE_TRUNC('year', NOW() AT TIME ZONE 'Africa/Nairobi')";
         updatedAtDateFilter = "WHERE DATE_TRUNC('year', updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi') = DATE_TRUNC('year', NOW() AT TIME ZONE 'Africa/Nairobi')";
+        break;
+      case 'custom':
+        ordersDateFilter = `WHERE (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi')::date BETWEEN '${from_date}'::date AND '${to_date}'::date`;
+        paymentsDateFilter = `WHERE (payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi')::date BETWEEN '${from_date}'::date AND '${to_date}'::date`;
+        deliveriesDateFilter = `WHERE (delivered_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi')::date BETWEEN '${from_date}'::date AND '${to_date}'::date`;
+        updatedAtDateFilter = `WHERE (updated_at AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi')::date BETWEEN '${from_date}'::date AND '${to_date}'::date`;
         break;
       case 'all':
       default:
@@ -165,7 +175,18 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
  * Get comprehensive financial summary with revenue, expenses, profit
  */
 /** Build a [startDate, endDate] pair for a human period label, or null for all-time. */
-function periodToDateRange(period: unknown): [Date, Date] | null {
+function periodToDateRange(period: unknown, fromDate?: unknown, toDate?: unknown): [Date, Date] | null {
+  if (
+    period === 'custom' &&
+    typeof fromDate === 'string' &&
+    typeof toDate === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(fromDate) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(toDate) &&
+    fromDate <= toDate
+  ) {
+    return [new Date(`${fromDate}T00:00:00`), new Date(`${toDate}T23:59:59.999`)];
+  }
+  if (period === 'custom') return null;
   const endDate = new Date();
   const startDate = new Date();
 
@@ -203,7 +224,10 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
   try {
     const period = req.query.period || 'month';
     const branchId = resolveListBranchId(req, req.query.branch_id);
-    const dateRange = periodToDateRange(period);
+    const dateRange = periodToDateRange(period, req.query.from_date, req.query.to_date);
+    if (period === 'custom' && !dateRange) {
+      return res.status(400).json({ error: 'Custom ranges require valid from_date and to_date values' });
+    }
     const payFrom = paymentsFrom(branchId);
     const branchExp = branchId ? `AND branch_id = ${Number(branchId)}` : '';
     const branchOrd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
@@ -307,7 +331,10 @@ export const getPaymentMethodsBreakdown = async (req: AuthRequest, res: Response
   try {
     const period = req.query.period || 'month';
     const branchId = resolveListBranchId(req, req.query.branch_id);
-    const dateRange = periodToDateRange(period);
+    const dateRange = periodToDateRange(period, req.query.from_date, req.query.to_date);
+    if (period === 'custom' && !dateRange) {
+      return res.status(400).json({ error: 'Custom ranges require valid from_date and to_date values' });
+    }
     const payFrom = paymentsFrom(branchId);
 
     const whereClause = dateRange

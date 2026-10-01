@@ -143,22 +143,22 @@ interface DashboardCache {
   branchPerformance: BranchPerformance[];
 }
 
-function getDashboardCacheKey(period: string, isAdmin: boolean, branchId = 'all') {
-  return `dashboard-cache:${period}:${isAdmin ? 'admin' : 'staff'}:${branchId}`;
+function getDashboardCacheKey(period: string, isAdmin: boolean, branchId = 'all', fromDate = '', toDate = '') {
+  return `dashboard-cache:${period}:${fromDate}:${toDate}:${isAdmin ? 'admin' : 'staff'}:${branchId}`;
 }
 
-function readDashboardCache(period: string, isAdmin: boolean, branchId = 'all'): DashboardCache | null {
+function readDashboardCache(period: string, isAdmin: boolean, branchId = 'all', fromDate = '', toDate = ''): DashboardCache | null {
   try {
-    const raw = sessionStorage.getItem(getDashboardCacheKey(period, isAdmin, branchId));
+    const raw = sessionStorage.getItem(getDashboardCacheKey(period, isAdmin, branchId, fromDate, toDate));
     return raw ? (JSON.parse(raw) as DashboardCache) : null;
   } catch {
     return null;
   }
 }
 
-function writeDashboardCache(period: string, isAdmin: boolean, cache: DashboardCache, branchId = 'all') {
+function writeDashboardCache(period: string, isAdmin: boolean, cache: DashboardCache, branchId = 'all', fromDate = '', toDate = '') {
   try {
-    sessionStorage.setItem(getDashboardCacheKey(period, isAdmin, branchId), JSON.stringify(cache));
+    sessionStorage.setItem(getDashboardCacheKey(period, isAdmin, branchId, fromDate, toDate), JSON.stringify(cache));
   } catch {
     // Ignore storage failures and fall back to live fetching.
   }
@@ -169,7 +169,7 @@ export default function Dashboard() {
   const canPickBranch = isAdmin || isManager;
   const initialStatsPeriod = (() => {
     const saved = localStorage.getItem('dashboardStatsPeriod');
-    if (saved === 'today' || saved === 'week' || saved === 'month' || saved === 'year' || saved === 'all') {
+    if (saved === 'today' || saved === 'week' || saved === 'month' || saved === 'year' || saved === 'all' || saved === 'custom') {
       return saved;
     }
     return 'all';
@@ -198,7 +198,9 @@ export default function Dashboard() {
   const [businessHours, setBusinessHours] = useState<BusinessHours | null>(() => cachedDashboard?.businessHours ?? null);
   
   // Main period selector - controls both stats AND financial performance
-  const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'all'>(initialStatsPeriod);
+  const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'all' | 'custom'>(initialStatsPeriod);
+  const [customFromDate, setCustomFromDate] = useState('');
+  const [customToDate, setCustomToDate] = useState('');
   
   // Enhanced financial states
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(() => cachedDashboard?.financialSummary ?? null);
@@ -278,7 +280,8 @@ export default function Dashboard() {
     if (!token) return;
     const requestId = dashboardRequestId.current + 1;
     dashboardRequestId.current = requestId;
-    const cached = readDashboardCache(dashboardPeriod, isAdmin, branchFilter);
+    if (dashboardPeriod === 'custom' && (!customFromDate || !customToDate)) return;
+    const cached = readDashboardCache(dashboardPeriod, isAdmin, branchFilter, customFromDate, customToDate);
     try {
       if (cached) {
         setStats(cached.stats);
@@ -294,12 +297,15 @@ export default function Dashboard() {
       }
 
       const branchParams = canPickBranch && branchFilter !== 'all' ? { branch_id: branchFilter } : {};
+      const dateParams = dashboardPeriod === 'custom'
+        ? { from_date: customFromDate, to_date: customToDate }
+        : {};
       
       // Core dashboard data should not wait for optional financial panels.
       const coreResponses = await Promise.all([
         axios.get(`${API_BASE_URL}/dashboard/stats`, {
           headers: { Authorization: `Bearer ${token}` },
-          params: { period: dashboardPeriod, ...branchParams },
+          params: { period: dashboardPeriod, ...dateParams, ...branchParams },
         }),
         axios.get(`${API_BASE_URL}/dashboard/recent-orders`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -320,8 +326,8 @@ export default function Dashboard() {
       let financialData: [FinancialSummary | null, PaymentMethodBreakdown[], OutstandingBalances | null, MonthOverMonth | null] = [null, [], null, null];
       if (isAdmin) {
         const financialResponses = await Promise.allSettled([
-          axios.get(`${API_BASE_URL}/dashboard/financial-summary`, { headers: { Authorization: `Bearer ${token}` }, params: { period: dashboardPeriod, ...branchParams } }),
-          axios.get(`${API_BASE_URL}/dashboard/payment-methods-breakdown`, { headers: { Authorization: `Bearer ${token}` }, params: { period: dashboardPeriod, ...branchParams } }),
+          axios.get(`${API_BASE_URL}/dashboard/financial-summary`, { headers: { Authorization: `Bearer ${token}` },           params: { period: dashboardPeriod, ...dateParams, ...branchParams } }),
+          axios.get(`${API_BASE_URL}/dashboard/payment-methods-breakdown`, { headers: { Authorization: `Bearer ${token}` },           params: { period: dashboardPeriod, ...dateParams, ...branchParams } }),
           axios.get(`${API_BASE_URL}/dashboard/outstanding-balances`, { headers: { Authorization: `Bearer ${token}` }, params: branchParams }),
           axios.get(`${API_BASE_URL}/dashboard/month-over-month`, { headers: { Authorization: `Bearer ${token}` }, params: branchParams }),
         ]);
@@ -347,7 +353,7 @@ export default function Dashboard() {
         outstandingBalances: financialData[2],
         monthGrowth: financialData[3],
         branchPerformance: [],
-      }, branchFilter);
+      }, branchFilter, customFromDate, customToDate);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -355,7 +361,7 @@ export default function Dashboard() {
         setLoading(false);
       }
     }
-  }, [token, dashboardPeriod, isAdmin, canPickBranch, branchFilter]);
+  }, [token, dashboardPeriod, isAdmin, canPickBranch, branchFilter, customFromDate, customToDate]);
 
   // Branch performance is fetched on its own so a failure never blocks the
   // dashboard, and it stays hidden until a second branch is actually created.
@@ -368,16 +374,16 @@ export default function Dashboard() {
       .then((res) => {
         const branches = res.data.multi_branch ? res.data.branches || [] : [];
         setBranchPerformance(branches);
-        const cached = readDashboardCache(dashboardPeriod, isAdmin, branchFilter);
+        const cached = readDashboardCache(dashboardPeriod, isAdmin, branchFilter, customFromDate, customToDate);
         if (cached) {
           writeDashboardCache(dashboardPeriod, isAdmin, {
             ...cached,
             branchPerformance: branches,
-          }, branchFilter);
+          }, branchFilter, customFromDate, customToDate);
         }
       })
       .catch(() => setBranchPerformance([]));
-  }, [token, canPickBranch, dashboardPeriod, branchFilter, isAdmin]);
+  }, [token, canPickBranch, dashboardPeriod, branchFilter, isAdmin, customFromDate, customToDate]);
 
   useEffect(() => {
     if (!token || !canPickBranch) return;
@@ -415,7 +421,7 @@ export default function Dashboard() {
       {/* Period Selector for Stats */}
       <div className="mb-6 flex items-center gap-4">
         <span className="text-sm font-medium text-muted-foreground">Show stats for:</span>
-        <Select value={statsPeriod} onValueChange={(value) => setStatsPeriod(value as 'today' | 'week' | 'month' | 'year' | 'all')}>
+        <Select value={statsPeriod} onValueChange={(value) => setStatsPeriod(value as 'today' | 'week' | 'month' | 'year' | 'all' | 'custom')}>
           <SelectTrigger className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
@@ -425,8 +431,29 @@ export default function Dashboard() {
             <SelectItem value="month">This Month</SelectItem>
             <SelectItem value="year">This Year</SelectItem>
             <SelectItem value="all">All Time</SelectItem>
+            <SelectItem value="custom">Custom range</SelectItem>
           </SelectContent>
         </Select>
+        {statsPeriod === 'custom' && (
+          <>
+            <input
+              type="date"
+              aria-label="Custom range start date"
+              value={customFromDate}
+              onChange={(event) => setCustomFromDate(event.target.value)}
+              className="h-10 rounded-md border bg-background px-3 text-sm"
+            />
+            <span className="text-sm text-muted-foreground">to</span>
+            <input
+              type="date"
+              aria-label="Custom range end date"
+              min={customFromDate || undefined}
+              value={customToDate}
+              onChange={(event) => setCustomToDate(event.target.value)}
+              className="h-10 rounded-md border bg-background px-3 text-sm"
+            />
+          </>
+        )}
         {canPickBranch && branchList.length > 1 && (
           <Select value={branchFilter} onValueChange={setBranchFilter}>
             <SelectTrigger className="w-[200px]">

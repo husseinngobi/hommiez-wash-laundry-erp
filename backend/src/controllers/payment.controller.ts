@@ -417,7 +417,7 @@ export const getPaymentStatistics = async (req: AuthRequest, res: Response) => {
         COUNT(*) as transaction_count,
         COALESCE(SUM(amount), 0) as total_amount
        FROM payments
-       ${dateFilter}
+       ${dateFilter}${dateFilter ? ' AND' : ' WHERE'} (is_cancelled IS NULL OR is_cancelled = FALSE)
        GROUP BY method
        ORDER BY total_amount DESC`,
       values
@@ -458,7 +458,7 @@ export const getPaymentStatistics = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(CASE WHEN o.payment_status = 'PARTIAL' THEN p.amount ELSE 0 END), 0) as partial_paid
        FROM payments p
        LEFT JOIN orders o ON p.order_id = o.id
-       ${dateFilter}`,
+       ${dateFilter}${dateFilter ? ' AND' : ' WHERE'} (p.is_cancelled IS NULL OR p.is_cancelled = FALSE)`,
       values
     );
 
@@ -849,6 +849,23 @@ export const addOrderPayment = async (req: AuthRequest, res: Response) => {
     const order = orderRow.rows[0];
     if (forbiddenIfOutsideBranch(req, res, order.branch_id)) {
       return;
+    }
+
+    const activePayments = await query(
+      `SELECT COALESCE(SUM(amount), 0) AS paid
+       FROM payments
+       WHERE order_id = $1
+         AND (is_cancelled IS NULL OR is_cancelled = FALSE)`,
+      [order.id]
+    );
+    const orderTotal = Number(order.total_amount) || 0;
+    const activePaid = Number(activePayments.rows[0].paid) || 0;
+    const remainingBalance = Math.max(0, orderTotal - activePaid);
+    if (paymentAmount > remainingBalance + 0.01) {
+      return res.status(400).json({
+        error: `Payment exceeds the remaining order balance of UGX ${remainingBalance.toLocaleString()}`,
+        remaining_balance: remainingBalance,
+      });
     }
 
     const recentDuplicate = await query(

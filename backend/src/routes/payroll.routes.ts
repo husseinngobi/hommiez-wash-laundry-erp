@@ -3,6 +3,7 @@ import { query } from '../config/database';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
 
 const router = Router();
+const PAYMENT_FREQUENCIES = ['MONTHLY', 'BI_WEEKLY', 'WEEKLY', 'DAILY'];
 
 // Get all employees
 router.get('/employees', authenticate as any, requireAdmin as any, (async (req: AuthRequest, res: Response) => {
@@ -45,6 +46,9 @@ router.post('/employees', authenticate as any, requireAdmin as any, (async (req:
     if (!employee_name || !position || !phone || !salary_amount || !hire_date) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    if (!PAYMENT_FREQUENCIES.includes(String(payment_frequency || 'MONTHLY').toUpperCase())) {
+      return res.status(400).json({ error: 'Payment frequency must be monthly, bi-weekly, weekly, or daily' });
+    }
 
     // Auto-generate employee ID in format EMP-YYYYMMDD-XXX
     const today = new Date();
@@ -73,7 +77,7 @@ router.post('/employees', authenticate as any, requireAdmin as any, (async (req:
         phone,
         email || null,
         salary_amount,
-        payment_frequency || 'MONTHLY',
+        String(payment_frequency || 'MONTHLY').toUpperCase(),
         bank_account || null,
         bank_name || null,
         hire_date,
@@ -202,6 +206,9 @@ router.put('/employees/:id', authenticate as any, requireAdmin as any, (async (r
     if (!employee_name || !position || !phone || !salary_amount) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    if (!PAYMENT_FREQUENCIES.includes(String(payment_frequency || '').toUpperCase())) {
+      return res.status(400).json({ error: 'Payment frequency must be monthly, bi-weekly, weekly, or daily' });
+    }
 
     const result = await query(
       `UPDATE payroll_employees 
@@ -210,7 +217,7 @@ router.put('/employees/:id', authenticate as any, requireAdmin as any, (async (r
            branch_id = $9, updated_at = NOW()
        WHERE id = $10
        RETURNING *`,
-      [employee_name, position, phone, email, salary_amount, payment_frequency, bank_account, bank_name, branch_id ? Number(branch_id) : null, id]
+      [employee_name, position, phone, email, salary_amount, String(payment_frequency).toUpperCase(), bank_account, bank_name, branch_id ? Number(branch_id) : null, id]
     );
 
     if (result.rows.length === 0) {

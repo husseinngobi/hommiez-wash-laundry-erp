@@ -375,7 +375,7 @@ export default function Payroll() {
       setPaymentPage(pages);
     }
   }, [filteredPayments.length, paymentPage]);
-  const totalMonthlySalary = activeEmployees.reduce((sum, e) => sum + Number(e.salary_amount), 0);
+  const totalConfiguredPay = activeEmployees.reduce((sum, e) => sum + Number(e.salary_amount), 0);
 
   return (
     <MainLayout title="Payroll Management" subtitle="Manage employees and salary payments">
@@ -394,14 +394,14 @@ export default function Payroll() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly Payroll</CardTitle>
+            <CardTitle className="text-sm font-medium">Configured Pay</CardTitle>
             <DollarSign className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600 break-words">
-              {formatUGX(totalMonthlySalary)}
+              {formatUGX(totalConfiguredPay)}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Total monthly cost</p>
+            <p className="text-xs text-muted-foreground mt-1">Amounts shown in each worker&apos;s pay basis</p>
           </CardContent>
         </Card>
 
@@ -500,7 +500,11 @@ export default function Payroll() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="salary_amount">Monthly Salary (UGX) *</Label>
+                  <Label htmlFor="salary_amount">
+                    {newEmployee.payment_frequency === 'DAILY' ? 'Daily Rate' :
+                      newEmployee.payment_frequency === 'WEEKLY' ? 'Weekly Pay' :
+                      newEmployee.payment_frequency === 'BI_WEEKLY' ? 'Bi-weekly Pay' : 'Monthly Salary'} (UGX) *
+                  </Label>
                   <Input
                     id="salary_amount"
                     type="number"
@@ -508,6 +512,22 @@ export default function Payroll() {
                     value={newEmployee.salary_amount}
                     onChange={(e) => setNewEmployee({...newEmployee, salary_amount: e.target.value})}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Pay basis *</Label>
+                  <Select
+                    value={newEmployee.payment_frequency}
+                    onValueChange={(value) => setNewEmployee({...newEmployee, payment_frequency: value})}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MONTHLY">Monthly salary</SelectItem>
+                      <SelectItem value="BI_WEEKLY">Bi-weekly</SelectItem>
+                      <SelectItem value="WEEKLY">Weekly</SelectItem>
+                      <SelectItem value="DAILY">Daily rate</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">The amount above is the agreed amount for this pay period.</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="bank_name">Bank Name</Label>
@@ -594,7 +614,7 @@ export default function Payroll() {
                   <SelectContent>
                     {activeEmployees.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id.toString()}>
-                        {emp.employee_name} - {emp.position} ({formatUGX(emp.salary_amount)})
+                        {emp.employee_name} - {emp.position} ({formatUGX(emp.salary_amount)} / {emp.payment_frequency.toLowerCase().replace('_', '-')})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -605,9 +625,10 @@ export default function Payroll() {
                 <Label htmlFor="payment_period">Payment Period *</Label>
                 <Input
                   id="payment_period"
-                  type="month"
+                  type="text"
                   required
                   value={paymentForm.payment_period}
+                  placeholder="e.g. 2026-10 or 2026-10-01"
                   onChange={(e) => setPaymentForm({...paymentForm, payment_period: e.target.value})}
                 />
               </div>
@@ -736,7 +757,7 @@ export default function Payroll() {
                 <TableHead className="font-semibold dark:text-gray-100">Position</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Branch</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Phone</TableHead>
-                <TableHead className="font-semibold dark:text-gray-100">Monthly Salary</TableHead>
+                <TableHead className="font-semibold dark:text-gray-100">Pay Amount</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Bank</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Hire Date</TableHead>
                 <TableHead className="font-semibold dark:text-gray-100">Status</TableHead>
@@ -950,7 +971,11 @@ export default function Payroll() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit_salary">Monthly Salary (UGX) *</Label>
+                  <Label htmlFor="edit_salary">
+                    {editingEmployee.payment_frequency === 'DAILY' ? 'Daily Rate' :
+                      editingEmployee.payment_frequency === 'WEEKLY' ? 'Weekly Pay' :
+                      editingEmployee.payment_frequency === 'BI_WEEKLY' ? 'Bi-weekly Pay' : 'Monthly Salary'} (UGX) *
+                  </Label>
                   <Input
                     id="edit_salary"
                     type="number"
@@ -958,6 +983,21 @@ export default function Payroll() {
                     value={editingEmployee.salary_amount}
                     onChange={(e) => setEditingEmployee({...editingEmployee, salary_amount: parseFloat(e.target.value)})}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Pay basis *</Label>
+                  <Select
+                    value={editingEmployee.payment_frequency}
+                    onValueChange={(value) => setEditingEmployee({...editingEmployee, payment_frequency: value})}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MONTHLY">Monthly salary</SelectItem>
+                      <SelectItem value="BI_WEEKLY">Bi-weekly</SelectItem>
+                      <SelectItem value="WEEKLY">Weekly</SelectItem>
+                      <SelectItem value="DAILY">Daily rate</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit_bank_name">Bank Name</Label>

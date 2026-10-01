@@ -16,6 +16,8 @@ const runPayrollMigration = async () => {
     
     // Execute the migration
     await client.query(sql);
+    const safeguardsPath = path.join(process.cwd(), 'src/database/migrations/add_payroll_payment_frequency_constraint.sql');
+    await client.query(fs.readFileSync(safeguardsPath, 'utf8'));
     
     await client.query('COMMIT');
     

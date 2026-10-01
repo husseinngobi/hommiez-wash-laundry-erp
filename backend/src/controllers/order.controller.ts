@@ -1099,6 +1099,12 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       : Number(currentOrder.amount_paid) || 0;
     const orderTotal = Number(currentOrder.total_amount) || 0;
 
+    if (parsedAmountPaid !== undefined && parsedAmountPaid > orderTotal + 0.01) {
+      return res.status(400).json({
+        error: `Payment exceeds the order total of UGX ${orderTotal.toLocaleString()}`,
+      });
+    }
+
     if (parsedAmountPaid !== undefined || payment_status !== undefined) {
       let derivedStatus: 'PAID' | 'PARTIAL' | 'UNPAID';
       let cappedPaid = Math.max(0, nextAmountPaid);
