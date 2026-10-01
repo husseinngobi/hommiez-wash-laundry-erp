@@ -182,6 +182,11 @@ router.post('/payments', authenticate as any, requireAdmin as any, (async (req: 
     res.status(201).json(result.rows[0]);
   } catch (error: any) {
     console.error('Error processing payment:', error);
+    if (error?.code === '23505' || String(error?.message || '').includes('Payroll payment already exists')) {
+      return res.status(409).json({
+        error: 'Payment for this employee and period already exists',
+      });
+    }
     res.status(500).json({ error: 'Failed to process payment' });
   }
 }) as any);

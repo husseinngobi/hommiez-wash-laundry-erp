@@ -125,6 +125,15 @@ export default function Payroll() {
     notes: '',
   });
 
+  const paymentFrequencyLabel = (frequency: string) => {
+    switch (frequency) {
+      case 'DAILY': return 'Daily';
+      case 'WEEKLY': return 'Weekly';
+      case 'BI_WEEKLY': return 'Bi-weekly';
+      default: return 'Monthly';
+    }
+  };
+
   const fetchEmployees = useCallback(async () => {
     try {
       if (!token) return;
@@ -256,6 +265,20 @@ export default function Payroll() {
     }
   };
 
+  const handlePaymentEmployeeChange = (employeeId: string) => {
+    const employee = employees.find((item) => item.id === parseInt(employeeId, 10));
+    const today = new Date();
+    const defaultPeriod = employee?.payment_frequency === 'DAILY'
+      ? today.toISOString().slice(0, 10)
+      : today.toISOString().slice(0, 7);
+
+    setPaymentForm((current) => ({
+      ...current,
+      employee_id: employeeId,
+      payment_period: defaultPeriod,
+    }));
+  };
+
   const handleEditEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingEmployee) return;
@@ -376,7 +399,11 @@ export default function Payroll() {
     }
   }, [filteredPayments.length, paymentPage]);
   const totalConfiguredPay = activeEmployees.reduce((sum, e) => sum + Number(e.salary_amount), 0);
-
+  const payBasisCounts = activeEmployees.reduce<Record<string, number>>((counts, employee) => {
+    const frequency = employee.payment_frequency || 'MONTHLY';
+    counts[frequency] = (counts[frequency] || 0) + 1;
+    return counts;
+  }, {});
   return (
     <MainLayout title="Payroll Management" subtitle="Manage employees and salary payments">
       {/* Summary Cards */}
@@ -407,14 +434,19 @@ export default function Payroll() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Month</CardTitle>
+            <CardTitle className="text-sm font-medium">Pay Basis Mix</CardTitle>
             <Calendar className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">
-              {payments.filter(p => p.payment_period.startsWith(new Date().toISOString().slice(0, 7))).length}
+            <div className="text-sm font-semibold text-purple-600 space-y-1">
+              {['MONTHLY', 'BI_WEEKLY', 'WEEKLY', 'DAILY'].map((frequency) => (
+                <div key={frequency} className="flex justify-between gap-3">
+                  <span>{paymentFrequencyLabel(frequency)}</span>
+                  <span>{payBasisCounts[frequency] || 0}</span>
+                </div>
+              ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Payments processed</p>
+            <p className="text-xs text-muted-foreground mt-2">Active employees by configured basis</p>
           </CardContent>
         </Card>
 
@@ -605,7 +637,7 @@ export default function Payroll() {
                 <Label htmlFor="employee_id">Select Employee *</Label>
                 <Select
                   value={paymentForm.employee_id}
-                  onValueChange={(value) => setPaymentForm({...paymentForm, employee_id: value})}
+                  onValueChange={handlePaymentEmployeeChange}
                   required
                 >
                   <SelectTrigger>
@@ -614,7 +646,7 @@ export default function Payroll() {
                   <SelectContent>
                     {activeEmployees.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id.toString()}>
-                        {emp.employee_name} - {emp.position} ({formatUGX(emp.salary_amount)} / {emp.payment_frequency.toLowerCase().replace('_', '-')})
+                        {emp.employee_name} - {emp.position} ({formatUGX(emp.salary_amount)} / {paymentFrequencyLabel(emp.payment_frequency)})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -628,7 +660,7 @@ export default function Payroll() {
                   type="text"
                   required
                   value={paymentForm.payment_period}
-                  placeholder="e.g. 2026-10 or 2026-10-01"
+                  placeholder="e.g. 2026-10, 2026-10-01, or 2026-W40"
                   onChange={(e) => setPaymentForm({...paymentForm, payment_period: e.target.value})}
                 />
               </div>
@@ -668,7 +700,7 @@ export default function Payroll() {
                       <>
                         <div className="flex justify-between text-sm">
                           <span>Base Salary:</span>
-                          <span>{formatUGX(employee?.salary_amount)}</span>
+                          <span>{formatUGX(employee?.salary_amount)} / {paymentFrequencyLabel(employee?.payment_frequency || 'MONTHLY')}</span>
                         </div>
                         <div className="flex justify-between text-sm text-red-600">
                           <span>Deductions:</span>
