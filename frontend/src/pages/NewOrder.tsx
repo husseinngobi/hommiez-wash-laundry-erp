@@ -1082,7 +1082,12 @@ export default function NewOrder() {
                       {selectedCustomer.location && <span className="text-muted-foreground text-xs hidden md:inline">📍 {selectedCustomer.location}</span>}
                     </span>
                   ) : (
-                    <span className="text-muted-foreground">Search customer by name, phone, or ID...</span>
+                    <>
+                      <span className="text-muted-foreground sm:hidden">Search</span>
+                      <span className="text-muted-foreground hidden sm:inline truncate">
+                        Search customer by name, phone, or ID...
+                      </span>
+                    </>
                   )}
                   <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
@@ -2017,8 +2022,8 @@ export default function NewOrder() {
 
       {/* Add New Customer Dialog */}
       <Dialog open={showAddCustomerDialog} onOpenChange={setShowAddCustomerDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md max-h-[calc(100vh-1rem)] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="pr-8">
             <DialogTitle>Add New Customer</DialogTitle>
             <DialogDescription>
               Quickly add a new customer to the system

@@ -622,6 +622,7 @@ export default function Orders() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [paymentTransactions, setPaymentTransactions] = useState<PaymentTransaction[]>([]);
+  const [orderDetailsLoading, setOrderDetailsLoading] = useState(false);
   const [orderDelivery, setOrderDelivery] = useState<OrderDelivery | null>(null);
   const [paymentTransactionsPage, setPaymentTransactionsPage] = useState(1);
   const [paymentTransactionsPerPage] = useState(10);
@@ -1076,6 +1077,7 @@ export default function Orders() {
 
     try {
       setLoading(true);
+      setOrderDetailsLoading(true);
       const response = await axios.get(`${API_BASE_URL}/orders/${order.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1086,6 +1088,10 @@ export default function Orders() {
       
       setSelectedOrder(response.data.order);
       setOrderItems(response.data.items || []);
+      setPaymentTransactions([]);
+      setPaymentTransactionsPage(1);
+      setOrderDelivery(null);
+      setShowDetailsDialog(true);
       
       // Fetch payment transactions
       try {
@@ -1121,6 +1127,7 @@ export default function Orders() {
       });
     } finally {
       setLoading(false);
+      setOrderDetailsLoading(false);
     }
   };
 
@@ -2330,7 +2337,10 @@ export default function Orders() {
               )}
 
               {/* No Payment Transactions Warning */}
-              {paymentTransactions.length === 0 && selectedOrder.payment_status !== 'UNPAID' && (
+              {orderDetailsLoading && (
+                <div className="p-4 text-sm text-muted-foreground">Loading payment and delivery history…</div>
+              )}
+              {!orderDetailsLoading && paymentTransactions.length === 0 && selectedOrder.payment_status !== 'UNPAID' && (
                 <div className="p-4 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg space-y-3">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="h-5 w-5 text-yellow-600" />
@@ -2363,7 +2373,7 @@ export default function Orders() {
                 </div>
               )}
 
-              {paymentTransactions.length === 0 && selectedOrder.payment_status === 'UNPAID' && (
+              {!orderDetailsLoading && paymentTransactions.length === 0 && selectedOrder.payment_status === 'UNPAID' && (
                 <div className="p-4 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="h-5 w-5 text-red-600" />
