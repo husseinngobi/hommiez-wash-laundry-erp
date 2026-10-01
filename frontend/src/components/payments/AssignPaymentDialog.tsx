@@ -199,11 +199,25 @@ export default function AssignPaymentDialog({
   }, [payment, isOpen]);
 
   const handleAssign = async () => {
+    if (isAssigning) return;
     if (!selectedOrder || !payment) {
       console.error('❌ Missing selectedOrder or payment', { selectedOrder, payment });
       toast({
         title: 'Selection Required',
         description: 'Please select an order before assigning the payment',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const remaining = Number(selectedOrder.balance_due) || 0;
+    if (payment.amount > remaining + 0.009) {
+      toast({
+        title: 'Amount exceeds order total',
+        description:
+          remaining <= 0
+            ? `Order ${selectedOrder.order_number} is already fully paid.`
+            : `This payment (${formatUGX(payment.amount)}) is more than the remaining balance of ${formatUGX(remaining)}.`,
         variant: 'destructive',
       });
       return;
@@ -523,8 +537,12 @@ export default function AssignPaymentDialog({
           </Button>
           <Button
             onClick={handleAssign}
-            disabled={!selectedOrder || isAssigning}
-            className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+            disabled={
+              !selectedOrder ||
+              isAssigning ||
+              (!!payment && !!selectedOrder && payment.amount > (Number(selectedOrder.balance_due) || 0) + 0.009)
+            }
+            className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <CheckCircle className="h-4 w-4 mr-2" />
             {isAssigning ? 'Assigning...' : 'Assign Payment'}

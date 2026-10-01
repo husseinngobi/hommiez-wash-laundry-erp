@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { query } from '../config/database';
+import { query, getClient } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import { createSystemNotification, notifyAdministrators } from './notifications.controller';
@@ -824,6 +824,7 @@ export const exportPaymentsPDF = async (req: AuthRequest, res: Response) => {
  * is stored as that calendar day — not "now".
  */
 export const addOrderPayment = async (req: AuthRequest, res: Response) => {
+  const client = await getClient();
   try {
     const { orderId } = req.params;
     const {
@@ -839,36 +840,49 @@ export const addOrderPayment = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Payment amount must be greater than zero' });
     }
 
-    const orderRow = await query(
-      `SELECT * FROM orders WHERE id = $1`,
+    await client.query('BEGIN');
+
+    const orderRow = await client.query(
+      `SELECT * FROM orders WHERE id = $1 FOR UPDATE`,
       [orderId]
     );
     if (orderRow.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Order not found' });
     }
     const order = orderRow.rows[0];
     if (forbiddenIfOutsideBranch(req, res, order.branch_id)) {
+      await client.query('ROLLBACK');
       return;
     }
 
-    const activePayments = await query(
-      `SELECT COALESCE(SUM(amount), 0) AS paid
+    const paidRow = await client.query(
+      `SELECT COALESCE(SUM(amount), 0) as net_paid
        FROM payments
-       WHERE order_id = $1
-         AND (is_cancelled IS NULL OR is_cancelled = FALSE)`,
+       WHERE order_id = $1 AND (is_cancelled IS NULL OR is_cancelled = FALSE)`,
       [order.id]
     );
-    const orderTotal = Number(order.total_amount) || 0;
-    const activePaid = Number(activePayments.rows[0].paid) || 0;
-    const remainingBalance = Math.max(0, orderTotal - activePaid);
-    if (paymentAmount > remainingBalance + 0.01) {
+    const netPaid = Number(paidRow.rows[0].net_paid) || 0;
+    const totalAmount = Number(order.total_amount ?? order.total) || 0;
+    const remaining = Math.max(0, totalAmount - netPaid);
+
+    if (paymentAmount > remaining + 0.009) {
+      await client.query('ROLLBACK');
+      const remainingDisplay = remaining.toLocaleString();
+      const totalDisplay = totalAmount.toLocaleString();
+      const paymentDisplay = paymentAmount.toLocaleString();
       return res.status(400).json({
-        error: `Payment exceeds the remaining order balance of UGX ${remainingBalance.toLocaleString()}`,
-        remaining_balance: remainingBalance,
+        error:
+          remaining <= 0
+            ? `This order is already fully paid (UGX ${totalDisplay}). Additional payments cannot be recorded.`
+            : `Payment of UGX ${paymentDisplay} exceeds the remaining balance of UGX ${remainingDisplay}. Order total is UGX ${totalDisplay}.`,
+        remaining,
+        order_total: totalAmount,
+        amount_paid: netPaid,
       });
     }
 
-    const recentDuplicate = await query(
+    const recentDuplicate = await client.query(
       `SELECT id FROM payments
        WHERE order_id = $1
          AND amount = $2
@@ -878,6 +892,7 @@ export const addOrderPayment = async (req: AuthRequest, res: Response) => {
       [order.id, paymentAmount]
     );
     if (recentDuplicate.rows.length > 0) {
+      await client.query('ROLLBACK');
       return res.status(409).json({
         error: 'This payment was just recorded. Avoid tapping Record Payment more than once.',
       });
@@ -888,7 +903,7 @@ export const addOrderPayment = async (req: AuthRequest, res: Response) => {
       (order.is_backdated ? extractYmd(order.created_at) : null) ||
       kampalaTodayYmd();
 
-    const inserted = await query(
+    const inserted = await client.query(
       `INSERT INTO payments (
         order_id,
         customer_id,
@@ -913,11 +928,13 @@ export const addOrderPayment = async (req: AuthRequest, res: Response) => {
     );
 
     if (payment_method) {
-      await query(
+      await client.query(
         `UPDATE orders SET payment_method = $1 WHERE id = $2`,
         [payment_method, order.id]
       );
     }
+
+    await client.query('COMMIT');
 
     const updatedOrder = await syncOrderPaymentFromLedger(order.id);
 
@@ -928,8 +945,15 @@ export const addOrderPayment = async (req: AuthRequest, res: Response) => {
       payment_date: paymentYmd,
     });
   } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback errors
+    }
     console.error('Add order payment error:', error);
     res.status(500).json({ error: 'Failed to record payment' });
+  } finally {
+    client.release();
   }
 };
 

@@ -653,6 +653,7 @@ export default function Orders() {
   }>>([]);
   const [additionalPayment, setAdditionalPayment] = useState(0);
   const [recordingPayment, setRecordingPayment] = useState(false);
+  const recordingPaymentRef = useRef(false);
   const [paymentDate, setPaymentDate] = useState(kampalaTodayYmd());
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER'>('CASH');
   const [mobileMoneyProvider, setMobileMoneyProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
@@ -1118,7 +1119,7 @@ export default function Orders() {
 
   // Update payment
   const handleUpdatePayment = async () => {
-    if (recordingPayment) return;
+    if (recordingPaymentRef.current || recordingPayment) return;
     if (!selectedOrder || additionalPayment <= 0) {
       toast({
         variant: 'destructive',
@@ -1128,21 +1129,35 @@ export default function Orders() {
       return;
     }
 
+    const totalAmount = parseFloat(String(selectedOrder.total_amount));
+    const currentPaid = parseFloat(String(selectedOrder.amount_paid));
+
+    if (isNaN(totalAmount) || isNaN(currentPaid)) {
+      toast({
+        variant: 'destructive',
+        title: 'Data Error',
+        description: 'Invalid order amount data. Please refresh and try again.',
+      });
+      return;
+    }
+
+    const remainingDue = Math.max(0, totalAmount - currentPaid);
+    if (additionalPayment > remainingDue + 0.009) {
+      toast({
+        variant: 'destructive',
+        title: 'Amount exceeds order total',
+        description:
+          remainingDue <= 0
+            ? `This order is already fully paid (${formatUGX(totalAmount)}).`
+            : `You can record at most ${formatUGX(remainingDue)} more on this ${formatUGX(totalAmount)} order.`,
+      });
+      return;
+    }
+
+    recordingPaymentRef.current = true;
+    setRecordingPayment(true);
+
     try {
-      setRecordingPayment(true);
-      // Ensure numeric values are properly parsed
-      const totalAmount = parseFloat(String(selectedOrder.total_amount));
-      const currentPaid = parseFloat(String(selectedOrder.amount_paid));
-      
-      if (isNaN(totalAmount) || isNaN(currentPaid)) {
-        toast({
-          variant: 'destructive',
-          title: 'Data Error',
-          description: 'Invalid order amount data. Please refresh and try again.',
-        });
-        return;
-      }
-      
       const newAmountPaid = currentPaid + additionalPayment;
       const newBalance = Math.max(0, totalAmount - newAmountPaid);
 
@@ -1195,6 +1210,7 @@ export default function Orders() {
         description: axiosError.response?.data?.error || 'Failed to update payment',
       });
     } finally {
+      recordingPaymentRef.current = false;
       setRecordingPayment(false);
     }
   };
@@ -2890,6 +2906,14 @@ export default function Orders() {
           </DialogHeader>
           {selectedOrder && (
             <div className="space-y-4">
+              {(() => {
+                const remainingDue = Math.max(
+                  0,
+                  parseFloat(String(selectedOrder.total_amount)) - parseFloat(String(selectedOrder.amount_paid))
+                );
+                const paymentExceedsBalance = additionalPayment > remainingDue + 0.009;
+                return (
+                  <>
               <div className="p-4 bg-muted rounded-lg space-y-2">
                 <div className="flex justify-between">
                   <span>Total Amount:</span>
@@ -2911,20 +2935,30 @@ export default function Orders() {
                   id="additional-payment"
                   type="number"
                   min="0"
-                  max={selectedOrder.balance}
+                  max={remainingDue}
                   value={additionalPayment || ''}
-                  onChange={(e) => setAdditionalPayment(parseFloat(e.target.value) || 0)}
+                  onChange={(e) => {
+                    const next = parseFloat(e.target.value) || 0;
+                    setAdditionalPayment(Math.min(next, remainingDue));
+                  }}
                   placeholder="Enter amount"
                   className="mt-2"
+                  disabled={recordingPayment || remainingDue <= 0}
                 />
                 <Button
                   variant="link"
                   size="sm"
-                  onClick={() => setAdditionalPayment(parseFloat(String(selectedOrder.balance)))}
+                  onClick={() => setAdditionalPayment(remainingDue)}
                   className="mt-1"
+                  disabled={recordingPayment || remainingDue <= 0}
                 >
                   Pay Full Balance
                 </Button>
+                {paymentExceedsBalance && (
+                  <p className="text-sm text-red-600 mt-1">
+                    Amount cannot exceed the remaining balance of {formatUGX(remainingDue)}.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -2936,6 +2970,7 @@ export default function Orders() {
                   value={paymentDate}
                   onChange={(e) => setPaymentDate(e.target.value)}
                   className="mt-2"
+                  disabled={recordingPayment}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   {selectedOrder.is_backdated
@@ -2946,7 +2981,11 @@ export default function Orders() {
 
               <div>
                 <Label htmlFor="payment-method">Payment Method</Label>
-                <Select value={paymentMethod} onValueChange={(value: 'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER') => setPaymentMethod(value)}>
+                <Select
+                  value={paymentMethod}
+                  onValueChange={(value: 'CASH' | 'MOBILE_MONEY' | 'BANK_TRANSFER') => setPaymentMethod(value)}
+                  disabled={recordingPayment}
+                >
                   <SelectTrigger className="mt-2">
                     <SelectValue placeholder="Select payment method" />
                   </SelectTrigger>
@@ -2967,7 +3006,7 @@ export default function Orders() {
                 <>
                   <div>
                     <Label htmlFor="mobile-provider">Mobile Money Provider</Label>
-                    <Select value={mobileMoneyProvider} onValueChange={(value: 'MTN' | 'AIRTEL') => setMobileMoneyProvider(value)}>
+                    <Select value={mobileMoneyProvider} onValueChange={(value: 'MTN' | 'AIRTEL') => setMobileMoneyProvider(value)} disabled={recordingPayment}>
                       <SelectTrigger className="mt-2">
                         <SelectValue placeholder="Select provider" />
                       </SelectTrigger>
@@ -2980,7 +3019,7 @@ export default function Orders() {
 
                   <div>
                     <Label htmlFor="payment-channel">How was payment received? ⭐</Label>
-                    <Select value={paymentChannel} onValueChange={(value: 'MANUAL' | 'MERCHANT' | 'P2P' | 'DEPOSIT' | 'API_PUSH') => setPaymentChannel(value)}>
+                    <Select value={paymentChannel} onValueChange={(value: 'MANUAL' | 'MERCHANT' | 'P2P' | 'DEPOSIT' | 'API_PUSH') => setPaymentChannel(value)} disabled={recordingPayment}>
                       <SelectTrigger className="mt-2">
                         <SelectValue placeholder="Select payment channel" />
                       </SelectTrigger>
@@ -3033,7 +3072,7 @@ export default function Orders() {
 
                   <div>
                     <Label htmlFor="recipient-account">Which Business Account Received Payment?</Label>
-                    <Select value={recipientAccount} onValueChange={setRecipientAccount}>
+                    <Select value={recipientAccount} onValueChange={setRecipientAccount} disabled={recordingPayment}>
                       <SelectTrigger className="mt-2">
                         <SelectValue placeholder="Select business account" />
                       </SelectTrigger>
@@ -3085,6 +3124,7 @@ export default function Orders() {
                     onChange={(e) => setTransactionReference(e.target.value)}
                     placeholder="e.g., MM12345678 or Bank Ref"
                     className="mt-2"
+                    disabled={recordingPayment}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     {paymentMethod === 'MOBILE_MONEY' ? 'Mobile money confirmation code' : 'Bank transfer reference number'}
@@ -3122,8 +3162,8 @@ export default function Orders() {
                 </Button>
                 <Button
                   onClick={handleUpdatePayment}
-                  className="w-full sm:w-auto"
-                  disabled={recordingPayment || additionalPayment <= 0}
+                  className="w-full sm:w-auto disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={recordingPayment || additionalPayment <= 0 || paymentExceedsBalance || remainingDue <= 0}
                 >
                   {recordingPayment ? (
                     <>
@@ -3135,6 +3175,9 @@ export default function Orders() {
                   )}
                 </Button>
               </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </DialogContent>

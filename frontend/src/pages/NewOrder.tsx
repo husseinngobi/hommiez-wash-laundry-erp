@@ -909,6 +909,7 @@ export default function NewOrder() {
   };
 
   const handleCreateOrder = async () => {
+    if (loading) return;
     if (!selectedCustomer) {
       toast({
         variant: 'destructive',
@@ -1632,11 +1633,12 @@ export default function NewOrder() {
                   <Input
                     type="number"
                     min="0"
+                    max={total > 0 ? total : undefined}
                     value={amountPaid || ''}
                     onChange={(e) => handleAmountPaidChange(parseFloat(e.target.value) || 0)}
                     placeholder="Enter amount…"
                     className={cn('h-10 lg:h-8 text-sm mt-1', paymentMethod === 'ON_ACCOUNT' && 'opacity-40')}
-                    disabled={paymentMethod === 'ON_ACCOUNT'}
+                    disabled={paymentMethod === 'ON_ACCOUNT' || loading}
                   />
                   {paymentMethod === 'ON_ACCOUNT' && (
                     <p className="text-[10px] text-muted-foreground mt-0.5">Deferred — customer pays on collection</p>
@@ -1848,7 +1850,7 @@ export default function NewOrder() {
 
               {/* Create Order Button */}
               <Button
-                className="w-full h-12 text-base font-bold bg-primary hover:bg-primary/90"
+                className="w-full h-12 text-base font-bold bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
                 onClick={handleCreateOrder}
                 disabled={loading || !selectedCustomer || orderItems.length === 0}
               >

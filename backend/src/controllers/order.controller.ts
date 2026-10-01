@@ -1099,9 +1099,12 @@ export const updateOrder = async (req: AuthRequest, res: Response) => {
       : Number(currentOrder.amount_paid) || 0;
     const orderTotal = Number(currentOrder.total_amount) || 0;
 
-    if (parsedAmountPaid !== undefined && parsedAmountPaid > orderTotal + 0.01) {
+    if (parsedAmountPaid !== undefined && orderTotal > 0 && parsedAmountPaid > orderTotal + 0.009) {
+      const remaining = Math.max(0, orderTotal - (Number(currentOrder.amount_paid) || 0));
       return res.status(400).json({
-        error: `Payment exceeds the order total of UGX ${orderTotal.toLocaleString()}`,
+        error: `Payment of UGX ${parsedAmountPaid.toLocaleString()} exceeds the order total of UGX ${orderTotal.toLocaleString()}. Remaining balance is UGX ${remaining.toLocaleString()}.`,
+        remaining,
+        order_total: orderTotal,
       });
     }
 

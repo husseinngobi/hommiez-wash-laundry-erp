@@ -245,6 +245,20 @@ export const assignPaymentToOrder = async (req: Request, res: Response) => {
       const currentAmountPaid = parseFloat(order.amount_paid || 0);
       const paymentAmount = parseFloat(payment.amount);
       const totalAmount = parseFloat(order.total_amount);
+      const remaining = Math.max(0, totalAmount - currentAmountPaid);
+
+      if (paymentAmount > remaining + 0.009) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(400).json({
+          error:
+            remaining <= 0
+              ? `Order ${order.order_number} is already fully paid (UGX ${totalAmount.toLocaleString()}). This payment cannot be assigned to it.`
+              : `Payment of UGX ${paymentAmount.toLocaleString()} exceeds the remaining balance of UGX ${remaining.toLocaleString()} on order ${order.order_number}.`,
+          remaining,
+          order_total: totalAmount,
+        });
+      }
 
       // Calculate new amount paid based on payment type
       const newAmountPaid = currentAmountPaid + paymentAmount;

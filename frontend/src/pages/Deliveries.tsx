@@ -121,6 +121,7 @@ export default function Deliveries() {
   const [paymentStatus, setPaymentStatus] = useState('PAID');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [recordingPayment, setRecordingPayment] = useState(false);
+  const recordingPaymentRef = useRef(false);
 
   // Detail dialog
   const [showDetailDialog, setShowDetailDialog] = useState(false);
@@ -456,11 +457,12 @@ export default function Deliveries() {
   };
 
   const handleRecordPayment = async () => {
-    if (!selectedDelivery) return;
-    
+    if (!selectedDelivery || recordingPaymentRef.current || recordingPayment) return;
+
+    recordingPaymentRef.current = true;
+    setRecordingPayment(true);
+
     try {
-      setRecordingPayment(true);
-      
       await axios.put(
         `${API_BASE_URL}/deliveries/${selectedDelivery.id}/payment`,
         {
@@ -488,6 +490,7 @@ export default function Deliveries() {
         description: axiosError.response?.data?.error || 'Failed to record payment',
       });
     } finally {
+      recordingPaymentRef.current = false;
       setRecordingPayment(false);
     }
   };
@@ -1205,10 +1208,10 @@ export default function Deliveries() {
             <Button variant="outline" onClick={() => setShowPaymentDialog(false)} disabled={recordingPayment} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button 
-              onClick={handleRecordPayment} 
+            <Button
+              onClick={handleRecordPayment}
               disabled={recordingPayment || !paymentAmount || parseFloat(paymentAmount) < 0}
-              className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700"
+              className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {recordingPayment ? 'Recording...' : 'Record Payment'}
             </Button>
