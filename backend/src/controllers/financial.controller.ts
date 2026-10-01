@@ -199,8 +199,10 @@ export const getFinancialDashboard = async (req: AuthRequest, res: Response) => 
         COUNT(*) as transaction_count,
         COALESCE(SUM(amount), 0) as total_amount
        FROM payments
-       ${paymentsDateFilter}
-       GROUP BY method
+        ${paymentsDateFilter ? `${paymentsDateFilter} AND` : 'WHERE'}
+        COALESCE(is_cancelled, FALSE) = FALSE
+        AND COALESCE(is_refund, FALSE) = FALSE
+        GROUP BY method
        ORDER BY total_amount DESC`
     );
 

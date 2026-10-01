@@ -86,7 +86,7 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
         COUNT(CASE WHEN COALESCE(is_refund, FALSE) = TRUE THEN 1 END) as refund_count
       FROM payments p
       JOIN orders o ON p.order_id = o.id
-      ${paymentDateFilter}
+      ${appendFilter(paymentDateFilter, 'COALESCE(p.is_cancelled, FALSE) = FALSE')}
     `);
 
     // Revenue by service category (only counting actual payments, not refunds)
@@ -99,7 +99,7 @@ export const getIncomeStatement = async (req: AuthRequest, res: Response) => {
       JOIN orders o ON p.order_id = o.id
       JOIN order_items oi ON o.id = oi.order_id
       JOIN price_items pi ON oi.price_item_id = pi.id
-      ${appendFilter(paymentDateFilter, 'COALESCE(p.is_refund, FALSE) = FALSE')}
+      ${appendFilter(paymentDateFilter, 'COALESCE(p.is_cancelled, FALSE) = FALSE AND COALESCE(p.is_refund, FALSE) = FALSE')}
       GROUP BY pi.category
       ORDER BY revenue DESC
     `);
@@ -701,7 +701,10 @@ export const getBranchSummary = async (req: AuthRequest, res: Response) => {
           SELECT SUM(p.amount)
           FROM payments p
           JOIN orders o ON o.id = p.order_id
-          WHERE o.branch_id = b.id AND ${paymentDateSql}
+          WHERE o.branch_id = b.id
+            AND ${paymentDateSql}
+            AND COALESCE(p.is_cancelled, FALSE) = FALSE
+            AND COALESCE(p.is_refund, FALSE) = FALSE
         ), 0) AS revenue,
         COALESCE((
           SELECT SUM(e.amount)

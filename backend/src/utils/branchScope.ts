@@ -62,6 +62,6 @@ export function andBranchFilter(existingWhere: string, column: string, branchId:
 }
 
 export function paymentsFrom(branchId: number | null): string {
-  if (!branchId) return 'FROM payments';
+  if (!branchId) return 'FROM payments p';
   return `FROM payments p INNER JOIN orders o ON o.id = p.order_id AND o.branch_id = ${Number(branchId)}`;
 }

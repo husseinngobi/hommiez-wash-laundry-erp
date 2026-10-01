@@ -63,6 +63,9 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     updatedAtDateFilter = andBranchFilter(updatedAtDateFilter, 'branch_id', branchId);
     const payFrom = paymentsFrom(branchId);
     const branchOrderAnd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
+    const activePaymentDateFilter = paymentsDateFilter
+      ? `${paymentsDateFilter} AND COALESCE(p.is_cancelled, FALSE) = FALSE AND COALESCE(p.is_refund, FALSE) = FALSE`
+      : `WHERE COALESCE(p.is_cancelled, FALSE) = FALSE AND COALESCE(p.is_refund, FALSE) = FALSE`;
 
     // Orders count for selected period
     const ordersResult = await query(
@@ -72,7 +75,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
     // Revenue for selected period (from PAYMENTS, not orders)
     const revenueResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as order_revenue
-       ${payFrom} ${paymentsDateFilter}`
+       ${payFrom} ${activePaymentDateFilter}`
     );
 
     // Delivery revenue for selected period. Deliveries are a side ledger, so a
@@ -237,8 +240,8 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 
     // When dateRange is null we query all-time (no WHERE clause on date).
     const paymentsWhere = dateRange
-      ? `WHERE payment_date >= $1 AND payment_date <= $2`
-      : `WHERE TRUE`;
+      ? `WHERE payment_date >= $1 AND payment_date <= $2 AND COALESCE(p.is_cancelled, FALSE) = FALSE AND COALESCE(p.is_refund, FALSE) = FALSE`
+      : `WHERE COALESCE(p.is_cancelled, FALSE) = FALSE AND COALESCE(p.is_refund, FALSE) = FALSE`;
     const deliveriesWhere = dateRange
       ? `WHERE delivered_at >= $1 AND delivered_at <= $2`
       : `WHERE TRUE`;

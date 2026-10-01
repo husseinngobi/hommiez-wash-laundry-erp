@@ -18,6 +18,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       SELECT COALESCE(SUM(amount), 0) as revenue
       FROM payments
       WHERE DATE(payment_date) = CURRENT_DATE
+        AND COALESCE(is_cancelled, FALSE) = FALSE
+        AND COALESCE(is_refund, FALSE) = FALSE
     `);
     
     // Orders by status today
@@ -42,6 +44,8 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       SELECT AVG(amount) as avg_value
       FROM payments
       WHERE payment_date >= CURRENT_DATE - INTERVAL '30 days'
+        AND COALESCE(is_cancelled, FALSE) = FALSE
+        AND COALESCE(is_refund, FALSE) = FALSE
     `);
     
     // Recent orders
@@ -111,6 +115,8 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
       FROM payments p
       ${paymentOrdersJoin}
       WHERE ${dateFilter.replace(/payment_date/g, 'p.payment_date')}
+        AND COALESCE(p.is_cancelled, FALSE) = FALSE
+        AND COALESCE(p.is_refund, FALSE) = FALSE
       GROUP BY DATE(p.payment_date)
       ORDER BY date DESC
     `);
@@ -127,6 +133,8 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
       JOIN price_items pi ON oi.price_item_id = pi.id
       WHERE ${dateFilter.replace(/payment_date/g, 'pay.payment_date')}
         AND pi.category IS NOT NULL
+        AND COALESCE(pay.is_cancelled, FALSE) = FALSE
+        AND COALESCE(pay.is_refund, FALSE) = FALSE
         ${branchAnd}
       GROUP BY pi.category
       HAVING SUM(pay.amount) > 0
@@ -145,6 +153,8 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
       JOIN payments p ON c.id = p.customer_id
       ${paymentOrdersJoin}
       WHERE ${dateFilter.replace(/payment_date/g, 'p.payment_date')}
+        AND COALESCE(p.is_cancelled, FALSE) = FALSE
+        AND COALESCE(p.is_refund, FALSE) = FALSE
       GROUP BY c.id, c.name, c.phone
       HAVING SUM(p.amount) > 0
       ORDER BY total_spent DESC
@@ -161,6 +171,8 @@ export const getRevenueReport = async (req: AuthRequest, res: Response) => {
       FROM payments p
       ${paymentOrdersJoin}
       WHERE ${dateFilter.replace(/payment_date/g, 'p.payment_date')}
+        AND COALESCE(p.is_cancelled, FALSE) = FALSE
+        AND COALESCE(p.is_refund, FALSE) = FALSE
     `);
 
     // Order status distribution - operational view (orders CREATED in period)
@@ -300,6 +312,8 @@ export const downloadPDFReport = async (req: AuthRequest, res: Response) => {
         AVG(amount) as avg_order_value
       FROM payments
       WHERE ${dateFilter}
+        AND COALESCE(is_cancelled, FALSE) = FALSE
+        AND COALESCE(is_refund, FALSE) = FALSE
       GROUP BY DATE(payment_date)
       ORDER BY date DESC
     `);
@@ -315,6 +329,8 @@ export const downloadPDFReport = async (req: AuthRequest, res: Response) => {
       JOIN price_items pi ON oi.price_item_id = pi.id
       WHERE ${dateFilter.replace('payment_date', 'pay.payment_date')}
         AND pi.category IS NOT NULL
+        AND COALESCE(pay.is_cancelled, FALSE) = FALSE
+        AND COALESCE(pay.is_refund, FALSE) = FALSE
       GROUP BY pi.category
       HAVING SUM(pay.amount) > 0
       ORDER BY revenue DESC
@@ -329,6 +345,8 @@ export const downloadPDFReport = async (req: AuthRequest, res: Response) => {
       FROM customers c
       JOIN payments p ON c.id = p.customer_id
       WHERE ${dateFilter.replace('payment_date', 'p.payment_date')}
+        AND COALESCE(p.is_cancelled, FALSE) = FALSE
+        AND COALESCE(p.is_refund, FALSE) = FALSE
       GROUP BY c.id, c.name, c.phone
       ORDER BY total_spent DESC
       LIMIT 10
@@ -343,6 +361,8 @@ export const downloadPDFReport = async (req: AuthRequest, res: Response) => {
       FROM payments p
       LEFT JOIN orders o ON p.order_id = o.id
       WHERE ${dateFilter.replace('payment_date', 'p.payment_date')}
+        AND COALESCE(p.is_cancelled, FALSE) = FALSE
+        AND COALESCE(p.is_refund, FALSE) = FALSE
     `);
     
     // Generate HTML for PDF
@@ -547,6 +567,8 @@ export const getStaffPerformance = async (req: AuthRequest, res: Response) => {
       JOIN users u ON o.user_id = u.id
       WHERE ${dailyWhereSql}
         ${listBranchId ? `AND o.branch_id = ${Number(listBranchId)}` : ''}
+        AND COALESCE(p.is_cancelled, FALSE) = FALSE
+        AND COALESCE(p.is_refund, FALSE) = FALSE
         AND COALESCE(u.status, 'ACTIVE') = 'ACTIVE'
         AND LOWER(REGEXP_REPLACE(COALESCE(u.full_name, ''), '\\s+', ' ', 'g')) NOT LIKE '%mutoni blessing%'
       GROUP BY DATE(p.payment_date AT TIME ZONE 'UTC' AT TIME ZONE 'Africa/Nairobi'), u.full_name
@@ -680,4 +702,3 @@ export const getVATSummary = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Failed to fetch VAT summary' });
   }
 };
-
