@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,7 +14,8 @@ const Login = lazy(() => import("./pages/Login"));
 const CreateAccount = lazy(() => import("./pages/CreateAccount"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const ChangePassword = lazy(() => import("./pages/ChangePassword"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
+const importDashboard = () => import("./pages/Dashboard");
+const Dashboard = lazy(importDashboard);
 const Orders = lazy(() => import("./pages/Orders"));
 const NewOrder = lazy(() => import("./pages/NewOrder"));
 const Customers = lazy(() => import("./pages/Customers"));
@@ -102,16 +103,31 @@ const routeFallback = (
   </div>
 );
 
-const App = () => (
-  <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <ScrollToTop />
-          <AuthProvider>
-            <Routes>
+const App = () => {
+  useEffect(() => {
+    const preload = () => {
+      void importDashboard();
+    };
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(preload, { timeout: 2000 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timeoutId = window.setTimeout(preload, 1000);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  return (
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <ScrollToTop />
+            <AuthProvider>
+              <Routes>
               {/* ── Public / auth routes — clean skeleton, no app shell ── */}
               <Route
                 path="/login"
@@ -166,12 +182,13 @@ const App = () => (
 
               {/* ── Catch-all ── */}
               <Route path="*" element={<Suspense fallback={routeFallback}><NotFound /></Suspense>} />
-            </Routes>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
-  </ThemeProvider>
-);
+              </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
+  );
+};
 
 export default App;
