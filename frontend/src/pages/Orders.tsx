@@ -677,9 +677,7 @@ export default function Orders() {
   const [visibleColumns, setVisibleColumns] = useState({
     orderNumber: true,
     customer: true,
-    phone: true,
     orderDate: true,
-    daysOld: true,
     salesPerson: true,
     branch: true,
     total: true,
@@ -1630,25 +1628,13 @@ export default function Orders() {
               checked={visibleColumns.customer}
               onCheckedChange={(checked) => setVisibleColumns(prev => ({ ...prev, customer: checked }))}
             >
-              Customer
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={visibleColumns.phone}
-              onCheckedChange={(checked) => setVisibleColumns(prev => ({ ...prev, phone: checked }))}
-            >
-              Phone
+              Customer & Phone
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem
               checked={visibleColumns.orderDate}
               onCheckedChange={(checked) => setVisibleColumns(prev => ({ ...prev, orderDate: checked }))}
             >
-              Order Date
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuCheckboxItem
-              checked={visibleColumns.daysOld}
-              onCheckedChange={(checked) => setVisibleColumns(prev => ({ ...prev, daysOld: checked }))}
-            >
-              Days Old / Overdue
+              Date & Age
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem
               checked={visibleColumns.salesPerson}
@@ -1695,16 +1681,14 @@ export default function Orders() {
       {/* Orders Table */}
       <div className="bg-card rounded-lg border">
         <div className="overflow-x-auto">
-        <Table className="w-full table-fixed text-xs lg:text-[11px] xl:text-xs">
+        <Table className="w-full table-fixed text-xs">
           <TableHeader>
             <TableRow>
               {visibleColumns.orderNumber && <TableHead className="px-2 whitespace-nowrap">Order #</TableHead>}
-              {visibleColumns.customer && <TableHead className="px-2 whitespace-nowrap">Customer</TableHead>}
-              {visibleColumns.phone && <TableHead className="px-2 whitespace-nowrap">Phone</TableHead>}
-              {visibleColumns.orderDate && <TableHead className="px-2 whitespace-nowrap">Order Date</TableHead>}
-              {visibleColumns.daysOld && <TableHead className="px-2 whitespace-nowrap">Days Old</TableHead>}
+              {visibleColumns.customer && <TableHead className="px-2">Customer / Phone</TableHead>}
+              {visibleColumns.orderDate && <TableHead className="px-2 whitespace-nowrap">Date / Age</TableHead>}
               {visibleColumns.salesPerson && <TableHead className="px-2 whitespace-nowrap">Sales Person</TableHead>}
-              {multiBranch && visibleColumns.branch && <TableHead>Branch</TableHead>}
+              {multiBranch && visibleColumns.branch && <TableHead className="px-2">Branch</TableHead>}
               {visibleColumns.total && <TableHead className="px-2 whitespace-nowrap">Total</TableHead>}
               {visibleColumns.payment && <TableHead className="px-2 whitespace-nowrap">Payment</TableHead>}
               {visibleColumns.status && <TableHead className="px-2 whitespace-nowrap">Status</TableHead>}
@@ -1714,13 +1698,13 @@ export default function Orders() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={Object.values(visibleColumns).filter(Boolean).length} className="text-center py-8">
+                <TableCell colSpan={Object.values(visibleColumns).filter(Boolean).length - (multiBranch ? 0 : 1)} className="text-center py-8">
                   Loading orders...
                 </TableCell>
               </TableRow>
             ) : filteredOrders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={Object.values(visibleColumns).filter(Boolean).length} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={Object.values(visibleColumns).filter(Boolean).length - (multiBranch ? 0 : 1)} className="text-center py-8 text-muted-foreground">
                   No orders found
                 </TableCell>
               </TableRow>
@@ -1755,11 +1739,15 @@ export default function Orders() {
                       </div>
                     </TableCell>
                   )}
-                  {visibleColumns.customer && <TableCell className="px-2 py-2 truncate" title={order.customer_name}>{order.customer_name}</TableCell>}
-                  {visibleColumns.phone && <TableCell className="px-2 py-2 whitespace-nowrap">{order.customer_phone}</TableCell>}
+                  {visibleColumns.customer && (
+                    <TableCell className="max-w-0 px-2 py-2">
+                      <div className="truncate font-medium" title={order.customer_name}>{order.customer_name}</div>
+                      <div className="truncate whitespace-nowrap text-[11px] text-muted-foreground" title={order.customer_phone}>{order.customer_phone}</div>
+                    </TableCell>
+                  )}
                   {visibleColumns.orderDate && (
                     <TableCell className="px-2 py-2 whitespace-nowrap">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 text-xs">
                         <span>{formatDate(order.created_at)}</span>
                         {order.is_backdated && (
                           <Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-700 border-amber-300">
@@ -1767,34 +1755,26 @@ export default function Orders() {
                           </Badge>
                         )}
                       </div>
-                    </TableCell>
-                  )}
-                  {visibleColumns.daysOld && (
-                    <TableCell className="px-2 py-2 whitespace-nowrap">
-                      <div className="flex items-center gap-1">
-                        <span className={`${isUnpaidOlderThanFiveDays(order) ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>
+                      <div className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground">
+                        <span className={isUnpaidOlderThanFiveDays(order) ? 'font-semibold text-red-600 dark:text-red-400' : ''}>
                           {getDaysOld(order.created_at)}
                         </span>
                         {isOverdue(order) && (
-                          <Badge variant="destructive" className="text-[9px] px-1 py-0">OVERDUE</Badge>
+                          <Badge variant="destructive" className="text-[9px] px-1 py-0 text-white">OVERDUE</Badge>
                         )}
                       </div>
                     </TableCell>
                   )}
                   {visibleColumns.salesPerson && (
-                    <TableCell className="px-2 py-2 whitespace-nowrap">
-                      <div className="flex items-center gap-1">
-                        <span className="font-medium">{order.staff_name || 'N/A'}</span>
-                        {order.user_role && (
-                          <span className="text-[10px] text-muted-foreground">({order.user_role})</span>
-                        )}
-                      </div>
+                    <TableCell className="max-w-0 px-2 py-2">
+                      <div className="truncate font-medium" title={order.staff_name || 'N/A'}>{order.staff_name || 'N/A'}</div>
+                      {order.user_role && <div className="truncate text-[10px] uppercase tracking-wide text-muted-foreground" title={order.user_role}>{order.user_role.replace(/_/g, ' ')}</div>}
                     </TableCell>
                   )}
                   {multiBranch && visibleColumns.branch && (
-                    <TableCell className="text-sm">
+                    <TableCell className="max-w-0 px-2 py-2">
                       {order.branch_name ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 text-xs font-medium">
+                        <span title={order.branch_name} className="inline-block max-w-full truncate rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 text-[10px] font-medium">
                           {order.branch_name}
                         </span>
                       ) : (
@@ -1804,10 +1784,10 @@ export default function Orders() {
                   )}
                   {visibleColumns.total && (
                     <TableCell className="px-2 py-2 font-semibold whitespace-nowrap">
-                      <div className="flex items-center gap-1">
+                      <div>
                         {formatUGX(order.total_amount)}
                         {order.balance > 0 && (
-                          <span className="text-[10px] font-normal text-red-600">Bal. {formatUGX(order.balance)}</span>
+                          <div className="text-[11px] font-normal text-red-600">Bal: {formatUGX(order.balance)}</div>
                         )}
                       </div>
                     </TableCell>
