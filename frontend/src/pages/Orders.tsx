@@ -1681,14 +1681,14 @@ export default function Orders() {
       {/* Orders Table */}
       <div className="bg-card rounded-lg border">
         <div className="overflow-x-auto">
-        <Table className="w-full table-fixed text-xs">
+        <Table className="w-max min-w-[1100px] table-auto text-xs lg:w-full lg:min-w-0 lg:table-fixed">
           <TableHeader>
             <TableRow>
               {visibleColumns.orderNumber && <TableHead className="px-2 whitespace-nowrap">Order #</TableHead>}
-              {visibleColumns.customer && <TableHead className="px-2">Customer / Phone</TableHead>}
+              {visibleColumns.customer && <TableHead className="px-2 whitespace-nowrap">Customer / Phone</TableHead>}
               {visibleColumns.orderDate && <TableHead className="px-2 whitespace-nowrap">Date / Age</TableHead>}
               {visibleColumns.salesPerson && <TableHead className="px-2 whitespace-nowrap">Sales Person</TableHead>}
-              {multiBranch && visibleColumns.branch && <TableHead className="px-2">Branch</TableHead>}
+              {multiBranch && visibleColumns.branch && <TableHead className="px-2 whitespace-nowrap">Branch</TableHead>}
               {visibleColumns.total && <TableHead className="px-2 whitespace-nowrap">Total</TableHead>}
               {visibleColumns.payment && <TableHead className="px-2 whitespace-nowrap">Payment</TableHead>}
               {visibleColumns.status && <TableHead className="px-2 whitespace-nowrap">Status</TableHead>}
@@ -1740,7 +1740,7 @@ export default function Orders() {
                     </TableCell>
                   )}
                   {visibleColumns.customer && (
-                    <TableCell className="max-w-0 px-2 py-2">
+                    <TableCell className="max-w-[180px] px-2 py-2 lg:max-w-0">
                       <div className="truncate font-medium" title={order.customer_name}>{order.customer_name}</div>
                       <div className="truncate whitespace-nowrap text-[11px] text-muted-foreground" title={order.customer_phone}>{order.customer_phone}</div>
                     </TableCell>
@@ -1766,13 +1766,13 @@ export default function Orders() {
                     </TableCell>
                   )}
                   {visibleColumns.salesPerson && (
-                    <TableCell className="max-w-0 px-2 py-2">
+                    <TableCell className="max-w-[150px] px-2 py-2 lg:max-w-0">
                       <div className="truncate font-medium" title={order.staff_name || 'N/A'}>{order.staff_name || 'N/A'}</div>
                       {order.user_role && <div className="truncate text-[10px] uppercase tracking-wide text-muted-foreground" title={order.user_role}>{order.user_role.replace(/_/g, ' ')}</div>}
                     </TableCell>
                   )}
                   {multiBranch && visibleColumns.branch && (
-                    <TableCell className="max-w-0 px-2 py-2">
+                    <TableCell className="max-w-[120px] px-2 py-2 lg:max-w-0">
                       {order.branch_name ? (
                         <span title={order.branch_name} className="inline-block max-w-full truncate rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-0.5 text-[10px] font-medium">
                           {order.branch_name}
