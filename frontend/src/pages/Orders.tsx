@@ -1,7 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
-import { kampalaTodayYmd, toKampalaYmd, formatKampalaDateTime } from '@/lib/businessDate';
+import { kampalaTodayYmd, toKampalaYmd, formatKampalaDate, formatKampalaDateTime } from '@/lib/businessDate';
 import { OrderStatusBadge } from '@/components/orders/OrderStatusBadge';
 import { RefundDialog } from '@/components/orders/RefundDialog';
 import Invoice from '@/components/Invoice';
@@ -164,11 +164,7 @@ const parseFormattedNumber = (value: string): string => {
 
 const formatDate = (dateString: string | null | undefined) => {
   if (!dateString) return 'Not collected yet';
-  return new Date(dateString).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
+  return formatKampalaDate(dateString);
 };
 
 const formatDateTime = (dateString: string) => formatKampalaDateTime(dateString);
@@ -177,10 +173,7 @@ const defaultPaymentYmd = (order: { is_backdated?: boolean; created_at?: string 
   order.is_backdated && order.created_at ? toKampalaYmd(order.created_at) : kampalaTodayYmd();
 
 const getDaysOld = (createdAt: string): string => {
-  const created = new Date(createdAt);
-  const now = new Date();
-  const diffTime = Math.abs(now.getTime() - created.getTime());
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = getKampalaCalendarAge(createdAt);
   
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return '1 day ago';
@@ -197,17 +190,23 @@ const getDaysOld = (createdAt: string): string => {
   return years === 1 ? '1 year ago' : `${years} years ago`;
 };
 
+// Order age follows Uganda's calendar day, so it changes at midnight Kampala time.
+const getKampalaCalendarAge = (createdAt: string): number => {
+  const [todayYear, todayMonth, todayDay] = kampalaTodayYmd().split('-').map(Number);
+  const [createdYear, createdMonth, createdDay] = toKampalaYmd(createdAt).split('-').map(Number);
+  const todayUtc = Date.UTC(todayYear, todayMonth - 1, todayDay);
+  const createdUtc = Date.UTC(createdYear, createdMonth - 1, createdDay);
+  return Math.max(0, Math.floor((todayUtc - createdUtc) / (1000 * 60 * 60 * 24)));
+};
+
 const isUnpaidOlderThanFiveDays = (order: Order): boolean => {
   if (order.payment_status !== 'UNPAID') return false;
-  const created = new Date(order.created_at);
-  const ageInDays = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
+  const ageInDays = getKampalaCalendarAge(order.created_at);
   return ageInDays > 5;
 };
 
 const isOverdue = (order: Order): boolean => {
-  const created = new Date(order.created_at);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+  const diffDays = getKampalaCalendarAge(order.created_at);
   
   // Overdue if: more than 30 days old AND (unpaid/partial OR not delivered)
   if (diffDays > 30) {
@@ -672,7 +671,7 @@ export default function Orders() {
   const [newStatus, setNewStatus] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
-  const pageSize = 15;
+  const pageSize = 20;
   
   // Column visibility state
   const [visibleColumns, setVisibleColumns] = useState({
@@ -1696,20 +1695,20 @@ export default function Orders() {
       {/* Orders Table */}
       <div className="bg-card rounded-lg border">
         <div className="overflow-x-auto">
-        <Table>
+        <Table className="w-full table-fixed text-xs lg:text-[11px] xl:text-xs">
           <TableHeader>
             <TableRow>
-              {visibleColumns.orderNumber && <TableHead>Order #</TableHead>}
-              {visibleColumns.customer && <TableHead>Customer</TableHead>}
-              {visibleColumns.phone && <TableHead>Phone</TableHead>}
-              {visibleColumns.orderDate && <TableHead>Order Date</TableHead>}
-              {visibleColumns.daysOld && <TableHead>Days Old</TableHead>}
-              {visibleColumns.salesPerson && <TableHead>Sales Person</TableHead>}
+              {visibleColumns.orderNumber && <TableHead className="px-2 whitespace-nowrap">Order #</TableHead>}
+              {visibleColumns.customer && <TableHead className="px-2 whitespace-nowrap">Customer</TableHead>}
+              {visibleColumns.phone && <TableHead className="px-2 whitespace-nowrap">Phone</TableHead>}
+              {visibleColumns.orderDate && <TableHead className="px-2 whitespace-nowrap">Order Date</TableHead>}
+              {visibleColumns.daysOld && <TableHead className="px-2 whitespace-nowrap">Days Old</TableHead>}
+              {visibleColumns.salesPerson && <TableHead className="px-2 whitespace-nowrap">Sales Person</TableHead>}
               {multiBranch && visibleColumns.branch && <TableHead>Branch</TableHead>}
-              {visibleColumns.total && <TableHead>Total</TableHead>}
-              {visibleColumns.payment && <TableHead>Payment</TableHead>}
-              {visibleColumns.status && <TableHead>Status</TableHead>}
-              {visibleColumns.actions && <TableHead>Actions</TableHead>}
+              {visibleColumns.total && <TableHead className="px-2 whitespace-nowrap">Total</TableHead>}
+              {visibleColumns.payment && <TableHead className="px-2 whitespace-nowrap">Payment</TableHead>}
+              {visibleColumns.status && <TableHead className="px-2 whitespace-nowrap">Status</TableHead>}
+              {visibleColumns.actions && <TableHead className="px-2 whitespace-nowrap">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1747,7 +1746,7 @@ export default function Orders() {
                   ].filter(Boolean).join(' ')}
                 >
                   {visibleColumns.orderNumber && (
-                    <TableCell className="font-medium">
+                    <TableCell className="px-2 py-2 font-medium whitespace-nowrap">
                       <div className="flex items-center gap-2">
                         {order.order_number}
                         {isOverdue(order) && (
@@ -1756,14 +1755,14 @@ export default function Orders() {
                       </div>
                     </TableCell>
                   )}
-                  {visibleColumns.customer && <TableCell>{order.customer_name}</TableCell>}
-                  {visibleColumns.phone && <TableCell>{order.customer_phone}</TableCell>}
+                  {visibleColumns.customer && <TableCell className="px-2 py-2 truncate" title={order.customer_name}>{order.customer_name}</TableCell>}
+                  {visibleColumns.phone && <TableCell className="px-2 py-2 whitespace-nowrap">{order.customer_phone}</TableCell>}
                   {visibleColumns.orderDate && (
-                    <TableCell className="text-sm">
-                      <div className="flex flex-col gap-0.5">
+                    <TableCell className="px-2 py-2 whitespace-nowrap">
+                      <div className="flex items-center gap-1">
                         <span>{formatDate(order.created_at)}</span>
                         {order.is_backdated && (
-                          <Badge variant="outline" className="text-[10px] w-fit text-amber-700 border-amber-300">
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-700 border-amber-300">
                             Historical
                           </Badge>
                         )}
@@ -1771,23 +1770,23 @@ export default function Orders() {
                     </TableCell>
                   )}
                   {visibleColumns.daysOld && (
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <span className={`text-sm ${isUnpaidOlderThanFiveDays(order) ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>
+                    <TableCell className="px-2 py-2 whitespace-nowrap">
+                      <div className="flex items-center gap-1">
+                        <span className={`${isUnpaidOlderThanFiveDays(order) ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>
                           {getDaysOld(order.created_at)}
                         </span>
                         {isOverdue(order) && (
-                          <Badge variant="destructive" className="text-xs w-fit">OVERDUE</Badge>
+                          <Badge variant="destructive" className="text-[9px] px-1 py-0">OVERDUE</Badge>
                         )}
                       </div>
                     </TableCell>
                   )}
                   {visibleColumns.salesPerson && (
-                    <TableCell className="text-sm">
-                      <div className="flex flex-col">
+                    <TableCell className="px-2 py-2 whitespace-nowrap">
+                      <div className="flex items-center gap-1">
                         <span className="font-medium">{order.staff_name || 'N/A'}</span>
                         {order.user_role && (
-                          <span className="text-xs text-muted-foreground">{order.user_role}</span>
+                          <span className="text-[10px] text-muted-foreground">({order.user_role})</span>
                         )}
                       </div>
                     </TableCell>
@@ -1804,20 +1803,20 @@ export default function Orders() {
                     </TableCell>
                   )}
                   {visibleColumns.total && (
-                    <TableCell className="font-semibold">
-                      <div>
+                    <TableCell className="px-2 py-2 font-semibold whitespace-nowrap">
+                      <div className="flex items-center gap-1">
                         {formatUGX(order.total_amount)}
                         {order.balance > 0 && (
-                          <p className="text-xs text-red-600">Balance: {formatUGX(order.balance)}</p>
+                          <span className="text-[10px] font-normal text-red-600">Bal. {formatUGX(order.balance)}</span>
                         )}
                       </div>
                     </TableCell>
                   )}
-                  {visibleColumns.payment && <TableCell>{getPaymentBadge(order.payment_status)}</TableCell>}
-                  {visibleColumns.status && <TableCell>{getStatusBadge(order.order_status)}</TableCell>}
+                  {visibleColumns.payment && <TableCell className="px-2 py-2 whitespace-nowrap">{getPaymentBadge(order.payment_status)}</TableCell>}
+                  {visibleColumns.status && <TableCell className="px-2 py-2 whitespace-nowrap">{getStatusBadge(order.order_status)}</TableCell>}
                   {visibleColumns.actions && (
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <div className="flex gap-1">
+                    <TableCell className="px-1 py-1 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-0">
                         <Button
                           variant="ghost"
                           size="sm"
