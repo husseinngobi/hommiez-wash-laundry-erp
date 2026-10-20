@@ -94,6 +94,7 @@ function storePostLoginRedirect() {
   }
 
   sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, currentPath);
+  sessionStorage.setItem('lush_post_login_redirect_reason', 'auth-interruption');
 }
 
 // Global axios interceptor to handle authentication errors

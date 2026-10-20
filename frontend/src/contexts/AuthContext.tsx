@@ -42,7 +42,7 @@ interface AuthContextType {
   canCancelOrders: boolean;
   canApproveExpenses: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: (preserveRedirect?: boolean) => void;
   updateUser: (updatedUser: User) => void;
   refreshUser: () => void;  // Reload user from localStorage
   loading: boolean;
@@ -77,6 +77,7 @@ const USER_KEY = 'lush_user';
 const SESSION_TIMEOUT_KEY = 'lush_session_timeout'; // Store user's preferred timeout
 const LAST_ACTIVITY_KEY = 'lush_last_activity';
 const POST_LOGIN_REDIRECT_KEY = 'lush_post_login_redirect';
+const POST_LOGIN_REDIRECT_REASON_KEY = 'lush_post_login_redirect_reason';
 // Writing on every scroll/click event would thrash localStorage
 const ACTIVITY_WRITE_INTERVAL = 5 * 1000;
 
@@ -102,15 +103,16 @@ function storePostLoginRedirect() {
   }
 
   sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, currentPath);
+  sessionStorage.setItem(POST_LOGIN_REDIRECT_REASON_KEY, 'auth-interruption');
 }
 
 function consumePostLoginRedirect() {
   try {
     const redirectPath = sessionStorage.getItem(POST_LOGIN_REDIRECT_KEY);
-    if (redirectPath) {
-      sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
-      return redirectPath;
-    }
+    const redirectReason = sessionStorage.getItem(POST_LOGIN_REDIRECT_REASON_KEY);
+    sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+    sessionStorage.removeItem(POST_LOGIN_REDIRECT_REASON_KEY);
+    return redirectReason === 'auth-interruption' ? redirectPath : null;
   } catch {
     // Ignore storage errors.
   }
@@ -172,8 +174,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   // Logout function (defined before resetInactivityTimer to avoid dependency issues)
-  const logout = useCallback(() => {
-    storePostLoginRedirect();
+  const logout = useCallback((preserveRedirect = false) => {
+    if (preserveRedirect) {
+      storePostLoginRedirect();
+    } else {
+      sessionStorage.removeItem(POST_LOGIN_REDIRECT_KEY);
+      sessionStorage.removeItem(POST_LOGIN_REDIRECT_REASON_KEY);
+    }
     setToken(null);
     setUser(null);
     localStorage.removeItem(TOKEN_KEY);
@@ -227,7 +234,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setShowTimeoutWarning(false);
         setShowExpiredModal(true);
         setTimeout(() => {
-          logout();
+          logout(true);
         }, 3000); // Give user 3 seconds to see the message before redirecting
       }, timeout);
     }
@@ -304,7 +311,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (document.visibilityState !== 'visible') return;
       const storedToken = localStorage.getItem(TOKEN_KEY);
       if (storedToken && isSessionStale(storedToken)) {
-        logout();
+        logout(true);
       }
     };
 
@@ -390,7 +397,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setShowTimeoutWarning(false);
     setShowExpiredModal(true);
     setTimeout(() => {
-      logout();
+      logout(true);
     }, 3000); // Give user 3 seconds to see the expired message before redirecting
   };
 

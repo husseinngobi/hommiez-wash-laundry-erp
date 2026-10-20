@@ -200,7 +200,7 @@ export function MainLayout({ children, title, subtitle }: MainLayoutProps) {
               )}
             </Link>
             <button
-              onClick={logout}
+              onClick={() => logout()}
               className="p-2 rounded-lg hover:bg-muted transition-colors"
               title="Logout"
               aria-label="Logout"

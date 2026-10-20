@@ -62,6 +62,7 @@ api.interceptors.response.use(
       }
 
       sessionStorage.setItem('lush_post_login_redirect', currentPath);
+      sessionStorage.setItem('lush_post_login_redirect_reason', 'auth-interruption');
     };
 
     if (status === 401 && hasAuthHeader && !isPublicAuthRoute) {
