@@ -37,16 +37,6 @@ export const authenticate = async (
     try {
       const decoded = jwt.verify(token, config.jwt.secret) as any;
       
-      // Debug logging
-      console.log('🔍 JWT Token Decoded:', {
-        hasId: 'id' in decoded,
-        hasUserId: 'userId' in decoded,
-        id: decoded.id,
-        userId: decoded.userId,
-        email: decoded.email,
-        role: decoded.role
-      });
-      
       // Handle both old (userId) and new (id) token formats for backward compatibility
       const userId = decoded.id || decoded.userId;
       
