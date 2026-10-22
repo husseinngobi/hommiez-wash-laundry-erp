@@ -23,7 +23,7 @@ async function runMigration() {
         ('whatsapp_auto_send_receipt', true, 'Automatically send WhatsApp receipt when order is created'),
         ('whatsapp_auto_send_ready', true, 'Automatically send WhatsApp notification when order is ready'),
         ('whatsapp_auto_send_delivered', false, 'Automatically send WhatsApp confirmation when order is delivered')
-      ON CONFLICT (setting_key) DO NOTHING;
+      ON CONFLICT DO NOTHING;
     `);
     console.log('✅ Default settings inserted');
 

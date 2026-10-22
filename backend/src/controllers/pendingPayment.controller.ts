@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { query, getClient } from '../config/database';
+import { query, getClient, beginTenantTransaction } from '../config/database';
 import { createNotification } from './notification.controller';
 
 // Get all pending (unassigned) mobile money payments
@@ -208,7 +208,7 @@ export const assignPaymentToOrder = async (req: Request, res: Response) => {
     }
 
     // Start transaction on dedicated client
-    await client.query('BEGIN');
+    await beginTenantTransaction(client);
     // Set statement timeout to 5 seconds to prevent hanging transactions
     await client.query('SET LOCAL statement_timeout = 5000');
     
@@ -488,7 +488,7 @@ export const receiveMobileMoneyPayment = async (req: Request, res: Response) => 
 
     // Check if transaction already exists
     const existing = await query(
-      'SELECT id FROM pending_payments WHERE transaction_reference = $1',
+      'SELECT id FROM pending_payments WHERE transaction_reference = $1 AND tenant_id = app_current_tenant_id()',
       [transactionReference]
     );
 

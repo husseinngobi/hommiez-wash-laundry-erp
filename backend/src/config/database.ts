@@ -1,76 +1,79 @@
-import { Pool, PoolClient } from 'pg';
+import { Pool, PoolClient, QueryResult } from 'pg';
 import { config } from '../config';
 import { getCurrentTenantId } from '../utils/tenantContext';
 
-const pool = new Pool({
-  host: config.database.host,
-  port: config.database.port,
-  database: config.database.name,
-  user: config.database.user,
-  password: config.database.password,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 60000, // 60 seconds to tolerate Supabase cold starts
-  statement_timeout: 30000, // 30 seconds for queries
-  ssl: config.database.host.includes('supabase.com') 
-    ? { rejectUnauthorized: false } // Enable SSL for Supabase
-    : false, // Disable SSL for localhost
-});
+const createPool = (database: typeof config.database, label: string) => {
+  const pool = new Pool({
+    host: database.host,
+    port: database.port,
+    database: database.name,
+    user: database.user,
+    password: database.password,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 60000,
+    statement_timeout: 30000,
+    ssl: database.host.includes('supabase.com')
+      ? { rejectUnauthorized: false }
+      : false,
+  });
 
-// Test connection
-pool.on('connect', () => {
-  console.log('✅ Database connected successfully');
-});
+  pool.on('connect', () => console.log(`${label} database connection established`));
+  pool.on('error', (err) => console.error(`${label} database pool error:`, err));
+  return pool;
+};
 
-// Handle connection errors gracefully without crashing the server
-pool.on('error', (err) => {
-  console.error('❌ Unexpected database error:', err);
-  console.error('⚠️ Database connection lost. Pool will attempt to reconnect...');
-  // Don't exit the process - let the pool handle reconnection
-});
+// APP_DATABASE_URL must use a non-owner, NOBYPASSRLS role in production.
+const runtimePool = createPool(config.runtimeDatabase, 'Runtime');
+// Reserved for migrations and controlled maintenance, never request handlers.
+const migrationPool = createPool(config.migrationDatabase, 'Migration');
 
-export const query = async (text: string, params?: any[]) => {
-  const start = Date.now();
+export const query = async (text: string, params?: any[]): Promise<QueryResult> => {
+  const startedAt = Date.now();
   const tenantId = getCurrentTenantId();
-  const client = await pool.connect();
+  const client = await runtimePool.connect();
 
   try {
-    await client.query("SELECT set_config('app.current_tenant_id', $1, false)", [String(tenantId)]);
+    // Supabase's transaction pooler may route each transaction to a different
+    // server connection. Set the tenant GUC locally inside the same transaction
+    // as the request query so RLS sees the intended tenant reliably.
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_tenant_id', $1, true)", [String(tenantId)]);
     const result = await client.query(text, params);
-    const duration = Date.now() - start;
-    console.log('Executed query', { text, duration, rows: result.rowCount, tenantId });
+    await client.query('COMMIT');
+
+    console.log('Executed tenant query', {
+      duration: Date.now() - startedAt,
+      rows: result.rowCount,
+      tenantId,
+    });
     return result;
   } catch (error) {
-    console.error('Database query error:', error);
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error('Failed to rollback tenant query:', rollbackError);
+    }
+    console.error('Tenant database query error:', error);
     throw error;
   } finally {
-    try {
-      await client.query("SELECT set_config('app.current_tenant_id', $1, false)", [String(config.tenancy.defaultTenantId)]);
-    } catch (resetError) {
-      console.error('Failed to reset tenant context for pooled client:', resetError);
-    }
     client.release();
   }
 };
 
-export const getClient = async (): Promise<PoolClient> => {
-  const tenantId = getCurrentTenantId();
-  const client = await pool.connect();
-  await client.query("SELECT set_config('app.current_tenant_id', $1, false)", [String(tenantId)]);
+export const migrationQuery = (text: string, params?: any[]) => migrationPool.query(text, params);
 
-  const originalRelease = client.release.bind(client);
-  (client as any).release = (err?: Error | boolean) => {
-    client
-      .query("SELECT set_config('app.current_tenant_id', $1, false)", [String(config.tenancy.defaultTenantId)])
-      .catch((resetError) => {
-        console.error('Failed to reset tenant context on client release:', resetError);
-      })
-      .finally(() => {
-        originalRelease(err as any);
-      });
-  };
+export const getClient = async (): Promise<PoolClient> => runtimePool.connect();
+export const getMigrationClient = async (): Promise<PoolClient> => migrationPool.connect();
 
-  return client;
+export const beginTenantTransaction = async (client: PoolClient): Promise<void> => {
+  await client.query('BEGIN');
+  await client.query(
+    "SELECT set_config('app.current_tenant_id', $1, true)",
+    [String(getCurrentTenantId())]
+  );
 };
 
-export default pool;
+// Default export remains the privileged pool for existing one-off migration
+// scripts. HTTP request code must import `query` or `getClient` explicitly.
+export default migrationPool;

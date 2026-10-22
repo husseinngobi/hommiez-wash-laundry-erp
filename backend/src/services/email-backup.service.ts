@@ -297,7 +297,7 @@ export class EmailBackupService {
 
   async getRecipientEmails(): Promise<string[]> {
     const settingResult = await query(
-      `SELECT setting_value FROM business_settings WHERE setting_key = 'business_email'`
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'business_email' AND tenant_id = app_current_tenant_id()`
     );
     const businessEmail = settingResult.rows[0]?.setting_value;
 

@@ -13,7 +13,8 @@ async function findCustomerByPhone(phone: string, excludeId?: number) {
   let sql = `
     SELECT id, name, customer_id, phone
     FROM customers
-    WHERE regexp_replace(phone, '[^0-9]', '', 'g') = $1
+    WHERE tenant_id = app_current_tenant_id()
+      AND regexp_replace(phone, '[^0-9]', '', 'g') = $1
   `;
 
   if (excludeId !== undefined) {
@@ -33,7 +34,8 @@ async function findCustomerByName(name: string, excludeId?: number) {
   let sql = `
     SELECT id, name, customer_id, phone
     FROM customers
-    WHERE LOWER(TRIM(regexp_replace(name, '\\s+', ' ', 'g'))) = $1
+    WHERE tenant_id = app_current_tenant_id()
+      AND LOWER(TRIM(regexp_replace(name, '\\s+', ' ', 'g'))) = $1
   `;
 
   if (excludeId !== undefined) {
@@ -65,10 +67,10 @@ export const getAllCustomers = async (req: AuthRequest, res: Response) => {
         COALESCE(SUM(COALESCE(o.total_amount, o.total, 0)), 0) as total_spent,
         MAX(o.created_at) as last_order_date
       FROM customers c
-      LEFT JOIN orders o ON c.id = o.customer_id
+      LEFT JOIN orders o ON c.id = o.customer_id AND o.tenant_id = c.tenant_id
     `;
     
-    const conditions: string[] = [];
+    const conditions: string[] = ['c.tenant_id = app_current_tenant_id()'];
     const values: any[] = [];
     let paramCount = 1;
     
@@ -155,7 +157,7 @@ export const getCustomerById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     
     const customerResult = await query(
-      'SELECT * FROM customers WHERE id = $1',
+      'SELECT * FROM customers WHERE id = $1 AND tenant_id = app_current_tenant_id()',
       [id]
     );
     
@@ -167,7 +169,7 @@ export const getCustomerById = async (req: AuthRequest, res: Response) => {
     const ordersResult = await query(
       `SELECT id, order_number, status, total, created_at, due_date
        FROM orders
-       WHERE customer_id = $1
+       WHERE customer_id = $1 AND tenant_id = app_current_tenant_id()
        ORDER BY created_at DESC
        LIMIT 10`,
       [id]
@@ -225,7 +227,7 @@ export const createCustomer = async (req: AuthRequest, res: Response) => {
     const yearResult = await query('SELECT EXTRACT(YEAR FROM CURRENT_DATE) as year');
     const year = yearResult.rows[0].year;
     
-    const countResult = await query('SELECT COUNT(*) as count FROM customers');
+    const countResult = await query('SELECT COUNT(*) as count FROM customers WHERE tenant_id = app_current_tenant_id()');
     const count = parseInt(countResult.rows[0].count) + 1;
     const customer_id = `CUST${year}${String(count).padStart(4, '0')}`;
     
@@ -277,7 +279,7 @@ export const createCustomer = async (req: AuthRequest, res: Response) => {
         const { phone } = req.body;
         try {
           const existing = await query(
-            'SELECT id, customer_id, name, phone FROM customers WHERE phone = $1',
+            'SELECT id, customer_id, name, phone FROM customers WHERE phone = $1 AND tenant_id = app_current_tenant_id()',
             [phone]
           );
           if (existing.rows.length > 0) {
@@ -307,7 +309,7 @@ export const createCustomer = async (req: AuthRequest, res: Response) => {
         const { email } = req.body;
         try {
           const existing = await query(
-            'SELECT id, customer_id, name, email FROM customers WHERE email = $1',
+            'SELECT id, customer_id, name, email FROM customers WHERE email = $1 AND tenant_id = app_current_tenant_id()',
             [email]
           );
           if (existing.rows.length > 0) {
@@ -464,7 +466,7 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
       if (error.constraint === 'unique_customer_phone') {
         try {
           const existing = await query(
-            'SELECT id, customer_id, name, phone FROM customers WHERE phone = $1 AND id != $2',
+            'SELECT id, customer_id, name, phone FROM customers WHERE phone = $1 AND id != $2 AND tenant_id = app_current_tenant_id()',
             [phone, id]
           );
           if (existing.rows.length > 0) {
@@ -492,7 +494,7 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
       if (error.constraint === 'unique_customer_email') {
         try {
           const existing = await query(
-            'SELECT id, customer_id, name, email FROM customers WHERE email = $1 AND id != $2',
+            'SELECT id, customer_id, name, email FROM customers WHERE email = $1 AND id != $2 AND tenant_id = app_current_tenant_id()',
             [email, id]
           );
           if (existing.rows.length > 0) {
@@ -563,7 +565,7 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
     
     // Delete customer (CASCADE will delete their orders automatically)
     const result = await query(
-      'DELETE FROM customers WHERE id = $1 RETURNING id, name',
+      'DELETE FROM customers WHERE id = $1 AND tenant_id = app_current_tenant_id() RETURNING id, name',
       [id]
     );
     
@@ -602,7 +604,7 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
 export const getCustomerStats = async (req: AuthRequest, res: Response) => {
   try {
     // Get total customers
-    const totalResult = await query('SELECT COUNT(*) as total FROM customers');
+    const totalResult = await query('SELECT COUNT(*) as total FROM customers WHERE tenant_id = app_current_tenant_id()');
     const total = parseInt(totalResult.rows[0].total);
     
     // Get customer type distribution

@@ -9,15 +9,15 @@ VALUES (
   '{"enabled": false, "rate": 18}'::jsonb,
   NOW()
 )
-ON CONFLICT (setting_key) 
-DO UPDATE SET 
+ON CONFLICT (tenant_id, setting_key)
+DO UPDATE SET
   setting_value = '{"enabled": false, "rate": 18}'::jsonb,
   updated_at = NOW();
 
 COMMENT ON COLUMN business_settings.setting_key IS 'Setting identifiers: vat_enabled (VAT toggle), business_hours, business_info';
 
 -- Verify VAT setting was added
-SELECT 
+SELECT
   setting_key,
   setting_value,
   updated_at

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { query, getClient } from '../config/database';
+import { query, getClient, beginTenantTransaction } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import PDFDocument from 'pdfkit';
 import { createSystemNotification, notifyAdministrators } from './notifications.controller';
@@ -842,7 +842,7 @@ export const addOrderPayment = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Payment amount must be greater than zero' });
     }
 
-    await client.query('BEGIN');
+    await beginTenantTransaction(client);
 
     const orderRow = await client.query(
       `SELECT * FROM orders WHERE id = $1 FOR UPDATE`,

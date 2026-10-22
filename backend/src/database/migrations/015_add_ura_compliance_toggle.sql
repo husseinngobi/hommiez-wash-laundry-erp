@@ -5,7 +5,7 @@
 -- Add ura_compliance_enabled setting (default: false since business not yet registered)
 INSERT INTO business_settings (setting_key, setting_value, updated_at)
 VALUES ('ura_compliance_enabled', 'false', NOW())
-ON CONFLICT (setting_key) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Add comment explaining the setting
 COMMENT ON COLUMN business_settings.setting_key IS 

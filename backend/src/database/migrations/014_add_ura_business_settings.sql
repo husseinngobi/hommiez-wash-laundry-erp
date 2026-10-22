@@ -10,4 +10,4 @@ VALUES
   ('enable_efris', '"false"', NOW()),
   ('invoice_prefix', '"INV"', NOW()),
   ('invoice_footer_text', '"Thank you for choosing Lush Laundry Services!"', NOW())
-ON CONFLICT (setting_key) DO NOTHING;
+ON CONFLICT DO NOTHING;

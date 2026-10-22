@@ -17,5 +17,5 @@ export const getCurrentTenantId = (): number => {
     return store.tenantId;
   }
 
-  return config.tenancy.defaultTenantId;
+  return config.tenancy.deploymentTenantId;
 };

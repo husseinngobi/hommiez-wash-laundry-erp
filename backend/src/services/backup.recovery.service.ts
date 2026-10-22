@@ -15,21 +15,11 @@ interface BackupAttempt {
 }
 
 /**
- * Initialize the automated_backup_dates table
+ * The tracking table is created by SQL migrations, never by the runtime role.
  */
 export const initializeBackupTracking = async () => {
   try {
-    await query(`
-      CREATE TABLE IF NOT EXISTS automated_backup_dates (
-        id SERIAL PRIMARY KEY,
-        backup_date DATE NOT NULL,
-        attempt_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        status VARCHAR(20) NOT NULL,
-        error_message TEXT,
-        retry_count INTEGER DEFAULT 0,
-        UNIQUE(backup_date)
-      )
-    `);
+    await query('SELECT 1 FROM automated_backup_dates LIMIT 1');
     console.log('✅ Backup tracking table initialized');
   } catch (error) {
     console.error('❌ Failed to initialize backup tracking:', error);
@@ -46,7 +36,7 @@ export const recordBackupAttempt = async (
 ) => {
   try {
     const existing = await query(
-      'SELECT * FROM automated_backup_dates WHERE backup_date = $1',
+      'SELECT * FROM automated_backup_dates WHERE backup_date = $1 AND tenant_id = app_current_tenant_id()',
       [backupDate]
     );
 
@@ -54,13 +44,13 @@ export const recordBackupAttempt = async (
       await query(
         `UPDATE automated_backup_dates 
          SET status = $1, error_message = $2, attempt_date = CURRENT_TIMESTAMP, retry_count = retry_count + 1
-         WHERE backup_date = $3`,
+         WHERE backup_date = $3 AND tenant_id = app_current_tenant_id()`,
         [status, errorMessage, backupDate]
       );
     } else {
       await query(
-        `INSERT INTO automated_backup_dates (backup_date, status, error_message, retry_count)
-         VALUES ($1, $2, $3, 0)`,
+        `INSERT INTO automated_backup_dates (tenant_id, backup_date, status, error_message, retry_count)
+         VALUES (app_current_tenant_id(), $1, $2, $3, 0)`,
         [backupDate, status, errorMessage]
       );
     }
@@ -76,7 +66,8 @@ export const getFailedBackups = async (): Promise<BackupAttempt[]> => {
   try {
     const result = await query(`
       SELECT * FROM automated_backup_dates 
-      WHERE status IN ('FAILED', 'PENDING')
+       WHERE tenant_id = app_current_tenant_id()
+        AND status IN ('FAILED', 'PENDING')
         AND backup_date >= CURRENT_DATE - INTERVAL '7 days'
         AND retry_count < 3
       ORDER BY backup_date DESC
@@ -96,7 +87,8 @@ export const isTodayBackupComplete = async (): Promise<boolean> => {
     const today = new Date().toISOString().split('T')[0];
     const result = await query(
       `SELECT * FROM automated_backup_dates 
-       WHERE backup_date = $1 AND status = 'SUCCESS'`,
+       WHERE backup_date = $1 AND status = 'SUCCESS'
+         AND tenant_id = app_current_tenant_id()`,
       [today]
     );
     return result.rows.length > 0;
@@ -118,7 +110,8 @@ export const getBackupStats = async () => {
         COUNT(CASE WHEN status = 'FAILED' THEN 1 END) as failed,
         COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending
       FROM automated_backup_dates
-      WHERE backup_date >= CURRENT_DATE - INTERVAL '30 days'
+      WHERE tenant_id = app_current_tenant_id()
+        AND backup_date >= CURRENT_DATE - INTERVAL '30 days'
     `);
     return result.rows[0];
   } catch (error) {
@@ -133,9 +126,9 @@ export const getBackupStats = async () => {
 export const markBackupPending = async (backupDate: string) => {
   try {
     await query(
-      `INSERT INTO automated_backup_dates (backup_date, status)
-       VALUES ($1, 'PENDING')
-       ON CONFLICT (backup_date) DO NOTHING`,
+      `INSERT INTO automated_backup_dates (tenant_id, backup_date, status)
+       VALUES (app_current_tenant_id(), $1, 'PENDING')
+       ON CONFLICT (tenant_id, backup_date) DO NOTHING`,
       [backupDate]
     );
   } catch (error) {

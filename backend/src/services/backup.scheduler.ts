@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { query } from '../config/database';
 import { emailBackupService } from './email-backup.service';
+import { runWithTenantContext } from '../utils/tenantContext';
 import {
   initializeBackupTracking,
   recordBackupAttempt,
@@ -14,7 +15,8 @@ const CATCH_UP_DAYS = 7;
 /** Read the enabled/frequency from DB, returns null when backups are disabled. */
 async function getSettings(): Promise<{ frequency: Frequency } | null> {
   try {
-    const result = await query('SELECT enabled, frequency FROM backup_email_settings LIMIT 1');
+    const result = await query(`SELECT enabled, frequency FROM backup_email_settings
+      WHERE tenant_id = app_current_tenant_id() LIMIT 1`);
     if (!result.rows.length || !result.rows[0].enabled) return null;
     const freq: Frequency = ['daily', 'weekly', 'monthly'].includes(result.rows[0].frequency)
       ? result.rows[0].frequency
@@ -109,7 +111,8 @@ async function getUnsentDatesInWindow(days: number): Promise<string[]> {
   const result = await query(
     `SELECT backup_date::text AS backup_date, status
      FROM automated_backup_dates
-     WHERE backup_date = ANY($1::date[])`,
+     WHERE backup_date = ANY($1::date[])
+       AND tenant_id = app_current_tenant_id()`,
     [window]
   );
 
@@ -127,7 +130,8 @@ async function getUnsentAmong(dates: string[]): Promise<string[]> {
   const result = await query(
     `SELECT backup_date::text AS backup_date, status
      FROM automated_backup_dates
-     WHERE backup_date = ANY($1::date[])`,
+     WHERE backup_date = ANY($1::date[])
+       AND tenant_id = app_current_tenant_id()`,
     [dates]
   );
   const success = new Set(
@@ -235,6 +239,23 @@ async function runBackupCheck(source: 'cron' | 'startup'): Promise<void> {
   console.log(`✅ ${source}: monthly period already complete`);
 }
 
+async function runBackupChecksForActiveTenants(source: 'cron' | 'startup'): Promise<void> {
+  const tenants = await query('SELECT id FROM tenants WHERE is_active = TRUE ORDER BY id');
+  for (const row of tenants.rows) {
+    const tenantId = Number(row.id);
+    try {
+      await runWithTenantContext(tenantId, () => runBackupCheck(source));
+    } catch (err: any) {
+      console.error(`Backup check failed for tenant ${tenantId}:`, err?.message || err);
+      await runWithTenantContext(tenantId, async () => {
+        const missing = await getUnsentDatesInWindow(CATCH_UP_DAYS);
+        const dates = missing.length > 0 ? missing : [getKampalaYesterdayYmd()];
+        await recordBatch(dates, 'FAILED', err?.message || 'Unknown backup error');
+      });
+    }
+  }
+}
+
 /**
  * Automated backup scheduler.
  *
@@ -253,7 +274,7 @@ export const initializeBackupScheduler = async () => {
   cron.schedule('0 0 * * *', async () => {
     console.log('🕐 Midnight backup cron fired');
     try {
-      await runBackupCheck('cron');
+      await runBackupChecksForActiveTenants('cron');
     } catch (err: any) {
       console.error('❌ Midnight backup failed:', err.message);
       try {
@@ -268,7 +289,7 @@ export const initializeBackupScheduler = async () => {
 
   setTimeout(async () => {
     try {
-      await runBackupCheck('startup');
+      await runBackupChecksForActiveTenants('startup');
     } catch (err: any) {
       console.error('❌ Startup backup recovery failed:', err.message);
     }

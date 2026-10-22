@@ -17,7 +17,7 @@ VALUES
   ('h60', 'Bed Cover (35,000)', 'general', 'Bedding', 'piece', 35000, 17500, NULL, TRUE),
   ('h61', 'Bed Cover (40,000)', 'general', 'Bedding', 'piece', 40000, 20000, NULL, TRUE),
   ('h62', 'Bed Cover (45,000)', 'general', 'Bedding', 'piece', 45000, 22500, NULL, TRUE)
-ON CONFLICT (item_id) DO UPDATE SET
+ON CONFLICT (tenant_id, item_id) DO UPDATE SET
   name = EXCLUDED.name,
   category = EXCLUDED.category,
   subcategory = EXCLUDED.subcategory,

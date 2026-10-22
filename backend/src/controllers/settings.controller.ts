@@ -21,7 +21,7 @@ interface BusinessHours {
 export const getBusinessHours = async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT setting_value FROM business_settings WHERE setting_key = 'business_hours'`
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'business_hours' AND tenant_id = app_current_tenant_id()`
     );
 
     if (result.rows.length === 0) {
@@ -59,7 +59,7 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response) => {
     const result = await query(
       `INSERT INTO business_settings (setting_key, setting_value, updated_at)
        VALUES ('business_hours', $1, NOW())
-       ON CONFLICT (setting_key) 
+       ON CONFLICT (tenant_id, setting_key)
        DO UPDATE SET setting_value = $1, updated_at = NOW()
        RETURNING setting_value`,
       [JSON.stringify(businessHours)]
@@ -74,7 +74,7 @@ export const updateBusinessHours = async (req: AuthRequest, res: Response) => {
 export const getAllSettings = async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT setting_key, setting_value FROM business_settings`
+      `SELECT setting_key, setting_value FROM business_settings WHERE tenant_id = app_current_tenant_id()`
     );
 
     const settings: Record<string, any> = {};
@@ -107,7 +107,7 @@ export const bulkUpdateSettings = async (req: AuthRequest, res: Response) => {
       await query(
         `INSERT INTO business_settings (setting_key, setting_value, updated_at)
          VALUES ($1, $2, NOW())
-         ON CONFLICT (setting_key) 
+         ON CONFLICT (tenant_id, setting_key)
          DO UPDATE SET setting_value = $2, updated_at = NOW()`,
         [key, JSON.stringify(value === undefined ? '' : value)]
       );
@@ -122,7 +122,7 @@ export const bulkUpdateSettings = async (req: AuthRequest, res: Response) => {
       await query(
         `INSERT INTO business_settings (setting_key, setting_value, updated_at)
          VALUES ('vat_enabled', $1, NOW())
-         ON CONFLICT (setting_key)
+         ON CONFLICT (tenant_id, setting_key)
          DO UPDATE SET setting_value = $1, updated_at = NOW()`,
         [JSON.stringify({ enabled, rate })]
       );
@@ -162,11 +162,16 @@ function parseSettingValue(raw: any): string {
  */
 export const getBusinessInfo = async (req: AuthRequest, res: Response) => {
   try {
-    const result = await query(
-      `SELECT setting_key, setting_value FROM business_settings
-       WHERE setting_key = ANY($1::text[]) OR setting_key = 'business_info'`,
-      [BUSINESS_INFO_KEYS as unknown as string[]]
-    );
+    const tenantId = req.tenant?.id || 1;
+    const [result, tenantResult] = await Promise.all([
+      query(
+        `SELECT setting_key, setting_value FROM business_settings
+         WHERE tenant_id = app_current_tenant_id()
+           AND (setting_key = ANY($1::text[]) OR setting_key = 'business_info')`,
+        [BUSINESS_INFO_KEYS as unknown as string[]]
+      ),
+      query('SELECT tenant_name FROM tenants WHERE id = $1', [tenantId]),
+    ]);
 
     const flat: Record<string, string> = {};
     let legacy: Record<string, string> = {};
@@ -183,7 +188,7 @@ export const getBusinessInfo = async (req: AuthRequest, res: Response) => {
     });
 
     res.json({
-      name: flat.business_name || legacy.name || 'Lush Dry Cleaners & Laundromat',
+      name: flat.business_name || legacy.name || tenantResult.rows[0]?.tenant_name || 'Laundry Business',
       phone: flat.business_phone || legacy.phone || '',
       email: flat.business_email || legacy.email || '',
       location: flat.business_location || legacy.location || '',
@@ -218,7 +223,7 @@ export const updateBusinessInfo = async (req: AuthRequest, res: Response) => {
       await query(
         `INSERT INTO business_settings (setting_key, setting_value, updated_at)
          VALUES ($1, $2, NOW())
-         ON CONFLICT (setting_key)
+         ON CONFLICT (tenant_id, setting_key)
          DO UPDATE SET setting_value = $2, updated_at = NOW()`,
         [key, JSON.stringify(value)]
       );
@@ -243,7 +248,7 @@ export const updateBusinessInfo = async (req: AuthRequest, res: Response) => {
 export const getVATSettings = async (req: AuthRequest, res: Response) => {
   try {
     const result = await query(
-      `SELECT setting_value FROM business_settings WHERE setting_key = 'vat_enabled'`
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'vat_enabled' AND tenant_id = app_current_tenant_id()`
     );
 
     if (result.rows.length === 0) {
@@ -284,7 +289,7 @@ export const updateVATSettings = async (req: AuthRequest, res: Response) => {
     const result = await query(
       `INSERT INTO business_settings (setting_key, setting_value, updated_at)
        VALUES ('vat_enabled', $1, NOW())
-       ON CONFLICT (setting_key) 
+       ON CONFLICT (tenant_id, setting_key)
        DO UPDATE SET setting_value = $1, updated_at = NOW()
        RETURNING setting_value`,
       [JSON.stringify({ enabled, rate: vatRate })]
@@ -334,7 +339,7 @@ export const getBargainLimits = async (req: AuthRequest, res: Response) => {
     });
 
     const discountResult = await query(
-      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits'`
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits' AND tenant_id = app_current_tenant_id()`
     );
     let discountLimits = { desktop_agent: 10, manager: 20, admin: 100 };
     if (discountResult.rows[0]?.setting_value) {
@@ -446,7 +451,7 @@ export const updateBargainLimits = async (req: AuthRequest, res: Response) => {
     await query(
       `INSERT INTO business_settings (setting_key, setting_value, updated_at)
        VALUES ('discount_limits', $1, NOW())
-       ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = NOW()`,
+       ON CONFLICT (tenant_id, setting_key) DO UPDATE SET setting_value = $1, updated_at = NOW()`,
       [JSON.stringify({ desktop_agent: desktopAgentDiscount, manager: managerDiscount, admin: adminDiscount })]
     );
 
@@ -481,17 +486,23 @@ const DEFAULT_PAYMENT_ACCOUNTS = {
   airtel_merchant: '4403961',
 };
 
+const getTenantPaymentAccountDefaults = (tenantId: number) =>
+  tenantId === 1
+    ? DEFAULT_PAYMENT_ACCOUNTS
+    : { centenary_account: '', mtn_code: '', airtel_merchant: '' };
+
 /** Pay-in details for on-account / unpaid / partial WhatsApp receipts */
-export const getPaymentAccounts = async (_req: AuthRequest, res: Response) => {
+export const getPaymentAccounts = async (req: AuthRequest, res: Response) => {
   try {
+    const defaults = getTenantPaymentAccountDefaults(req.tenant?.id || 1);
     const result = await query(
-      `SELECT setting_value FROM business_settings WHERE setting_key = 'payment_accounts'`
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'payment_accounts' AND tenant_id = app_current_tenant_id()`
     );
     if (result.rows.length === 0) {
-      return res.json(DEFAULT_PAYMENT_ACCOUNTS);
+      return res.json(defaults);
     }
     const stored = result.rows[0].setting_value || {};
-    res.json({ ...DEFAULT_PAYMENT_ACCOUNTS, ...stored });
+    res.json({ ...defaults, ...stored });
   } catch (error) {
     console.error('Get payment accounts error:', error);
     res.status(500).json({ error: 'Failed to fetch payment accounts' });
@@ -504,10 +515,11 @@ export const updatePaymentAccounts = async (req: AuthRequest, res: Response) => 
       return res.status(403).json({ error: 'Only administrators can update payment accounts' });
     }
 
+    const defaults = getTenantPaymentAccountDefaults(req.tenant?.id || 1);
     const {
-      centenary_account = DEFAULT_PAYMENT_ACCOUNTS.centenary_account,
-      mtn_code = DEFAULT_PAYMENT_ACCOUNTS.mtn_code,
-      airtel_merchant = DEFAULT_PAYMENT_ACCOUNTS.airtel_merchant,
+      centenary_account = defaults.centenary_account,
+      mtn_code = defaults.mtn_code,
+      airtel_merchant = defaults.airtel_merchant,
     } = req.body;
 
     const value = {
@@ -519,7 +531,7 @@ export const updatePaymentAccounts = async (req: AuthRequest, res: Response) => 
     const result = await query(
       `INSERT INTO business_settings (setting_key, setting_value, updated_at)
        VALUES ('payment_accounts', $1, NOW())
-       ON CONFLICT (setting_key)
+       ON CONFLICT (tenant_id, setting_key)
        DO UPDATE SET setting_value = $1, updated_at = NOW()
        RETURNING setting_value`,
       [JSON.stringify(value)]

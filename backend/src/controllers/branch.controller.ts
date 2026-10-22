@@ -22,10 +22,10 @@ export const getBranches = async (req: AuthRequest, res: Response) => {
   try {
     const { active } = req.query;
 
-    let sql = `SELECT ${BRANCH_COLUMNS} FROM branches`;
+    let sql = `SELECT ${BRANCH_COLUMNS} FROM branches WHERE tenant_id = app_current_tenant_id()`;
     const values: any[] = [];
     if (active !== undefined) {
-      sql += ' WHERE is_active = $1';
+      sql += ' AND is_active = $1';
       values.push(active === 'true');
     }
     sql += ' ORDER BY is_default DESC, name ASC';
@@ -117,13 +117,13 @@ export const createBranch = async (req: AuthRequest, res: Response) => {
     }
 
     // Hard cap: max 5 branches
-    const countResult = await query('SELECT COUNT(*) AS total FROM branches');
+    const countResult = await query('SELECT COUNT(*) AS total FROM branches WHERE tenant_id = app_current_tenant_id()');
     if (Number(countResult.rows[0].total) >= 5) {
       return res.status(409).json({ error: 'Maximum of 5 branches reached. Remove an existing branch to add another.' });
     }
 
     const duplicate = await query(
-      'SELECT id FROM branches WHERE LOWER(TRIM(name)) = LOWER($1) LIMIT 1',
+      'SELECT id FROM branches WHERE tenant_id = app_current_tenant_id() AND LOWER(TRIM(name)) = LOWER($1) LIMIT 1',
       [cleanName]
     );
     if (duplicate.rows.length > 0) {
@@ -131,18 +131,18 @@ export const createBranch = async (req: AuthRequest, res: Response) => {
     }
 
     const cleanCode = normalizeCode(cleanName, code);
-    const codeTaken = await query('SELECT id FROM branches WHERE code = $1 LIMIT 1', [cleanCode]);
+    const codeTaken = await query('SELECT id FROM branches WHERE tenant_id = app_current_tenant_id() AND code = $1 LIMIT 1', [cleanCode]);
     if (codeTaken.rows.length > 0) {
       return res.status(409).json({ error: `Branch code "${cleanCode}" is already in use.` });
     }
 
     if (is_default) {
-      await query('UPDATE branches SET is_default = FALSE WHERE is_default = TRUE');
+      await query('UPDATE branches SET is_default = FALSE WHERE tenant_id = app_current_tenant_id() AND is_default = TRUE');
     }
 
     const result = await query(
-      `INSERT INTO branches (name, code, phone, email, location, address, is_default)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO branches (tenant_id, name, code, phone, email, location, address, is_default)
+       VALUES (app_current_tenant_id(), $1, $2, $3, $4, $5, $6, $7)
        RETURNING ${BRANCH_COLUMNS}`,
       [
         cleanName,
@@ -167,7 +167,7 @@ export const updateBranch = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { name, code, phone, email, location, address, is_active, is_default, payment_modes } = req.body;
 
-    const existing = await query('SELECT id FROM branches WHERE id = $1', [id]);
+    const existing = await query('SELECT id FROM branches WHERE id = $1 AND tenant_id = app_current_tenant_id()', [id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Branch not found' });
     }
@@ -181,7 +181,7 @@ export const updateBranch = async (req: AuthRequest, res: Response) => {
       if (!cleanName) return res.status(400).json({ error: 'Branch name cannot be empty' });
 
       const duplicate = await query(
-        'SELECT id FROM branches WHERE LOWER(TRIM(name)) = LOWER($1) AND id <> $2 LIMIT 1',
+        'SELECT id FROM branches WHERE tenant_id = app_current_tenant_id() AND LOWER(TRIM(name)) = LOWER($1) AND id <> $2 LIMIT 1',
         [cleanName, id]
       );
       if (duplicate.rows.length > 0) {
@@ -194,7 +194,7 @@ export const updateBranch = async (req: AuthRequest, res: Response) => {
     if (code !== undefined) {
       const cleanCode = normalizeCode(String(name || code), code);
       const codeTaken = await query(
-        'SELECT id FROM branches WHERE code = $1 AND id <> $2 LIMIT 1',
+        'SELECT id FROM branches WHERE tenant_id = app_current_tenant_id() AND code = $1 AND id <> $2 LIMIT 1',
         [cleanCode, id]
       );
       if (codeTaken.rows.length > 0) {
@@ -217,7 +217,7 @@ export const updateBranch = async (req: AuthRequest, res: Response) => {
     }
 
     if (is_default) {
-      await query('UPDATE branches SET is_default = FALSE WHERE is_default = TRUE');
+      await query('UPDATE branches SET is_default = FALSE WHERE tenant_id = app_current_tenant_id() AND is_default = TRUE');
       updates.push(`is_default = $${paramCount++}`);
       values.push(true);
     }
@@ -239,7 +239,7 @@ export const updateBranch = async (req: AuthRequest, res: Response) => {
     values.push(id);
 
     const result = await query(
-      `UPDATE branches SET ${updates.join(', ')} WHERE id = $${paramCount} RETURNING ${BRANCH_COLUMNS}`,
+      `UPDATE branches SET ${updates.join(', ')} WHERE id = $${paramCount} AND tenant_id = app_current_tenant_id() RETURNING ${BRANCH_COLUMNS}`,
       values
     );
 
@@ -254,7 +254,7 @@ export const deleteBranch = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
-    const branch = await query('SELECT id, name, is_default FROM branches WHERE id = $1', [id]);
+    const branch = await query('SELECT id, name, is_default FROM branches WHERE id = $1 AND tenant_id = app_current_tenant_id()', [id]);
     if (branch.rows.length === 0) {
       return res.status(404).json({ error: 'Branch not found' });
     }
@@ -264,22 +264,22 @@ export const deleteBranch = async (req: AuthRequest, res: Response) => {
 
     const usage = await query(
       `SELECT
-         (SELECT COUNT(*) FROM orders WHERE branch_id = $1) AS order_count,
-         (SELECT COUNT(*) FROM users WHERE branch_id = $1) AS user_count`,
+         (SELECT COUNT(*) FROM orders WHERE branch_id = $1 AND tenant_id = app_current_tenant_id()) AS order_count,
+         (SELECT COUNT(*) FROM users WHERE branch_id = $1 AND tenant_id = app_current_tenant_id()) AS user_count`,
       [id]
     );
     const orderCount = parseInt(usage.rows[0].order_count, 10);
     const userCount = parseInt(usage.rows[0].user_count, 10);
 
     if (orderCount > 0 || userCount > 0) {
-      await query('UPDATE branches SET is_active = FALSE, updated_at = NOW() WHERE id = $1', [id]);
+      await query('UPDATE branches SET is_active = FALSE, updated_at = NOW() WHERE id = $1 AND tenant_id = app_current_tenant_id()', [id]);
       return res.status(409).json({
         error: `"${branch.rows[0].name}" has ${orderCount} order(s) and ${userCount} staff member(s) attached, so it cannot be deleted. It has been deactivated instead.`,
         deactivated: true,
       });
     }
 
-    await query('DELETE FROM branches WHERE id = $1', [id]);
+    await query('DELETE FROM branches WHERE id = $1 AND tenant_id = app_current_tenant_id()', [id]);
     res.json({ message: 'Branch deleted', deleted: true });
   } catch (error) {
     console.error('Delete branch error:', error);

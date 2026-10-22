@@ -1,4 +1,4 @@
-import pool from '../config/database';
+import { query } from '../config/database';
 
 export type LogSeverity = 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
 
@@ -21,7 +21,7 @@ export interface LogActivityParams {
  */
 export async function logActivity(params: LogActivityParams): Promise<void> {
   try {
-    await pool.query(
+    await query(
       `INSERT INTO activity_logs (
         user_id, user_email, user_name, user_role,
         action, resource_type, resource_id, details,

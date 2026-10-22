@@ -6,6 +6,7 @@ import SessionExpiredModal from '@/components/SessionExpiredModal';
 
 interface User {
   id: number;
+  tenant_id?: number;
   email: string;
   full_name: string;
   phone?: string;

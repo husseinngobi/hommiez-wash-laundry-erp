@@ -227,7 +227,7 @@ export const getReminderSettings = async (req: AuthRequest, res: Response) => {
     const settingsResult = await query(
       `SELECT setting_value 
        FROM business_settings 
-       WHERE setting_key = 'reminder_automation'`
+       WHERE setting_key = 'reminder_automation' AND tenant_id = app_current_tenant_id()`
     );
 
     // Default settings if not configured
@@ -283,7 +283,7 @@ export const updateReminderSettings = async (req: AuthRequest, res: Response) =>
     await query(
       `INSERT INTO business_settings (setting_key, setting_value, updated_at)
        VALUES ('reminder_automation', $1, CURRENT_TIMESTAMP)
-       ON CONFLICT (setting_key)
+       ON CONFLICT (tenant_id, setting_key)
        DO UPDATE SET setting_value = $1, updated_at = CURRENT_TIMESTAMP`,
       [JSON.stringify(settings)]
     );
@@ -307,7 +307,7 @@ export const getOrdersNeedingReminders = async (req: AuthRequest, res: Response)
   try {
     // Get reminder settings
     const settingsResult = await query(
-      `SELECT setting_value FROM business_settings WHERE setting_key = 'reminder_automation'`
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'reminder_automation' AND tenant_id = app_current_tenant_id()`
     );
 
     if (settingsResult.rows.length === 0 || !settingsResult.rows[0].setting_value.enabled) {

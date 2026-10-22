@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { validationResult } from 'express-validator';
-import { query, getClient } from '../config/database';
+import { query, getClient, beginTenantTransaction } from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { OrderStatus } from '../models/Order';
 import { sendOrderDeliveredNotification, sendOrderReadyNotification, sendOrderReceipt } from '../services/sms.service';
@@ -36,7 +36,8 @@ export async function resolveVatConfig(
 ): Promise<{ enabled: boolean; rate: number }> {
   const result = await db.query(
     `SELECT setting_key, setting_value FROM business_settings
-     WHERE setting_key IN ('ura_compliance_enabled', 'vat_enabled', 'vat_rate')`
+     WHERE setting_key IN ('ura_compliance_enabled', 'vat_enabled', 'vat_rate')
+       AND tenant_id = app_current_tenant_id()`
   );
 
   const settings: Record<string, any> = {};
@@ -250,7 +251,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ errors: errors.array() });
     }
     
-    await client.query('BEGIN');
+    await beginTenantTransaction(client);
     
     const { 
       customer_id, 
@@ -321,7 +322,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     const catalogueMode = catalogueWeight > 0;
     const catalogueRateResult = catalogueMode
       ? await client.query(
-        `SELECT setting_value FROM business_settings WHERE setting_key IN ('standard_kg_rate', 'kilogram_rate') ORDER BY setting_key = 'standard_kg_rate' DESC LIMIT 1`
+        `SELECT setting_value FROM business_settings WHERE setting_key IN ('standard_kg_rate', 'kilogram_rate') AND tenant_id = app_current_tenant_id() ORDER BY setting_key = 'standard_kg_rate' DESC LIMIT 1`
       )
       : { rows: [] };
     const catalogueRate = catalogueMode
@@ -338,7 +339,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         : item.pricing_mode === 'kg' ? 'kg' : 'piece';
       const requestedKgRate = Number(item.kg_rate ?? 0);
       const standardKgRateResult = await client.query(
-        `SELECT setting_value FROM business_settings WHERE setting_key IN ('standard_kg_rate', 'kilogram_rate') ORDER BY setting_key = 'standard_kg_rate' DESC LIMIT 1`
+        `SELECT setting_value FROM business_settings WHERE setting_key IN ('standard_kg_rate', 'kilogram_rate') AND tenant_id = app_current_tenant_id() ORDER BY setting_key = 'standard_kg_rate' DESC LIMIT 1`
       );
       const standardKgRate = Number(
         standardKgRateResult.rows[0]?.setting_value && !Number.isNaN(Number(JSON.parse(standardKgRateResult.rows[0].setting_value)))
@@ -484,7 +485,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     const discountPercentageValue = parseFloat(discount_percentage.toString()) || 0;
     let maxDiscountForRole = getMaxDiscountForRole(req.user!.role);
     const discountSetting = await client.query(
-      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits'`
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits' AND tenant_id = app_current_tenant_id()`
     );
     if (discountSetting.rows[0]?.setting_value) {
       try {
@@ -832,7 +833,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       
       // 🔥 Check automation setting before sending WhatsApp order confirmation
       const automationCheck = await query(
-        `SELECT setting_value FROM automation_settings WHERE setting_key = 'whatsapp_auto_send_receipt'`
+        `SELECT setting_value FROM automation_settings WHERE setting_key = 'whatsapp_auto_send_receipt' AND tenant_id = app_current_tenant_id()`
       );
       const autoSendReceipt = automationCheck.rows[0]?.setting_value ?? true;
       
@@ -1370,7 +1371,7 @@ export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
       
       // Check automation setting before sending WhatsApp ready notification
       const automationCheck = await query(
-        `SELECT setting_value FROM automation_settings WHERE setting_key = 'whatsapp_auto_send_ready'`
+        `SELECT setting_value FROM automation_settings WHERE setting_key = 'whatsapp_auto_send_ready' AND tenant_id = app_current_tenant_id()`
       );
       const autoSendReady = automationCheck.rows[0]?.setting_value ?? true;
       
@@ -1480,7 +1481,7 @@ export const deleteOrder = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     const userName = req.user?.full_name || 'Administrator';
     
-    await client.query('BEGIN');
+    await beginTenantTransaction(client);
     
     // Get complete order details with customer info
     const orderCheck = await client.query(
@@ -1653,7 +1654,7 @@ export const bulkDeleteOrders = async (req: AuthRequest, res: Response) => {
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
-    await client.query('BEGIN');
+    await beginTenantTransaction(client);
 
     // Only delete PAID and DELIVERED orders
     const deleteSql = `

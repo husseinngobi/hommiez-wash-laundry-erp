@@ -11,6 +11,7 @@ router.get('/', authenticate as any, async (req: Request, res: Response) => {
     const result = await query(`
       SELECT setting_key, setting_value, description, updated_at
       FROM automation_settings
+      WHERE tenant_id = app_current_tenant_id()
       ORDER BY setting_key
     `);
 
@@ -61,7 +62,7 @@ router.put(
       await query(`
         UPDATE automation_settings
         SET setting_value = $1, updated_at = CURRENT_TIMESTAMP, updated_by = $2
-        WHERE setting_key = $3
+        WHERE tenant_id = app_current_tenant_id() AND setting_key = $3
       `, [setting.value, userId, setting.key]);
     }
 
@@ -69,6 +70,7 @@ router.put(
     const result = await query(`
       SELECT setting_key, setting_value, description, updated_at
       FROM automation_settings
+      WHERE tenant_id = app_current_tenant_id()
       ORDER BY setting_key
     `);
 

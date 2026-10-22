@@ -27,18 +27,10 @@ export const createBackup = async (req: AuthRequest, res: Response) => {
 
       // Log to history the same way the JSON path does
       try {
-        await query(`
-          CREATE TABLE IF NOT EXISTS backup_history (
-            id SERIAL PRIMARY KEY,
-            type VARCHAR(100),
-            created_by VARCHAR(255),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            size VARCHAR(50)
-          )
-        `);
         const sizeKB = (pdfBuffer.length / 1024).toFixed(2);
         await query(
-          'INSERT INTO backup_history (type, created_by, size) VALUES ($1, $2, $3)',
+          `INSERT INTO backup_history (tenant_id, type, created_by, size)
+           VALUES (app_current_tenant_id(), $1, $2, $3)`,
           [`PDF: ${typeLabel}`, req.user?.email, `${sizeKB} KB`]
         );
       } catch (historyError) {
@@ -57,19 +49,29 @@ export const createBackup = async (req: AuthRequest, res: Response) => {
     // Parse tables - handle both string and array formats
     let tablesToBackup: string[];
     if (tables === 'all') {
-      tablesToBackup = ['customers', 'orders', 'order_items', 'users', 'price_list', 'inventory_items', 'inventory_transactions', 'deliveries', 'expenses', 'notifications'];
+      tablesToBackup = ['customers', 'orders', 'order_items', 'users', 'price_items', 'inventory_items', 'inventory_transactions', 'deliveries', 'expenses', 'notifications', 'payments'];
     } else if (typeof tables === 'string') {
       tablesToBackup = tables.split(',').map((t: string) => t.trim());
     } else if (Array.isArray(tables)) {
       tablesToBackup = tables;
     } else {
-      tablesToBackup = ['customers', 'orders', 'order_items', 'users', 'price_list', 'inventory_items', 'inventory_transactions', 'deliveries', 'expenses', 'notifications'];
+      tablesToBackup = ['customers', 'orders', 'order_items', 'users', 'price_items', 'inventory_items', 'inventory_transactions', 'deliveries', 'expenses', 'notifications', 'payments'];
+    }
+
+    const allowedBackupTables = new Set([
+      'customers', 'orders', 'order_items', 'users', 'price_items',
+      'inventory_items', 'inventory_transactions', 'deliveries', 'expenses',
+      'notifications', 'payments', 'pending_payments', 'payroll_employees',
+      'salary_payments', 'business_settings', 'automation_settings',
+    ]);
+    if (tablesToBackup.some((table) => !allowedBackupTables.has(table))) {
+      return res.status(400).json({ error: 'One or more requested tables cannot be backed up.' });
     }
     
     // Export each table
     for (const table of tablesToBackup) {
       try {
-        const result = await query(`SELECT * FROM ${table}`);
+        const result = await query(`SELECT * FROM public.${table} WHERE tenant_id = app_current_tenant_id()`);
         backupData.data[table] = result.rows;
       } catch (err) {
         console.error(`Error backing up table ${table}:`, err);
@@ -87,19 +89,10 @@ export const createBackup = async (req: AuthRequest, res: Response) => {
     
     // Log backup to history
     try {
-      await query(`
-        CREATE TABLE IF NOT EXISTS backup_history (
-          id SERIAL PRIMARY KEY,
-          type VARCHAR(100),
-          created_by VARCHAR(255),
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          size VARCHAR(50)
-        )
-      `);
-      
       const backupType = tables === 'all' ? 'Full Backup' : `Partial: ${tables}`;
       await query(
-        'INSERT INTO backup_history (type, created_by, size) VALUES ($1, $2, $3)',
+        `INSERT INTO backup_history (tenant_id, type, created_by, size)
+         VALUES (app_current_tenant_id(), $1, $2, $3)`,
         [backupType, req.user?.email, backupSize]
       );
     } catch (historyError) {
@@ -198,19 +191,9 @@ export const deleteOldData = async (req: AuthRequest, res: Response) => {
  */
 export const getBackupHistory = async (req: AuthRequest, res: Response) => {
   try {
-    // Create backup_history table if it doesn't exist
-    await query(`
-      CREATE TABLE IF NOT EXISTS backup_history (
-        id SERIAL PRIMARY KEY,
-        type VARCHAR(100),
-        created_by VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        size VARCHAR(50)
-      )
-    `);
-
     const result = await query(`
       SELECT * FROM backup_history 
+      WHERE tenant_id = app_current_tenant_id()
       ORDER BY created_at DESC 
       LIMIT 10
     `);
@@ -229,27 +212,8 @@ export const saveEmailBackupSettings = async (req: AuthRequest, res: Response) =
   try {
     const { enabled, email, frequency, categories } = req.body;
     
-    // Create settings table if it doesn't exist
-    await query(`
-      CREATE TABLE IF NOT EXISTS backup_email_settings (
-        id SERIAL PRIMARY KEY,
-        enabled BOOLEAN DEFAULT false,
-        email VARCHAR(255),
-        frequency VARCHAR(50),
-        categories JSONB DEFAULT '["orders", "customers", "payments"]'::jsonb,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_by VARCHAR(255)
-      )
-    `);
-
-    // Table may already exist from before this column was added — ensure it's there
-    await query(`
-      ALTER TABLE backup_email_settings 
-      ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '["orders", "customers", "payments"]'::jsonb
-    `);
-
     // Check if settings exist
-    const existing = await query('SELECT * FROM backup_email_settings LIMIT 1');
+    const existing = await query('SELECT * FROM backup_email_settings WHERE tenant_id = app_current_tenant_id() LIMIT 1');
     
     if (existing.rows.length > 0) {
       // Update existing
@@ -257,14 +221,14 @@ export const saveEmailBackupSettings = async (req: AuthRequest, res: Response) =
         `UPDATE backup_email_settings 
          SET enabled = $1, email = $2, frequency = $3, categories = $4,
              updated_at = CURRENT_TIMESTAMP, updated_by = $5
-         WHERE id = $6`,
+         WHERE id = $6 AND tenant_id = app_current_tenant_id()`,
         [enabled, email, frequency, JSON.stringify(categories || ['orders', 'customers', 'payments']), req.user?.email, existing.rows[0].id]
       );
     } else {
       // Insert new
       await query(
-        `INSERT INTO backup_email_settings (enabled, email, frequency, categories, updated_by) 
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO backup_email_settings (tenant_id, enabled, email, frequency, categories, updated_by)
+         VALUES (app_current_tenant_id(), $1, $2, $3, $4, $5)`,
         [enabled, email, frequency, JSON.stringify(categories || ['orders', 'customers', 'payments']), req.user?.email]
       );
     }
@@ -284,26 +248,7 @@ export const saveEmailBackupSettings = async (req: AuthRequest, res: Response) =
  */
 export const getEmailBackupSettings = async (req: AuthRequest, res: Response) => {
   try {
-    // Create settings table if it doesn't exist
-    await query(`
-      CREATE TABLE IF NOT EXISTS backup_email_settings (
-        id SERIAL PRIMARY KEY,
-        enabled BOOLEAN DEFAULT false,
-        email VARCHAR(255),
-        frequency VARCHAR(50),
-        categories JSONB DEFAULT '["orders", "customers", "payments"]'::jsonb,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_by VARCHAR(255)
-      )
-    `);
-
-    // Table may already exist from before this column was added — ensure it's there
-    await query(`
-      ALTER TABLE backup_email_settings 
-      ADD COLUMN IF NOT EXISTS categories JSONB DEFAULT '["orders", "customers", "payments"]'::jsonb
-    `);
-
-    const result = await query('SELECT * FROM backup_email_settings LIMIT 1');
+    const result = await query('SELECT * FROM backup_email_settings WHERE tenant_id = app_current_tenant_id() LIMIT 1');
     
     if (result.rows.length > 0) {
       res.json(result.rows[0]);

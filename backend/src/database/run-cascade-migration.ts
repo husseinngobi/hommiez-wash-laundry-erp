@@ -1,9 +1,9 @@
-import { getClient } from '../config/database';
+import { getMigrationClient } from '../config/database';
 import * as fs from 'fs';
 import * as path from 'path';
 
 async function runMigration() {
-  const client = await getClient();
+  const client = await getMigrationClient();
   
   try {
     console.log('Running CASCADE delete migration...');

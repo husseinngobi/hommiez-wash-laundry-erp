@@ -130,6 +130,7 @@ app.use(errorHandler);
 // Start server
 const startServer = async () => {
   try {
+    if (config.runStartupMigrations) {
     // Ensure DB accepts WASH/IRON/EXPRESS (fixes legacy wash|iron-only constraint)
     try {
       await ensureOrderItemServiceTypes();
@@ -245,6 +246,10 @@ const startServer = async () => {
       await ensureBackdatedPaymentDates();
     } catch (backdatedPayErr) {
       console.error('⚠️ backdated payment date repair skipped or failed:', backdatedPayErr);
+    }
+
+    } else {
+      console.log('Startup migrations are disabled; apply database migrations before deployment.');
     }
 
     // Ensure upload directories exist

@@ -39,6 +39,7 @@ export const register = async (req: AuthRequest, res: Response) => {
     }
     
     const { email, password, full_name, phone, role } = req.body;
+    const tenantId = config.tenancy.deploymentTenantId;
 
     if (!phone) {
       return res.status(400).json({ error: 'Phone number is required' });
@@ -58,8 +59,8 @@ export const register = async (req: AuthRequest, res: Response) => {
       `SELECT MAX(max_bargain_amount) AS max_bargain_amount,
               MAX(max_item_bargain_amount) AS max_item_bargain_amount
        FROM users
-       WHERE role = $1`,
-      [userRole]
+       WHERE role = $1 AND tenant_id = $2`,
+      [userRole, tenantId]
     );
     const configuredLimits = roleLimitsResult.rows[0] || {};
     const maxBargainAmount = getEffectiveBargainLimit(userRole, configuredLimits.max_bargain_amount);
@@ -69,8 +70,9 @@ export const register = async (req: AuthRequest, res: Response) => {
       `SELECT id, email, deleted_at
        FROM users
        WHERE LOWER(email) = LOWER($1)
+         AND tenant_id = $2
        LIMIT 1`,
-      [email]
+      [email, tenantId]
     );
 
     let newUser;
@@ -98,7 +100,7 @@ export const register = async (req: AuthRequest, res: Response) => {
                  max_bargain_amount = $7,
                  max_item_bargain_amount = $8,
                  updated_at = NOW()
-               WHERE id = $9
+               WHERE id = $9 AND tenant_id = $10
              RETURNING id, email, full_name, phone, role, status, created_at`
           : `UPDATE users
              SET password = $1,
@@ -114,7 +116,7 @@ export const register = async (req: AuthRequest, res: Response) => {
                  account_locked_until = NULL,
                  last_failed_login = NULL,
                  updated_at = NOW()
-             WHERE id = $7
+             WHERE id = $7 AND tenant_id = $8
              RETURNING id, email, full_name, phone, role, status, created_at`;
 
         const restoreValues = hasDeletedBy
@@ -128,6 +130,7 @@ export const register = async (req: AuthRequest, res: Response) => {
               maxBargainAmount,
               maxItemBargainAmount,
               existingUser.id,
+              tenantId,
             ]
           : [
               hashedPassword,
@@ -137,6 +140,7 @@ export const register = async (req: AuthRequest, res: Response) => {
               status,
               req.user?.id || null,
               existingUser.id,
+              tenantId,
             ];
 
         const result = await query(restoreQuery, restoreValues);
@@ -147,12 +151,12 @@ export const register = async (req: AuthRequest, res: Response) => {
       }
     } else {
       const result = await query(
-        `INSERT INTO users (email, password, full_name, phone, role, status, created_by,
+        `INSERT INTO users (email, password, full_name, phone, role, status, created_by, tenant_id,
                            max_bargain_amount, max_item_bargain_amount)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id, email, full_name, phone, role, status, created_at`,
         [email, hashedPassword, full_name, phone, userRole, status, req.user?.id || null,
-          maxBargainAmount, maxItemBargainAmount]
+          tenantId, maxBargainAmount, maxItemBargainAmount]
       );
 
       newUser = result.rows[0];
@@ -201,9 +205,10 @@ export const login = async (req: AuthRequest, res: Response) => {
 
     const result = await query(
       `SELECT id, email, password, full_name, phone, role, status, profile_picture, profile_picture_url,
+              tenant_id,
               branch_id, failed_login_attempts, account_locked_until, last_failed_login
-       FROM users WHERE email = $1`,
-      [email]
+       FROM users WHERE email = $1 AND tenant_id = $2`,
+      [email, config.tenancy.deploymentTenantId]
     );
     
     if (result.rows.length === 0) {
@@ -274,8 +279,8 @@ export const login = async (req: AuthRequest, res: Response) => {
          SET failed_login_attempts = $1,
              last_failed_login = NOW(),
              account_locked_until = $2
-         WHERE id = $3`,
-        [newAttempts, lockUntil, user.id]
+         WHERE id = $3 AND tenant_id = $4`,
+        [newAttempts, lockUntil, user.id, user.tenant_id]
       );
 
       // Log failed login attempt - wrong password
@@ -306,6 +311,7 @@ export const login = async (req: AuthRequest, res: Response) => {
         email: user.email, 
         full_name: user.full_name, 
         role: user.role,
+        tenant_id: user.tenant_id,
         profile_picture: user.profile_picture,
         profile_picture_url: user.profile_picture_url,
         is_system_admin: isSystemAdminEmail(user.email),
@@ -322,10 +328,10 @@ export const login = async (req: AuthRequest, res: Response) => {
            failed_login_attempts = 0,
            account_locked_until = NULL,
            last_failed_login = NULL
-       WHERE id = $1 
+       WHERE id = $1 AND tenant_id = $2
        RETURNING id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
-                 branch_id, created_at, updated_at, last_login, max_bargain_amount, max_item_bargain_amount`,
-      [user.id]
+                 tenant_id, branch_id, created_at, updated_at, last_login, max_bargain_amount, max_item_bargain_amount`,
+      [user.id, user.tenant_id]
     );
     
     const updatedUser = updatedUserResult.rows[0];
@@ -370,11 +376,11 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     const result = await query(
       `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.status, u.profile_picture,
               u.profile_picture_url, u.created_at, u.updated_at, u.last_login, u.auth_provider,
-              u.max_bargain_amount, u.max_item_bargain_amount, u.branch_id, b.name AS branch_name
+              u.max_bargain_amount, u.max_item_bargain_amount, u.tenant_id, u.branch_id, b.name AS branch_name
        FROM users u
        LEFT JOIN branches b ON b.id = u.branch_id
-       WHERE u.id = $1`,
-      [req.user!.id]
+       WHERE u.id = $1 AND u.tenant_id = $2`,
+      [req.user!.id, config.tenancy.deploymentTenantId]
     );
     
     if (result.rows.length === 0) {
@@ -387,7 +393,7 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     user.max_item_bargain_amount = Number(user.max_item_bargain_amount) || 0;
     user.max_discount_percent = user.role === 'DESKTOP_AGENT' ? 10 : user.role === 'MANAGER' ? 20 : 100;
     const discountSetting = await query(
-      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits'`
+      `SELECT setting_value FROM business_settings WHERE setting_key = 'discount_limits' AND tenant_id = app_current_tenant_id()`
     );
     if (discountSetting.rows[0]?.setting_value) {
       try {
@@ -412,7 +418,7 @@ export const forgotPassword = async (req: AuthRequest, res: Response) => {
     
     // Check if user exists
     const result = await query(
-      'SELECT id, email, full_name, role FROM users WHERE email = $1',
+      'SELECT id, email, full_name, role FROM users WHERE email = $1 AND tenant_id = app_current_tenant_id()',
       [email]
     );
     

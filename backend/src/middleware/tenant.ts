@@ -1,44 +1,33 @@
 import { NextFunction, Response } from 'express';
 import { config } from '../config';
-import { AuthRequest } from './auth';
+import { query } from '../config/database';
+import type { AuthRequest } from './auth';
 import { runWithTenantContext } from '../utils/tenantContext';
 
-const parsePositiveInt = (value: unknown): number | null => {
-  if (value === undefined || value === null) return null;
-
-  const parsed = Number.parseInt(String(value), 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return null;
-  }
-
-  return parsed;
-};
-
 export const resolveTenantIdFromRequest = (req: AuthRequest): number => {
-  const defaultTenantId = config.tenancy.defaultTenantId;
-
-  if (!config.tenancy.allowRequestOverride) {
-    return defaultTenantId;
-  }
-
-  const headerTenantId = parsePositiveInt(req.headers['x-tenant-id']);
-  if (headerTenantId) return headerTenantId;
-
-  const queryTenantId = parsePositiveInt(req.query?.tenant_id);
-  if (queryTenantId) return queryTenantId;
-
-  const bodyTenantId = parsePositiveInt((req.body as Record<string, unknown> | undefined)?.tenant_id);
-  if (bodyTenantId) return bodyTenantId;
-
-  return defaultTenantId;
+  void req;
+  return config.tenancy.deploymentTenantId;
 };
 
-export const tenantContextMiddleware = (req: AuthRequest, _res: Response, next: NextFunction) => {
+export const tenantContextMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
   const tenantId = resolveTenantIdFromRequest(req);
 
   req.tenant = {
     id: tenantId,
   };
 
-  runWithTenantContext(tenantId, () => next());
+  runWithTenantContext(tenantId, async () => {
+    try {
+      const tenant = await query(
+        'SELECT id FROM tenants WHERE id = $1 AND is_active = TRUE',
+        [tenantId]
+      );
+      if (tenant.rows.length === 0) {
+        return res.status(403).json({ error: 'Tenant is unavailable' });
+      }
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
 };

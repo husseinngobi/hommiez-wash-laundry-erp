@@ -40,10 +40,10 @@ export const getAllPrices = async (req: AuthRequest, res: Response) => {
           ELSE false
         END as has_active_discount
       FROM price_items 
-      WHERE 1=1
+      WHERE tenant_id = $1
     `;
-    const values: any[] = [];
-    let paramCount = 1;
+    const values: any[] = [req.tenant?.id || 1];
+    let paramCount = 2;
     
     if (category) {
       sql += ` AND category = $${paramCount++}`;
@@ -71,8 +71,8 @@ export const getPriceById = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     
     const result = await query(
-      'SELECT * FROM price_items WHERE id = $1',
-      [id]
+      'SELECT * FROM price_items WHERE id = $1 AND tenant_id = $2',
+      [id, req.tenant?.id || 1]
     );
     
     if (result.rows.length === 0) {
@@ -94,11 +94,11 @@ const CATEGORY_PREFIX: Record<string, string> = {
   home_services: 'hs',
 };
 
-async function generateNextItemId(category: string): Promise<string> {
+async function generateNextItemId(category: string, tenantId: number): Promise<string> {
   const prefix = CATEGORY_PREFIX[category] || 'x';
   const result = await query(
-    `SELECT item_id FROM price_items WHERE item_id ~ $1`,
-    [`^${prefix}\\d+$`]
+    `SELECT item_id FROM price_items WHERE item_id ~ $1 AND tenant_id = $2`,
+    [`^${prefix}\\d+$`, tenantId]
   );
 
   let max = 0;
@@ -114,6 +114,7 @@ async function generateNextItemId(category: string): Promise<string> {
 
 export const createPrice = async (req: AuthRequest, res: Response) => {
   try {
+    const tenantId = req.tenant?.id || 1;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -134,8 +135,8 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
     // never ends up with two "Doctor Suit" rows staff cannot tell apart.
     const duplicate = await query(
       `SELECT id, name, is_active FROM price_items
-       WHERE LOWER(TRIM(name)) = LOWER($1) LIMIT 1`,
-      [name]
+       WHERE LOWER(TRIM(name)) = LOWER($1) AND tenant_id = $2 LIMIT 1`,
+      [name, tenantId]
     );
     if (duplicate.rows.length > 0) {
       const existing = duplicate.rows[0];
@@ -151,7 +152,7 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
 
     // Auto-generate item_id when not provided (UI expects this)
     if (!item_id || String(item_id).trim() === '') {
-      item_id = await generateNextItemId(category);
+      item_id = await generateNextItemId(category, tenantId);
     }
 
     // Default ironing to half wash price when omitted
@@ -163,10 +164,10 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
     const resolvedPricePerKg = resolvedPricingType === 'PER_KG' ? (Number(price_per_kg) || Number(price) || 0) : 0;
 
     const result = await query(
-      `INSERT INTO price_items (item_id, name, category, subcategory, unit, price, ironing_price, express_price, pricing_type, price_per_kg)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO price_items (item_id, name, category, subcategory, unit, price, ironing_price, express_price, pricing_type, price_per_kg, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [item_id, name, category, subcategory || null, unit, price, ironing_price, express_price ?? null, resolvedPricingType, resolvedPricePerKg]
+      [item_id, name, category, subcategory || null, unit, price, ironing_price, express_price ?? null, resolvedPricingType, resolvedPricePerKg, tenantId]
     );
     
     res.status(201).json({
@@ -184,6 +185,7 @@ export const createPrice = async (req: AuthRequest, res: Response) => {
 
 export const updatePrice = async (req: AuthRequest, res: Response) => {
   try {
+    const tenantId = req.tenant?.id || 1;
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -212,8 +214,8 @@ export const updatePrice = async (req: AuthRequest, res: Response) => {
       const cleanName = String(name).trim().replace(/\s+/g, ' ');
       const duplicate = await query(
         `SELECT id, name FROM price_items
-         WHERE LOWER(TRIM(name)) = LOWER($1) AND id <> $2 LIMIT 1`,
-        [cleanName, id]
+         WHERE LOWER(TRIM(name)) = LOWER($1) AND id <> $2 AND tenant_id = $3 LIMIT 1`,
+        [cleanName, id, tenantId]
       );
       if (duplicate.rows.length > 0) {
         return res.status(409).json({
@@ -281,10 +283,11 @@ export const updatePrice = async (req: AuthRequest, res: Response) => {
     }
     
     values.push(id);
+    values.push(tenantId);
     
     const result = await query(
       `UPDATE price_items SET ${updates.join(', ')}
-       WHERE id = $${paramCount}
+       WHERE id = $${paramCount} AND tenant_id = $${paramCount + 1}
        RETURNING *`,
       values
     );
@@ -305,6 +308,7 @@ export const updatePrice = async (req: AuthRequest, res: Response) => {
 
 export const deletePrice = async (req: AuthRequest, res: Response) => {
   try {
+    const tenantId = req.tenant?.id || 1;
     const { id } = req.params;
     
     // BUSINESS RULE: Check if used in ANY orders (especially unpaid/partial/pending)
@@ -315,8 +319,8 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
         COUNT(DISTINCT CASE WHEN LOWER(COALESCE(o.status::text, o.order_status::text, '')) NOT IN ('delivered', 'cancelled') THEN o.id END) as pending_orders
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
-      WHERE oi.price_item_id = $1
-    `, [id]);
+      WHERE oi.price_item_id = $1 AND oi.tenant_id = $2 AND o.tenant_id = $2
+    `, [id, tenantId]);
     
     const totalOrders = parseInt(ordersCheck.rows[0].total_orders);
     const unpaidOrders = parseInt(ordersCheck.rows[0].unpaid_orders);
@@ -337,8 +341,8 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
       
       // Deactivate instead of delete (preserve data integrity)
       await query(
-        'UPDATE price_items SET is_active = false WHERE id = $1',
-        [id]
+        'UPDATE price_items SET is_active = false WHERE id = $1 AND tenant_id = $2',
+        [id, tenantId]
       );
       
       // 409 (not 200) so the UI never reports this as a successful delete.
@@ -354,8 +358,8 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
     
     // No orders at all - safe to delete permanently
     const result = await query(
-      'DELETE FROM price_items WHERE id = $1 RETURNING id',
-      [id]
+      'DELETE FROM price_items WHERE id = $1 AND tenant_id = $2 RETURNING id',
+      [id, tenantId]
     );
     
     if (result.rows.length === 0) {
@@ -366,7 +370,10 @@ export const deletePrice = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     // Another table still references this item (race, or a link we do not pre-check)
     if (error?.code === '23503') {
-      await query('UPDATE price_items SET is_active = false WHERE id = $1', [req.params.id]).catch(() => undefined);
+      await query(
+        'UPDATE price_items SET is_active = false WHERE id = $1 AND tenant_id = $2',
+        [req.params.id, req.tenant?.id || 1]
+      ).catch(() => undefined);
       return res.status(409).json({
         error: 'This item is still linked to existing records, so it cannot be deleted. It has been hidden from new orders instead.',
         deactivated: true,
@@ -383,9 +390,10 @@ export const getCategories = async (req: AuthRequest, res: Response) => {
     const result = await query(`
       SELECT category AS name, COUNT(*) FILTER (WHERE is_active = true) AS item_count
       FROM price_items
+      WHERE tenant_id = $1
       GROUP BY category
       ORDER BY category ASC
-    `);
+    `, [req.tenant?.id || 1]);
     res.json({ categories: result.rows.map(r => ({ name: r.name, item_count: Number(r.item_count) })) });
   } catch (error) {
     console.error('Get categories error:', error);
@@ -402,13 +410,13 @@ export const renameCategory = async (req: AuthRequest, res: Response) => {
     const clean = new_name.trim().toLowerCase().replace(/\s+/g, '_');
     // Check uniqueness (case-insensitive, excluding self)
     const conflict = await query(
-      `SELECT 1 FROM price_items WHERE LOWER(category) = LOWER($1) AND LOWER(category) <> LOWER($2) LIMIT 1`,
-      [clean, oldName]
+      `SELECT 1 FROM price_items WHERE tenant_id = $3 AND LOWER(category) = LOWER($1) AND LOWER(category) <> LOWER($2) LIMIT 1`,
+      [clean, oldName, req.tenant?.id || 1]
     );
     if (conflict.rows.length) return res.status(409).json({ error: `Category "${clean}" already exists.` });
     const result = await query(
-      `UPDATE price_items SET category = $1 WHERE LOWER(category) = LOWER($2)`,
-      [clean, oldName]
+      `UPDATE price_items SET category = $1 WHERE LOWER(category) = LOWER($2) AND tenant_id = $3`,
+      [clean, oldName, req.tenant?.id || 1]
     );
     res.json({ updated: result.rowCount, old_name: oldName, new_name: clean });
   } catch (error) {
@@ -422,8 +430,8 @@ export const deleteCategory = async (req: AuthRequest, res: Response) => {
   try {
     const name = decodeURIComponent(req.params.name);
     const count = await query(
-      `SELECT COUNT(*) FROM price_items WHERE LOWER(category) = LOWER($1)`,
-      [name]
+      `SELECT COUNT(*) FROM price_items WHERE LOWER(category) = LOWER($1) AND tenant_id = $2`,
+      [name, req.tenant?.id || 1]
     );
     if (Number(count.rows[0].count) > 0) {
       return res.status(409).json({ error: 'Cannot delete a category that still has items. Remove all items first or rename it.' });

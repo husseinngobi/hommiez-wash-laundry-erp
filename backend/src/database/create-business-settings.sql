@@ -20,4 +20,4 @@ VALUES (
     "sunday": {"open": "09:00", "close": "15:00", "closed": false}
   }'::jsonb
 )
-ON CONFLICT (setting_key) DO NOTHING;
+ON CONFLICT DO NOTHING;

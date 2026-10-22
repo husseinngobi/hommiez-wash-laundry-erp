@@ -116,7 +116,7 @@ const syncTranscribedPriceList = async () => {
         `INSERT INTO price_items (
           item_id, name, category, subcategory, unit, price, ironing_price, is_active
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
-        ON CONFLICT (item_id)
+        ON CONFLICT (tenant_id, item_id)
         DO UPDATE SET
           name = EXCLUDED.name,
           category = EXCLUDED.category,

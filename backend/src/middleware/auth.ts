@@ -11,6 +11,7 @@ export interface AuthRequest extends Request {
     email: string;
     full_name: string;
     role: UserRole;
+    tenant_id?: number;
     is_system_admin?: boolean;
     branch_id?: number | null;
   };
@@ -36,6 +37,13 @@ export const authenticate = async (
     
     try {
       const decoded = jwt.verify(token, config.jwt.secret) as any;
+
+      if (
+        decoded.tenant_id !== undefined &&
+        Number(decoded.tenant_id) !== config.tenancy.deploymentTenantId
+      ) {
+        return res.status(403).json({ error: 'Session belongs to a different tenant deployment' });
+      }
       
       // Handle both old (userId) and new (id) token formats for backward compatibility
       const userId = decoded.id || decoded.userId;
@@ -50,13 +58,17 @@ export const authenticate = async (
         email: decoded.email,
         full_name: decoded.full_name,
         role: decoded.role,
+        tenant_id: Number(decoded.tenant_id) || config.tenancy.deploymentTenantId,
         is_system_admin: decoded.is_system_admin ?? isSystemAdminEmail(decoded.email),
         // Tokens issued before branches existed simply have no branch
         branch_id: decoded.branch_id ?? null
       };
 
       try {
-        const live = await query('SELECT branch_id FROM users WHERE id = $1', [userId]);
+        const live = await query(
+          'SELECT branch_id FROM users WHERE id = $1 AND tenant_id = $2',
+          [userId, req.tenant?.id]
+        );
         if (live.rows[0] && live.rows[0].branch_id != null) {
           req.user.branch_id = live.rows[0].branch_id;
         }
