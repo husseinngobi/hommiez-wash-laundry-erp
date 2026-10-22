@@ -253,7 +253,7 @@ export const getUserPreferences = async (req: AuthRequest, res: Response) => {
     const result = await query(
       `SELECT email_notifications, desktop_notifications, sound_alerts, in_app_notifications
        FROM user_preferences
-       WHERE user_id = $1`,
+       WHERE user_id = $1 AND tenant_id = app_current_tenant_id()`,
       [userId]
     );
 
@@ -267,8 +267,9 @@ export const getUserPreferences = async (req: AuthRequest, res: Response) => {
       };
 
       await query(
-        `INSERT INTO user_preferences (user_id, email_notifications, desktop_notifications, sound_alerts, in_app_notifications)
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO user_preferences (tenant_id, user_id, email_notifications, desktop_notifications, sound_alerts, in_app_notifications)
+         VALUES (app_current_tenant_id(), $1, $2, $3, $4, $5)
+         ON CONFLICT (tenant_id, user_id) DO NOTHING`,
         [userId, defaultPrefs.email_notifications, defaultPrefs.desktop_notifications, defaultPrefs.sound_alerts, defaultPrefs.in_app_notifications]
       );
 
@@ -293,13 +294,13 @@ export const updateUserPreferences = async (req: AuthRequest, res: Response) => 
     }
 
     await query(
-      `INSERT INTO user_preferences (user_id, email_notifications, desktop_notifications, sound_alerts, in_app_notifications, updated_at)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-       ON CONFLICT (user_id) DO UPDATE SET
-         email_notifications = $2,
-         desktop_notifications = $3,
-         sound_alerts = $4,
-         in_app_notifications = $5,
+      `INSERT INTO user_preferences (tenant_id, user_id, email_notifications, desktop_notifications, sound_alerts, in_app_notifications, updated_at)
+       VALUES (app_current_tenant_id(), $1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+       ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+         email_notifications = EXCLUDED.email_notifications,
+         desktop_notifications = EXCLUDED.desktop_notifications,
+         sound_alerts = EXCLUDED.sound_alerts,
+         in_app_notifications = EXCLUDED.in_app_notifications,
          updated_at = CURRENT_TIMESTAMP`,
       [userId, email_notifications, desktop_notifications, sound_alerts, in_app_notifications]
     );

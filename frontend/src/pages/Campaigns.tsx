@@ -135,10 +135,10 @@ export default function Campaigns() {
 
   const fetchBusinessInfo = async () => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/settings`, {
+      const res = await axios.get(`${API_BASE_URL}/settings/all`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const s = res.data?.settings || {};
+      const s = res.data?.settings || res.data || {};
       if (s.business_name) setBusinessName(s.business_name);
       if (s.business_phone) setBusinessPhone(s.business_phone);
     } catch { /* non-critical */ }
