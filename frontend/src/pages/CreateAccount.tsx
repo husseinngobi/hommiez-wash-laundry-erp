@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Mail, Lock, User, ArrowLeft, CheckCircle2, Sparkles, Eye, EyeOff, Phone } from 'lucide-react';
 import { validatePassword, getPasswordStrengthColor, getPasswordStrengthLabel } from '@/lib/passwordValidation';
-import lushLogo from '@/assets/lush_logo.png';
+
 
 export default function CreateAccount() {
   const [formData, setFormData] = useState({
@@ -175,10 +175,10 @@ export default function CreateAccount() {
         {/* Logo and Brand */}
         <div className="text-center mb-8 animate-in fade-in slide-in-from-top duration-700">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl shadow-lg mb-4 overflow-hidden bg-white">
-            <img src={lushLogo} alt="Lush Laundry" className="w-16 h-16 object-contain" />
+            <img src="/Hommiez_logo.png" alt="Hommiez Wash Laundry and Dry Cleaners" className="w-16 h-16 object-contain" />
           </div>
           <h1 className="text-4xl font-bold text-foreground mb-2">
-            Lush Laundry ERP
+            Hommiez Wash Laundry and Dry Cleaners
           </h1>
           <p className="text-muted-foreground flex items-center justify-center gap-2">
             <Sparkles className="h-4 w-4" />
@@ -192,7 +192,7 @@ export default function CreateAccount() {
           <CardHeader className="space-y-1 pb-6">
             <CardTitle className="text-2xl font-bold text-center">Create Account</CardTitle>
             <CardDescription className="text-center">
-              Request access to the Lush Laundry system. An administrator will review and approve your account.
+              Request access to the Hommiez Wash Laundry and Dry Cleaners system. An administrator will review and approve your account.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -415,7 +415,7 @@ export default function CreateAccount() {
 
         {/* Footer */}
         <p className="text-center text-sm text-muted-foreground mt-6 animate-in fade-in delay-700">
-          © 2026 Lush Laundry - Mbarara, Uganda
+          © 2026 Hommiez Wash Laundry and Dry Cleaners - Kampala, Uganda
         </p>
       </div>
     </div>

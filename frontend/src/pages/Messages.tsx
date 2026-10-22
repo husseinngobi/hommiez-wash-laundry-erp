@@ -70,7 +70,7 @@ Enjoy 20% OFF on all laundry services this week!
 🧺 All items included
 📞 Book now: 0754723614
 
-Lush Laundry - Your Trusted Partner!
+Hommiez Wash Laundry and Dry Cleaners - Your Trusted Partner!
 
 T&Cs apply. Limited time only.`
   },
@@ -84,7 +84,7 @@ Wishing you and your family joy this festive season!
 🎁 SPECIAL GIFT: 15% discount on your next order
 📅 Offer valid throughout [MONTH]
 
-Thank you for choosing Lush Laundry.
+Thank you for choosing Hommiez Wash Laundry and Dry Cleaners.
 
 May your celebrations be bright and your clothes always fresh! ✨`
   },
@@ -101,7 +101,7 @@ Beat the Monday rush - Drop off this weekend!
 
 Same-day service available!
 
-Lush Laundry - Fresher. Faster. Better.`
+Hommiez Wash Laundry and Dry Cleaners - Fresher. Faster. Better.`
   },
   {
     id: 4,
@@ -118,7 +118,7 @@ As our special thank you:
 
 Your trust means everything to us!
 
-Lush Laundry - Always at your service. ✨`
+Hommiez Wash Laundry and Dry Cleaners - Always at your service. ✨`
   },
   {
     id: 5,
@@ -135,14 +135,14 @@ Introducing our NEW Premium Service:
 🎉 LAUNCH OFFER: [DISCOUNT]%
 📞 Call us: 0754723614
 
-Experience the Lush difference!`
+Experience the Hommiez difference!`
   },
   {
     id: 6,
     title: "👥 Referral Bonus",
     message: `👥 REFER A FRIEND & EARN! 👥
 
-Share the Lush experience!
+Share the Hommiez experience!
 
 🎁 You get: 20% OFF next order
 🎁 Friend gets: 15% OFF first order
@@ -166,7 +166,7 @@ Don't let the weather dirty your plans!
 ⚡ Quick turnaround time
 💰 20% OFF this month
 
-Beat the weather blues with Lush Laundry!
+Beat the weather blues with Hommiez Wash Laundry and Dry Cleaners!
 
 Book today: 0754723614`
   },
@@ -184,7 +184,7 @@ Fresh uniforms, fresh start!
 
 Make mornings easier!
 
-Lush Laundry - Clean uniforms, confident students. ✨`
+Hommiez Wash Laundry and Dry Cleaners - Clean uniforms, confident students. ✨`
   }
 ];
 
@@ -509,7 +509,7 @@ ${discount} on all laundry services!
 
 Valid until: ${promoEndDate ? new Date(promoEndDate).toLocaleDateString('en-GB') : '[End Date]'}
 
-Visit Lush Laundry and enjoy this amazing offer!
+Visit Hommiez Wash Laundry and Dry Cleaners and enjoy this amazing offer!
 
 📍 Location: [Your Address]
 📞 Call: [Your Phone]

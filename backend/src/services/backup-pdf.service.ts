@@ -111,7 +111,7 @@ export async function generateBackupPDF(tables: string, range: DateRange = {}): 
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.fontSize(20).fillColor('#6366f1').text('Lush Laundry — Backup Report', { align: 'center' });
+    doc.fontSize(20).fillColor('#6366f1').text('Hommiez Wash Laundry and Dry Cleaners — Backup Report', { align: 'center' });
     const rangeLabel = range.fromDate || range.toDate
       ? `${range.fromDate || 'earliest'} to ${range.toDate || 'latest'}`
       : 'All time (full history)';

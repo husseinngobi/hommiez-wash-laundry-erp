@@ -109,7 +109,7 @@ app.use('/api', routes);
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
-    message: 'Lush Laundry ERP API',
+    message: 'Hommiez Wash Laundry and Dry Cleaners API',
     version: '1.0.0',
     endpoints: {
       health: '/api/health',

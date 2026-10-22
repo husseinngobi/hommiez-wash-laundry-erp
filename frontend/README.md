@@ -1,6 +1,6 @@
-# Lush Laundry Frontend
+# Hommiez Wash Laundry and Dry Cleaners Frontend
 
-    React + TypeScript frontend for the Lush Laundry ERP system.
+    React + TypeScript frontend for the Hommiez Wash Laundry and Dry Cleaners ERP system.
 
     ## 🚀 Tech Stack
 

@@ -63,7 +63,7 @@ export const requestMTNPayment = async (request: PaymentRequest): Promise<Paymen
     //     currency: 'UGX',
     //     externalId: request.orderNumber,
     //     payer: { partyIdType: 'MSISDN', partyId: request.phoneNumber },
-    //     payerMessage: request.description || 'Lush Laundry Service Payment',
+    //     payerMessage: request.description || 'Hommiez Wash Laundry and Dry Cleaners Service Payment',
     //     payeeNote: `Payment for order ${request.orderNumber}`,
     //   },
     //   {

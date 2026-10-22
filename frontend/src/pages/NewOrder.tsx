@@ -356,7 +356,7 @@ export default function NewOrder() {
       setStandardKgRate(Number(settings.standard_kg_rate ?? settings.kilogram_rate ?? 10000) || 10000);
       setBusinessPhone(settings.business_phone || '');
       setBusinessInfo({
-        name: settings.business_name || 'LUSH DRY CLEANERS & LAUNDROMAT',
+        name: settings.business_name || 'HOMMIEZ WASH LAUNDRY AND DRY CLEANERS',
         phone: settings.business_phone || '',
         email: settings.business_email || '',
         location: settings.business_location || '',

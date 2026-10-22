@@ -1,4 +1,4 @@
-// Price catalog data for Lush Dry Cleaners & Laundromat
+// Price catalog data for Hommiez Wash Laundry and Dry Cleaners
 // All prices in Ugandan Shillings (UGX)
 
 export interface PriceItem {

@@ -7,9 +7,9 @@ export const getBusinessInfo = async (req: AuthRequest, res: Response) => {
 
     if (result.rows.length === 0) {
       return res.json({
-        name: 'Lush Dry Cleaners & Laundromat',
+        name: 'Hommiez Wash Laundry and Dry Cleaners',
         phone: '+256 754 723 614',
-        email: 'info@lushdrycleaners.ug',
+        email: 'info@hommiezwash.ug',
         location: 'Kampala, Uganda',
         address: '',
         tin: ''

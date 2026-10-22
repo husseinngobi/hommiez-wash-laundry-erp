@@ -355,7 +355,7 @@ export default function Settings() {
       setBusinessAddress(settings.business_address || '');
       setBusinessPhone(settings.business_phone || '');
       setBusinessEmail(settings.business_email || '');
-      setBusinessName(settings.business_name || 'Lush Dry Cleaners & Laundromat');
+      setBusinessName(settings.business_name || 'Hommiez Wash Laundry and Dry Cleaners');
       setBusinessLocation(settings.business_location || '');
       setVatRate(settings.vat_rate || '18.00');
       setStandardKgRate(String(Number(settings.standard_kg_rate ?? settings.kilogram_rate ?? 10000) || 10000));
@@ -1041,7 +1041,7 @@ ${discount} on all laundry services!
 
 Valid until: ${promoEndDate ? new Date(promoEndDate).toLocaleDateString('en-GB') : '[End Date]'}
 
-Visit Lush Laundry and enjoy this amazing offer!
+Visit Hommiez Wash Laundry and Dry Cleaners and enjoy this amazing offer!
 
 📍 Location: [Your Address]
 📞 Call: [Your Phone]
@@ -1088,7 +1088,7 @@ Don't miss out! ✨`;
       const date = new Date().toISOString().split('T')[0];
       const typeLabel = selectedBackupType === 'all' ? 'full' : selectedBackupType.replace(',', '_');
       const extension = backupFormat === 'pdf' ? 'pdf' : 'json';
-      link.setAttribute('download', `lush_laundry_${typeLabel}_backup_${date}.${extension}`);
+      link.setAttribute('download', `hommiez_wash_${typeLabel}_backup_${date}.${extension}`);
       
       document.body.appendChild(link);
       link.click();
@@ -1318,7 +1318,7 @@ Don't miss out! ✨`;
                   id="businessName"
                   value={businessName}
                   onChange={(e) => setBusinessName(e.target.value)}
-                  placeholder="Lush Dry Cleaners & Laundromat"
+                  placeholder="Hommiez Wash Laundry and Dry Cleaners"
                   className="mt-2"
                 />
               </div>
@@ -1339,7 +1339,7 @@ Don't miss out! ✨`;
                   type="email"
                   value={businessEmail}
                   onChange={(e) => setBusinessEmail(e.target.value)}
-                  placeholder="info@lushdrycleaners.ug"
+                  placeholder="info@hommiezwash.ug"
                   className="mt-2"
                 />
               </div>
@@ -1546,7 +1546,7 @@ Don't miss out! ✨`;
                                 ...prev,
                                 [branch.id]: { ...(prev[branch.id] || { name: '', phone: '', email: '', location: '', address: '' }), email: e.target.value },
                               }))}
-                              placeholder="branch@lushdrycleaners.ug"
+                              placeholder="branch@hommiezwash.ug"
                               className="mt-1 h-8 text-sm"
                             />
                           </div>
@@ -1691,7 +1691,7 @@ Don't miss out! ✨`;
                     type="email"
                     value={newBranch.email}
                     onChange={(e) => setNewBranch({ ...newBranch, email: e.target.value })}
-                    placeholder="ntinda@lushdrycleaners.ug"
+                    placeholder="ntinda@hommiezwash.ug"
                     className="mt-2"
                   />
                 </div>
@@ -2263,7 +2263,7 @@ Don't miss out! ✨`;
                     <Input
                       id="business-email"
                       type="email"
-                      placeholder="info@lushlaundry.com"
+                      placeholder="info@hommiezwash.com"
                       value={businessEmail}
                       onChange={(e) => setBusinessEmail(e.target.value)}
                       className="mt-2"
@@ -2281,7 +2281,7 @@ Don't miss out! ✨`;
                 <Label htmlFor="invoice-footer">Invoice Footer Text</Label>
                 <Textarea
                   id="invoice-footer"
-                  placeholder="Thank you for choosing Lush Laundry Services!"
+                  placeholder="Thank you for choosing Hommiez Wash Laundry and Dry Cleaners!"
                   value={invoiceFooter}
                   onChange={(e) => setInvoiceFooter(e.target.value)}
                   disabled={!uraComplianceEnabled}

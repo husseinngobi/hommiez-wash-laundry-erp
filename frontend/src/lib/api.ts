@@ -1,20 +1,16 @@
 import axios from 'axios';
 
-const devApiUrl = import.meta.env.DEV ? import.meta.env.VITE_API_URL : undefined;
+const configuredApiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '');
 
 function getApiBaseUrl(): string {
-  // In production, keep requests same-origin so the backend host is not exposed in the browser.
-  if (!devApiUrl) {
-    return '/api';
-  }
-
-  return `${devApiUrl}/api`;
+  // Set VITE_API_URL to this deployment's backend origin. When omitted, use same-origin /api.
+  return configuredApiUrl ? `${configuredApiUrl}/api` : '/api';
 }
 
 export const API_BASE_URL = getApiBaseUrl();
 
 // Use the frontend origin in production so uploads and profile images can be proxied through the same site.
-export const API_ORIGIN = devApiUrl || window.location.origin;
+export const API_ORIGIN = configuredApiUrl || window.location.origin;
 
 // Create axios instance
 const api = axios.create({
@@ -27,7 +23,7 @@ const api = axios.create({
 // Request interceptor - Add JWT token to all requests
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('lush_token');
+    const token = localStorage.getItem('hommiez_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -61,15 +57,15 @@ api.interceptors.response.use(
         return;
       }
 
-      sessionStorage.setItem('lush_post_login_redirect', currentPath);
-      sessionStorage.setItem('lush_post_login_redirect_reason', 'auth-interruption');
+      sessionStorage.setItem('hommiez_post_login_redirect', currentPath);
+      sessionStorage.setItem('hommiez_post_login_redirect_reason', 'auth-interruption');
     };
 
     if (status === 401 && hasAuthHeader && !isPublicAuthRoute) {
       // Token expired or invalid
       storePostLoginRedirect();
-      localStorage.removeItem('lush_token');
-      localStorage.removeItem('lush_user');
+      localStorage.removeItem('hommiez_token');
+      localStorage.removeItem('hommiez_user');
       window.location.href = '/login';
     }
     return Promise.reject(error);

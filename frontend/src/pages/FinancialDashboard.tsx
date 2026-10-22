@@ -185,7 +185,7 @@ const FinancialDashboard = () => {
       // Add header
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text('Lush Laundry', pageWidth / 2, yPos, { align: 'center' });
+      doc.text('Hommiez Wash Laundry and Dry Cleaners', pageWidth / 2, yPos, { align: 'center' });
       yPos += 8;
 
       doc.setFontSize(14);
@@ -344,7 +344,7 @@ const FinancialDashboard = () => {
 
       // Save PDF
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      const filename = `lush-laundry-financial-${periodText.toLowerCase().replace(/\s+/g, '-')}-${timestamp}.pdf`;
+      const filename = `hommiez-wash-financial-${periodText.toLowerCase().replace(/\s+/g, '-')}-${timestamp}.pdf`;
       doc.save(filename);
 
       toast.success('Financial report exported successfully');

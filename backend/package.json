@@ -1,7 +1,7 @@
 {
-  "name": "lush-laundry-backend",
+  "name": "hommiez-wash-backend",
   "version": "1.0.0",
-  "description": "Backend API for Lush Laundry ERP System",
+  "description": "Backend API for Hommiez Wash Laundry and Dry Cleaners",
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon src/index.ts",
@@ -38,7 +38,8 @@
     "fix:discount-totals": "node -r ts-node/register src/audit/fix-discount-totals.ts",
     "verify:money-format": "node -r ts-node/register src/audit/verify-money-formatting.ts",
     "verify:discounts": "node -r ts-node/register src/audit/verify-discount-display.ts",
-    "verify:percentages": "node -r ts-node/register src/audit/verify-percentage-calculations.ts"
+    "verify:percentages": "node -r ts-node/register src/audit/verify-percentage-calculations.ts",
+    "setup:system-admin": "node -r ts-node/register setup-admin.ts"
   },
   "keywords": [
     "laundry",

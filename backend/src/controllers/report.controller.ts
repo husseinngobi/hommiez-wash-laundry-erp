@@ -372,7 +372,7 @@ export const downloadPDFReport = async (req: AuthRequest, res: Response) => {
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Lush Laundry Revenue Report</title>
+  <title>Hommiez Wash Laundry and Dry Cleaners Revenue Report</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 40px; }
     h1 { color: #2563eb; text-align: center; }
@@ -386,7 +386,7 @@ export const downloadPDFReport = async (req: AuthRequest, res: Response) => {
   </style>
 </head>
 <body>
-  <h1>LUSH LAUNDRY SERVICES</h1>
+  <h1>HOMMIEZ WASH LAUNDRY AND DRY CLEANERS SERVICES</h1>
   <p style="text-align:center">Revenue & Analytics Report - ${periodLabel}<br/>Generated: ${new Date().toLocaleString()}</p>
   
   <h2>Summary</h2>

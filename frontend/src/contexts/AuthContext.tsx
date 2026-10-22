@@ -73,12 +73,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Session timeout constants
 const DEFAULT_INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes
 const WARNING_TIME = 60 * 1000; // Show warning 60 seconds before timeout
-const TOKEN_KEY = 'lush_token';
-const USER_KEY = 'lush_user';
-const SESSION_TIMEOUT_KEY = 'lush_session_timeout'; // Store user's preferred timeout
-const LAST_ACTIVITY_KEY = 'lush_last_activity';
-const POST_LOGIN_REDIRECT_KEY = 'lush_post_login_redirect';
-const POST_LOGIN_REDIRECT_REASON_KEY = 'lush_post_login_redirect_reason';
+const TOKEN_KEY = 'hommiez_token';
+const USER_KEY = 'hommiez_user';
+const SESSION_TIMEOUT_KEY = 'hommiez_session_timeout'; // Store user's preferred timeout
+const LAST_ACTIVITY_KEY = 'hommiez_last_activity';
+const POST_LOGIN_REDIRECT_KEY = 'hommiez_post_login_redirect';
+const POST_LOGIN_REDIRECT_REASON_KEY = 'hommiez_post_login_redirect_reason';
 // Writing on every scroll/click event would thrash localStorage
 const ACTIVITY_WRITE_INTERVAL = 5 * 1000;
 

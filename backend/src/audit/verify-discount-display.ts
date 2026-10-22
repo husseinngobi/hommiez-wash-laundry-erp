@@ -128,7 +128,7 @@ async function verifyDiscountDisplay() {
     if (discountOrders.rows.length > 0) {
       const sample = discountOrders.rows[0];
       
-      console.log('                    LUSH LAUNDRY');
+      console.log('                    HOMMIEZ WASH LAUNDRY AND DRY CLEANERS');
       console.log('                  Receipt / Invoice');
       console.log('─'.repeat(70));
       console.log(`Order Number: ${sample.order_number}`);

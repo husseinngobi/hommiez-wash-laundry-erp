@@ -13,7 +13,7 @@ const pool = new Pool({
 
 async function systemHealthCheck() {
   try {
-    console.log('🔍 LUSH LAUNDRY ERP - PRODUCTION READINESS CHECK\n');
+    console.log('🔍 HOMMIEZ WASH LAUNDRY AND DRY CLEANERS ERP - PRODUCTION READINESS CHECK\n');
     console.log('=' .repeat(60));
     
     // 1. Check database foreign key constraints

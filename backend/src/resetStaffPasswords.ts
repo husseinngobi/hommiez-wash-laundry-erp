@@ -18,7 +18,7 @@ async function resetPasswords() {
       `UPDATE users 
        SET password = $1, updated_at = NOW()
        WHERE email = $2 AND auth_provider = 'LOCAL'`,
-      [managerPassword, process.env.SEED_MANAGER_EMAIL || 'manager@lushlaundry.com']
+      [managerPassword, process.env.SEED_MANAGER_EMAIL || 'manager@hommiezwash.com']
     );
     console.log('✅ Manager password reset');
 
@@ -26,7 +26,7 @@ async function resetPasswords() {
       `UPDATE users 
        SET password = $1, updated_at = NOW()
        WHERE email = $2 AND auth_provider = 'LOCAL'`,
-      [cashierPassword, process.env.SEED_CASHIER_EMAIL || 'cashier@lushlaundry.com']
+      [cashierPassword, process.env.SEED_CASHIER_EMAIL || 'cashier@hommiezwash.com']
     );
     console.log('✅ Cashier password reset');
 

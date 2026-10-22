@@ -77,3 +77,7 @@ export const beginTenantTransaction = async (client: PoolClient): Promise<void> 
 // Default export remains the privileged pool for existing one-off migration
 // scripts. HTTP request code must import `query` or `getClient` explicitly.
 export default migrationPool;
+
+export const closeDatabasePools = async (): Promise<void> => {
+  await Promise.all([runtimePool.end(), migrationPool.end()]);
+};

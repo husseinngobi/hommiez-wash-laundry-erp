@@ -331,7 +331,7 @@ export default function Reports() {
       // Add header
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text('Lush Laundry', pageWidth / 2, yPos, { align: 'center' });
+      doc.text('Hommiez Wash Laundry and Dry Cleaners', pageWidth / 2, yPos, { align: 'center' });
       yPos += 8;
 
       doc.setFontSize(14);
@@ -537,7 +537,7 @@ export default function Reports() {
 
       // Save PDF
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      const filename = `lush-laundry-report-${periodText.toLowerCase().replace(/\s+/g, '-')}-${timestamp}.pdf`;
+      const filename = `hommiez-wash-report-${periodText.toLowerCase().replace(/\s+/g, '-')}-${timestamp}.pdf`;
       doc.save(filename);
 
       toast({
@@ -579,7 +579,7 @@ export default function Reports() {
       if (!reportData) return;
       
       // Initialize CSV content
-      let csv = 'LUSH LAUNDRY REPORT\n';
+      let csv = 'HOMMIEZ WASH LAUNDRY AND DRY CLEANERS REPORT\n';
       
       const periodText: string = period === 'day' ? 'Today' : 
                         period === 'week' ? 'This Week' : 
@@ -659,7 +659,7 @@ export default function Reports() {
       const link = document.createElement('a');
       link.href = url;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      link.setAttribute('download', `lush-laundry-report-${periodText.toLowerCase().replace(/\s+/g, '-')}-${timestamp}.csv`);
+      link.setAttribute('download', `hommiez-wash-report-${periodText.toLowerCase().replace(/\s+/g, '-')}-${timestamp}.csv`);
       document.body.appendChild(link);
       link.click();
       link.remove();

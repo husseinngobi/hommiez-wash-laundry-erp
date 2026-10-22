@@ -43,7 +43,7 @@ export default function SessionExpiredModal({
               </p>
             </div>
             <p className="text-sm font-medium">
-              Please log in again to continue using Lush Laundry ERP.
+              Please log in again to continue using Hommiez Wash Laundry and Dry Cleaners.
             </p>
           </AlertDialogDescription>
         </AlertDialogHeader>

@@ -65,7 +65,7 @@ export const sendAnnouncement = async (req: AuthRequest, res: Response) => {
       announcementMessage += `\n\n🎁 SPECIAL OFFER: ${discountPercentage}% OFF!\n\nShow this message when you visit.`;
     }
 
-    announcementMessage += `\n\n💙 Lush Dry Cleaners & Laundromat`;
+    announcementMessage += `\n\n💙 Hommiez Wash Laundry and Dry Cleaners`;
 
     // Send to all customers
     let sent = 0;

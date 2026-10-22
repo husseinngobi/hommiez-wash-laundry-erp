@@ -147,7 +147,7 @@ export function RefundDialog({ open, onClose, order, onRefundProcessed }: Refund
   const fetchPayments = async () => {
     setLoadingPayments(true);
     try {
-      const token = localStorage.getItem('lush_token');
+      const token = localStorage.getItem('hommiez_token');
       const response = await axios.get(
         `${API_BASE_URL}/payments/order/${order.id}`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -229,7 +229,7 @@ export function RefundDialog({ open, onClose, order, onRefundProcessed }: Refund
     setLoading(true);
 
     try {
-      const token = localStorage.getItem('lush_token');
+      const token = localStorage.getItem('hommiez_token');
       const refundData: Record<string, unknown> = {
         refund_amount: amount,
         refund_reason: formData.refund_reason,

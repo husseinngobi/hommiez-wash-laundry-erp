@@ -40,7 +40,7 @@ const parseConnectionUrl = (raw: string | undefined) => {
 const databaseConfig = {
   host: parsedDatabaseUrl?.host || process.env.DB_HOST || 'localhost',
   port: parsedDatabaseUrl?.port || parseInt(process.env.DB_PORT || '5432', 10),
-  name: parsedDatabaseUrl?.name || process.env.DB_NAME || 'lush_laundry',
+  name: parsedDatabaseUrl?.name || process.env.DB_NAME || 'postgres',
   user: parsedDatabaseUrl?.user || process.env.DB_USER || 'postgres',
   password: parsedDatabaseUrl?.password ?? (process.env.DB_PASSWORD || ''),
 };
@@ -54,7 +54,7 @@ const runtimeDatabaseConfig = parsedAppDatabaseUrl || databaseConfig;
 const parsedMigrationDatabaseUrl = parseConnectionUrl(process.env.MIGRATION_DATABASE_URL);
 const migrationDatabaseConfig = parsedMigrationDatabaseUrl || databaseConfig;
 const deploymentTenantId = Number.parseInt(
-  process.env.DEPLOYMENT_TENANT_ID || process.env.DEFAULT_TENANT_ID || '1',
+  process.env.DEPLOYMENT_TENANT_ID || process.env.DEFAULT_TENANT_ID || '2',
   10
 );
 if (!Number.isInteger(deploymentTenantId) || deploymentTenantId <= 0) {

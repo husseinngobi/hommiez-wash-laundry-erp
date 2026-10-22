@@ -108,7 +108,7 @@ export class EmailBackupService {
 </head>
 <body>
   <div class="header">
-    <h1>🧺 Lush Laundry - Daily Backup Report</h1>
+    <h1>🧺 Hommiez Wash Laundry and Dry Cleaners - Daily Backup Report</h1>
     <p>Date: ${new Date(date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
   </div>
   <div style="padding: 20px;">
@@ -194,7 +194,7 @@ export class EmailBackupService {
     </div>
   </div>
   <div class="footer">
-    <p><strong>Lush Laundry Management System</strong></p>
+    <p><strong>Hommiez Wash Laundry and Dry Cleaners</strong></p>
     <p>This is an automated daily backup email. Please keep this for your records.</p>
     <p style="font-size: 12px; color: #9ca3af;">Generated on ${new Date().toLocaleString('en-GB')}</p>
   </div>
@@ -211,7 +211,7 @@ export class EmailBackupService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      doc.fontSize(20).fillColor('#6366f1').text('Lush Laundry — Backup Report', { align: 'center' });
+      doc.fontSize(20).fillColor('#6366f1').text('Hommiez Wash Laundry and Dry Cleaners — Backup Report', { align: 'center' });
       const rangeLabel = dataList.length === 1
         ? new Date(dataList[0].date).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
         : `${dataList.length} days combined (catch-up after an earlier failure)`;
@@ -347,15 +347,15 @@ export class EmailBackupService {
       const htmlContent = this.formatEmailHTML(latest);
       const pdfBuffer = await this.generatePDFBuffer(dataList);
       const pdfFilename = targetDates.length === 1
-        ? `Lush-Laundry-Backup-${targetDates[0]}.pdf`
-        : `Lush-Laundry-Backup-${targetDates[0]}-to-${targetDates[targetDates.length - 1]}.pdf`;
+        ? `Hommiez-Laundry-Backup-${targetDates[0]}.pdf`
+        : `Hommiez-Laundry-Backup-${targetDates[0]}-to-${targetDates[targetDates.length - 1]}.pdf`;
 
       const subjectDates = targetDates.length === 1
         ? new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
         : `${targetDates.length} days (catch-up)`;
 
       const emailPayload = {
-        from: 'Lush Laundry System <backups@lushlaundromat.com>',
+        from: process.env.BACKUP_EMAIL_FROM || process.env.EMAIL_USER || '',
         to: recipientEmails,
         subject: `🧺 Daily Backup - ${subjectDates}`,
         html: htmlContent,

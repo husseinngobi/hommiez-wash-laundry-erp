@@ -4,7 +4,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Lush Dry Cleaners ERP Design System */
+/* Hommiez Wash Laundry and Dry Cleaners ERP Design System */
 
 @layer base {
   /* Smooth scroll behavior for entire app */
@@ -13,7 +13,7 @@
   }
   
   :root {
-    /* Brand Colors - Lush */
+    /* Brand Colors - Hommiez */
     --background: 210 20% 98%;
     --foreground: 222 47% 15%;
 
@@ -28,7 +28,7 @@
     --primary-foreground: 0 0% 100%;
 
     /* Lime Green - Secondary/Accent */
-    --secondary: 88 50% 45%;
+    --secondary: 25 90% 52%;
     --secondary-foreground: 0 0% 100%;
 
     --muted: 210 20% 94%;
@@ -58,7 +58,7 @@
     /* Sidebar - Navy themed */
     --sidebar-background: 222 60% 20%;
     --sidebar-foreground: 210 20% 95%;
-    --sidebar-primary: 88 50% 50%;
+    --sidebar-primary: 25 90% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 222 55% 28%;
     --sidebar-accent-foreground: 210 20% 95%;
@@ -67,10 +67,10 @@
 
     /* Custom tokens */
     --gradient-brand: linear-gradient(135deg, hsl(222 60% 25%), hsl(222 60% 35%));
-    --gradient-accent: linear-gradient(135deg, hsl(88 50% 45%), hsl(88 60% 55%));
+    --gradient-accent: linear-gradient(135deg, hsl(25 90% 52%), hsl(187 85% 43%));
     --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
     --shadow-elevated: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-    --shadow-glow: 0 0 20px hsl(88 50% 45% / 0.3);
+    --shadow-glow: 0 0 20px hsl(25 90% 52% / 0.3);
   }
 
   .dark {
@@ -83,10 +83,10 @@
     --popover: 222 47% 12%;
     --popover-foreground: 210 20% 95%;
 
-    --primary: 88 50% 50%;
+    --primary: 25 90% 55%;
     --primary-foreground: 222 47% 10%;
 
-    --secondary: 222 40% 25%;
+    --secondary: 25 70% 32%;
     --secondary-foreground: 210 20% 95%;
 
     --muted: 222 40% 18%;
@@ -110,7 +110,7 @@
 
     --sidebar-background: 222 60% 10%;
     --sidebar-foreground: 210 20% 90%;
-    --sidebar-primary: 88 50% 50%;
+    --sidebar-primary: 25 90% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 222 55% 18%;
     --sidebar-accent-foreground: 210 20% 90%;

@@ -98,8 +98,8 @@ export const sendOrderStatusNotification = async (
   const storagePolicy = buildStoragePolicyLine();
 
   const closing = orderStatus === 'delivered' && paymentStatus === 'PAID'
-    ? `\n\nThank you for choosing Lush Laundry. We appreciate your business and look forward to serving you again.`
-    : `\n\nThank you for choosing Lush Laundry.`;
+    ? `\n\nThank you for choosing Hommiez Wash Laundry and Dry Cleaners. We appreciate your business and look forward to serving you again.`
+    : `\n\nThank you for choosing Hommiez Wash Laundry and Dry Cleaners.`;
 
   const message = `Hello ${customerName}!
 
@@ -218,7 +218,7 @@ export const sendOrderReceipt = async (
   });
 
   const message = `══════════════════════════════════
-        LUSH DRY CLEANERS
+        HOMMIEZ WASH LAUNDRY AND DRY CLEANERS
           & LAUNDROMAT
 ══════════════════════════════════
 ORDER RECEIPT
@@ -290,7 +290,7 @@ Wishing you a wonderful day filled with joy and happiness!`;
 Visit us today and enjoy your special discount.`;
   }
 
-  message += `\n\nWith love,\nLush Laundry Team ❤️`;
+  message += `\n\nWith love,\nHommiez Wash Laundry and Dry Cleaners Team ❤️`;
 
   return sendSMS({ to: customerPhone, message });
 };

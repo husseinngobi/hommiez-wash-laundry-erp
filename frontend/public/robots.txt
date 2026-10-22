@@ -1,4 +1,4 @@
-# Lush Laundry ERP - Private System
+# Hommiez Wash Laundry and Dry Cleaners - Private System
 # Disallow all search engine indexing
 User-agent: *
 Disallow: /

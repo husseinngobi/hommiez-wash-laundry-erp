@@ -2,7 +2,7 @@ import { query } from './config/database';
 
 async function showAllUsers() {
   try {
-    console.log('\n📊 LUSH LAUNDRY - USER AUDIT\n');
+    console.log('\n📊 HOMMIEZ WASH LAUNDRY AND DRY CLEANERS - USER AUDIT\n');
     console.log('='.repeat(80));
     
     // Get all users with their relationships

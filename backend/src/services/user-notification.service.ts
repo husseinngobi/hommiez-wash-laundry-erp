@@ -151,7 +151,7 @@ export class UserNotificationService {
   <div class="content">
     <p>Hello Administrator,</p>
     
-    <p>A new user has registered on the Lush Laundry Management System and is awaiting your approval.</p>
+    <p>A new user has registered on the Hommiez Wash Laundry and Dry Cleaners and is awaiting your approval.</p>
     
     <div class="user-info">
       <div style="text-align: center; margin-bottom: 15px;">
@@ -196,7 +196,7 @@ export class UserNotificationService {
     <div style="background: #fef3c7; padding: 15px; border-radius: 6px; border-left: 4px solid #f59e0b;">
       <p style="margin: 0; font-size: 14px;">
         <strong>⚡ Quick Actions:</strong><br>
-        1. Login to Lush Laundry System<br>
+        1. Login to Hommiez Wash Laundry and Dry Cleaners<br>
         2. Go to User Management<br>
         3. Click "Pending Approval" tab<br>
         4. Approve or Reject the user
@@ -206,7 +206,7 @@ export class UserNotificationService {
   
   <div class="footer">
     <p>
-      <strong>Lush Laundry Management System</strong><br>
+      <strong>Hommiez Wash Laundry and Dry Cleaners</strong><br>
       This is an automated notification email<br>
       Generated on ${new Date().toLocaleString('en-GB')}
     </p>
@@ -217,7 +217,7 @@ export class UserNotificationService {
 
       // Send email to all admins
       const mailOptions = {
-        from: `"Lush Laundry System" <${process.env.EMAIL_USER}>`,
+        from: `"Hommiez Wash Laundry and Dry Cleaners" <${process.env.EMAIL_USER}>`,
         to: adminEmails.join(', '),
         subject: `🔔 New User Registration Pending Approval - ${userData.full_name} (${userData.role})`,
         html: htmlContent,
@@ -271,11 +271,11 @@ export class UserNotificationService {
     <p style="text-align: center; margin: 20px 0;">
       <span class="success-badge">🎉 YOUR ACCOUNT HAS BEEN APPROVED</span>
     </p>
-    <p>Great news! Your Lush Laundry Management System account has been approved by an administrator.</p>
+    <p>Great news! Your Hommiez Wash Laundry and Dry Cleaners account has been approved by an administrator.</p>
     <p><strong>Your Role:</strong> ${userData.role}</p>
     <p>You can now login to the system using your email and password:</p>
     <div style="text-align: center;">
-      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/login" class="button">Login to Lush Laundry</a>
+      <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/login" class="button">Login to Hommiez Wash Laundry and Dry Cleaners</a>
     </div>
     <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
       If you have any questions, please contact your system administrator.
@@ -286,9 +286,9 @@ export class UserNotificationService {
       `;
 
       await this.transporter.sendMail({
-        from: `"Lush Laundry System" <${process.env.EMAIL_USER}>`,
+        from: `"Hommiez Wash Laundry and Dry Cleaners" <${process.env.EMAIL_USER}>`,
         to: userData.email,
-        subject: '✅ Your Lush Laundry Account Has Been Approved!',
+        subject: '✅ Your Hommiez Wash Laundry and Dry Cleaners Account Has Been Approved!',
         html: htmlContent,
       });
 
@@ -327,7 +327,7 @@ export class UserNotificationService {
   </div>
   <div class="content">
     <p>Hello ${userData.full_name},</p>
-    <p>We regret to inform you that your registration for the Lush Laundry Management System has not been approved at this time.</p>
+    <p>We regret to inform you that your registration for the Hommiez Wash Laundry and Dry Cleaners has not been approved at this time.</p>
     ${userData.rejection_reason ? `
     <div class="warning-box">
       <strong>Reason:</strong> ${userData.rejection_reason}
@@ -343,9 +343,9 @@ export class UserNotificationService {
       `;
 
       await this.transporter.sendMail({
-        from: `"Lush Laundry System" <${process.env.EMAIL_USER}>`,
+        from: `"Hommiez Wash Laundry and Dry Cleaners" <${process.env.EMAIL_USER}>`,
         to: userData.email,
-        subject: '⚠️ Lush Laundry Account Registration Update',
+        subject: '⚠️ Hommiez Wash Laundry and Dry Cleaners Account Registration Update',
         html: htmlContent,
       });
 

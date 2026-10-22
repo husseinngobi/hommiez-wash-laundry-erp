@@ -19,7 +19,7 @@ export const createBackup = async (req: AuthRequest, res: Response) => {
       const pdfBuffer = await generateBackupPDF(tables || 'all', { fromDate: from_date, toDate: to_date });
       const timestamp = new Date().toISOString().split('T')[0];
       const typeLabel = tables === 'all' || !tables ? 'full' : String(tables).replace(/,/g, '_');
-      const filename = `lush_laundry_${typeLabel}_backup_${timestamp}.pdf`;
+      const filename = `hommiez_wash_${typeLabel}_backup_${timestamp}.pdf`;
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -102,7 +102,7 @@ export const createBackup = async (req: AuthRequest, res: Response) => {
     // Generate filename
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
     const typeLabel = tables === 'all' ? 'full' : tables.replace(/,/g, '_');
-    const filename = `lush_laundry_${typeLabel}_backup_${timestamp}.json`;
+    const filename = `hommiez_wash_${typeLabel}_backup_${timestamp}.json`;
     
     // Send notification to administrators
     const backupType = tables === 'all' ? 'Full Backup' : `Partial Backup: ${tables}`;

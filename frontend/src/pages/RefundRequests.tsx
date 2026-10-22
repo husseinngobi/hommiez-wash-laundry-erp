@@ -128,7 +128,7 @@ export function RefundRequestsManager() {
 
   const fetchPendingRequests = async () => {
     try {
-      const token = localStorage.getItem('lush_token');
+      const token = localStorage.getItem('hommiez_token');
       const response = await axios.get(
         `${API_BASE_URL}/payments/refund-requests/pending`,
         {
@@ -151,7 +151,7 @@ export function RefundRequestsManager() {
 
     setProcessing(true);
     try {
-      const token = localStorage.getItem('lush_token');
+      const token = localStorage.getItem('hommiez_token');
       const response = await axios.post(
         `${API_BASE_URL}/payments/refund-requests/${selectedRequest.id}/approve`,
         {},
@@ -184,7 +184,7 @@ export function RefundRequestsManager() {
 
     setProcessing(true);
     try {
-      const token = localStorage.getItem('lush_token');
+      const token = localStorage.getItem('hommiez_token');
       await axios.post(
         `${API_BASE_URL}/payments/refund-requests/${selectedRequest.id}/reject`,
         { rejection_reason: rejectionReason },

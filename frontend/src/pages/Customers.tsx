@@ -360,7 +360,7 @@ export default function Customers() {
     if (isSubmitting) return;
 
     try {
-      const token = localStorage.getItem("lush_token");
+      const token = localStorage.getItem("hommiez_token");
       
       if (!formData.name?.trim()) {
         toast.error("Customer name is required");
@@ -420,7 +420,7 @@ export default function Customers() {
     }
     
     try {
-      const token = localStorage.getItem("lush_token");
+      const token = localStorage.getItem("hommiez_token");
 
       if (!formData.name?.trim()) {
         toast.error("Customer name is required");
@@ -472,7 +472,7 @@ export default function Customers() {
     
     try {
       setIsSubmitting(true);
-      const token = localStorage.getItem("lush_token");
+      const token = localStorage.getItem("hommiez_token");
       
       await axios.delete(
         `${API_BASE_URL}/customers/${selectedCustomer.id}`,

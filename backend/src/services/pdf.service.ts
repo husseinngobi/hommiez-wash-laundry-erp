@@ -83,7 +83,7 @@ export const generateOrderReceiptPDF = async (orderDetails: OrderDetails): Promi
       
       // Business name
       doc.fontSize(10)
-         .text('LUSH DRY CLEANERS', { align: 'center' })
+         .text('HOMMIEZ WASH LAUNDRY AND DRY CLEANERS', { align: 'center' })
          .text('& LAUNDROMAT', { align: 'center' });
       
       // Header border

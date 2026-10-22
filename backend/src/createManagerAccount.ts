@@ -8,7 +8,7 @@ async function createManagerAccount() {
       throw new Error('Set SEED_MANAGER_PASSWORD in backend/.env (see .env.example)');
     }
 
-    const email = process.env.SEED_MANAGER_EMAIL || 'manager@lushlaundry.com';
+    const email = process.env.SEED_MANAGER_EMAIL || 'manager@hommiezwash.com';
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
     const result = await query(
@@ -27,7 +27,7 @@ async function createManagerAccount() {
   } catch (error: any) {
     if (error.message && error.message.includes('duplicate key')) {
       console.log('⚠️  Manager account already exists');
-      console.log(`📧 Email: ${process.env.SEED_MANAGER_EMAIL || 'manager@lushlaundry.com'}`);
+      console.log(`📧 Email: ${process.env.SEED_MANAGER_EMAIL || 'manager@hommiezwash.com'}`);
       console.log('🔑 Password: (from SEED_MANAGER_PASSWORD in .env)');
       process.exit(0);
     } else {

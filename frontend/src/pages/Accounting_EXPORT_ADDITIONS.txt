@@ -29,7 +29,7 @@
     // Generate HTML report
     let html = `<!DOCTYPE html><html><head>
       <meta charset="UTF-8">
-      <title>Lush Laundry Financial Reports - ${getPeriodLabel()}</title>
+      <title>Hommiez Wash Laundry and Dry Cleaners Financial Reports - ${getPeriodLabel()}</title>
       <style>
         body { font-family: Arial, sans-serif; padding: 40px; }
         h1 { color: #2563eb; text-align: center; }
@@ -44,7 +44,7 @@
         .page-break { page-break-after: always; }
       </style>
     </head><body>
-      <h1>LUSH LAUNDRY SERVICES</h1>
+      <h1>HOMMIEZ WASH LAUNDRY AND DRY CLEANERS SERVICES</h1>
       <p style="text-align:center">Financial Reports - ${getPeriodLabel()}<br/>Generated: ${new Date().toLocaleString()}</p>
     `;
 

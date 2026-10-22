@@ -20,7 +20,7 @@ async function createStaffAccounts() {
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
          RETURNING id, email, full_name, role`,
         [
-          process.env.SEED_MANAGER_EMAIL || 'manager@lushlaundry.com',
+          process.env.SEED_MANAGER_EMAIL || 'manager@hommiezwash.com',
           managerPassword,
           'Laundry Manager',
           '+256 700 111 111',
@@ -44,7 +44,7 @@ async function createStaffAccounts() {
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
          RETURNING id, email, full_name, role`,
         [
-          process.env.SEED_CASHIER_EMAIL || 'cashier@lushlaundry.com',
+          process.env.SEED_CASHIER_EMAIL || 'cashier@hommiezwash.com',
           cashierPassword,
           'Front Desk Cashier',
           '+256 700 222 222',

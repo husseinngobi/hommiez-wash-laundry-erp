@@ -57,7 +57,7 @@ export interface PaymentRecord {
   merchant_id?: string;             // Merchant shortcode for MERCHANT channel
   sender_phone?: string;            // Format: 256772123456
   recipient_account?: string;       // Format: 0772123456
-  account_name?: string;            // E.g., "Lush Laundry MTN Main"
+  account_name?: string;            // E.g., "Hommiez Wash Laundry and Dry Cleaners MTN Main"
   payment_date: Date;
   notes?: string;
   created_by?: number;

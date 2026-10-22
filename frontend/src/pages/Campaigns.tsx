@@ -104,7 +104,7 @@ export default function Campaigns() {
   const [messageBody, setMessageBody] = useState('');
 
   // Business info for personalisation
-  const [businessName, setBusinessName] = useState('Lush Dry Cleaners & Laundromat');
+  const [businessName, setBusinessName] = useState('Hommiez Wash Laundry and Dry Cleaners');
   const [businessPhone, setBusinessPhone] = useState('');
 
   // Launch dialog

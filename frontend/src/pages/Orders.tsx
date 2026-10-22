@@ -278,7 +278,7 @@ const generateOrderReadyMessage = (
 
 // Generate context-aware reminder message for WhatsApp
 const generateReminderMessage = (order: Order, businessPhone?: string): string => {
-  const businessName = 'Lush Laundry';
+  const businessName = 'Hommiez Wash Laundry and Dry Cleaners';
   const phoneLine = businessPhone ? `\n📞 ${businessPhone}` : '';
 
   // READY for collection
@@ -322,7 +322,7 @@ const printReceipt = (
     (sum, item) => sum + Number(item.discount_amount || 0),
     0
   );
-  const receiptBusinessName = (info.name || 'LUSH DRY CLEANERS & LAUNDROMAT').toUpperCase();
+  const receiptBusinessName = (info.name || 'HOMMIEZ WASH LAUNDRY AND DRY CLEANERS').toUpperCase();
   const receiptPlace = [info.address, info.location].filter(Boolean).join(', ');
   
   const receiptHTML = `
@@ -584,7 +584,7 @@ const printReceipt = (
       ` : ''}
 
       <div class="footer">
-        <p>Thank you for choosing Lush!</p>
+        <p>Thank you for choosing Hommiez!</p>
         <p>🌟 We value your business! 🌟</p>
         <p>Please keep this receipt for collection</p>
       </div>
@@ -824,7 +824,7 @@ export default function Orders() {
       .then((res) => {
         setBusinessPhone(res.data.business_phone || '');
         setBusinessInfo({
-          name: res.data.business_name || 'LUSH DRY CLEANERS & LAUNDROMAT',
+          name: res.data.business_name || 'HOMMIEZ WASH LAUNDRY AND DRY CLEANERS',
           phone: res.data.business_phone || '',
           email: res.data.business_email || '',
           location: res.data.business_location || '',
@@ -942,7 +942,7 @@ export default function Orders() {
         return generateReminderMessage(order, effectivePhone);
       case 'custom':
       default:
-        return `Hello ${order.customer_name},\n\nThis is ${effectiveBusiness?.name || 'Lush Dry Cleaners & Laundromat'} regarding your order *${order.order_number}*.\n\n${effectivePhone ? `📞 ${effectivePhone}\n\n` : ''}Thank you for choosing us!`;
+        return `Hello ${order.customer_name},\n\nThis is ${effectiveBusiness?.name || 'Hommiez Wash Laundry and Dry Cleaners'} regarding your order *${order.order_number}*.\n\n${effectivePhone ? `📞 ${effectivePhone}\n\n` : ''}Thank you for choosing us!`;
     }
   };
 

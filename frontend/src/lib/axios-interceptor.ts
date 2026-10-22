@@ -1,9 +1,9 @@
 import axios from 'axios';
 import type { AxiosRequestConfig, AxiosResponse, RawAxiosResponseHeaders } from 'axios';
 
-const API_CACHE_PREFIX = 'lush-api-cache:';
+const API_CACHE_PREFIX = 'hommiez-api-cache:';
 const API_CACHE_TTL_MS = 30000;
-const POST_LOGIN_REDIRECT_KEY = 'lush_post_login_redirect';
+const POST_LOGIN_REDIRECT_KEY = 'hommiez_post_login_redirect';
 
 type CachedApiResponse = {
   data: unknown;
@@ -29,7 +29,7 @@ function stableStringify(value: unknown): string {
 }
 
 function getRequestCacheKey(config: AxiosRequestConfig) {
-  const token = localStorage.getItem('lush_token') || 'anonymous';
+  const token = localStorage.getItem('hommiez_token') || 'anonymous';
   const method = String(config.method || 'get').toLowerCase();
   const url = String(config.url || '');
   const params = stableStringify(config.params || {});
@@ -94,14 +94,14 @@ function storePostLoginRedirect() {
   }
 
   sessionStorage.setItem(POST_LOGIN_REDIRECT_KEY, currentPath);
-  sessionStorage.setItem('lush_post_login_redirect_reason', 'auth-interruption');
+  sessionStorage.setItem('hommiez_post_login_redirect_reason', 'auth-interruption');
 }
 
 // Global axios interceptor to handle authentication errors
 export const setupAxiosInterceptors = () => {
   axios.interceptors.request.use(
     (config) => {
-      const token = localStorage.getItem('lush_token');
+      const token = localStorage.getItem('hommiez_token');
       if (token) {
         const lowercaseHeaders = config.headers as Record<string, unknown> | undefined;
         const existingAuth =
@@ -159,8 +159,8 @@ export const setupAxiosInterceptors = () => {
       if (status === 401 && hasAuthHeader && !isPublicAuthRoute) {
         // Clear stored authentication data
         storePostLoginRedirect();
-        localStorage.removeItem('lush_token');
-        localStorage.removeItem('lush_user');
+        localStorage.removeItem('hommiez_token');
+        localStorage.removeItem('hommiez_user');
         clearApiCache();
         
         // Redirect to login page

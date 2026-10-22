@@ -704,7 +704,7 @@ export const exportPaymentsPDF = async (req: AuthRequest, res: Response) => {
     doc.pipe(res);
 
     // Add header
-    doc.fontSize(20).font('Helvetica-Bold').text('LUSH LAUNDRY', { align: 'center' });
+    doc.fontSize(20).font('Helvetica-Bold').text('HOMMIEZ WASH LAUNDRY AND DRY CLEANERS', { align: 'center' });
     doc.fontSize(16).text('Payment Transactions Report', { align: 'center' });
     doc.moveDown();
     

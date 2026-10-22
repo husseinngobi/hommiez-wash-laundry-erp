@@ -399,7 +399,7 @@ export default function Accounting() {
         // Company name
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('Lush Laundry', pageWidth / 2, yPos, { align: 'center' });
+        doc.text('Hommiez Wash Laundry and Dry Cleaners', pageWidth / 2, yPos, { align: 'center' });
         
         yPos += 8;
         doc.setFontSize(10);
@@ -611,7 +611,7 @@ export default function Accounting() {
 
       // Save PDF
       const periodText = period === 'all' ? 'all-time' : period;
-      doc.save(`lush-laundry-accounting-${periodText}-${selectedYear}-${Date.now()}.pdf`);
+      doc.save(`hommiez-wash-accounting-${periodText}-${selectedYear}-${Date.now()}.pdf`);
 
       toast.success(`Exported ${selectedReports.length} report(s) as PDF successfully`);
       setShowExportDialog(false);

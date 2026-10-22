@@ -570,7 +570,7 @@ const Payments = () => {
         .total{border-top:1px dashed #999;margin-top:12px;padding-top:10px;font-weight:700;font-size:15px}
         .foot{text-align:center;margin-top:18px;font-size:11px;color:#666}
       </style></head><body>
-      <h1>Lush Dry Cleaners &amp; Laundromat</h1>
+      <h1>Hommiez Wash Laundry and Dry Cleaners &amp; Laundromat</h1>
       <div class="sub">Payment Receipt</div>
       <div class="row"><span>Order</span><strong>${payment.order_number}</strong></div>
       <div class="row"><span>Customer</span><strong>${payment.customer_name}</strong></div>
@@ -581,7 +581,7 @@ const Payments = () => {
       <div class="row total"><span>Amount received</span><span>${formatUGX(payment.amount_paid)}</span></div>
       <div class="row"><span>Balance due</span><span>${formatUGX(payment.balance)}</span></div>
       <div class="row"><span>Received by</span><span>${payment.received_by || 'Staff'}</span></div>
-      <div class="foot">Thank you for choosing Lush</div>
+      <div class="foot">Thank you for choosing Hommiez</div>
       <script>window.onload=function(){window.print();}</script>
       </body></html>`);
     win.document.close();

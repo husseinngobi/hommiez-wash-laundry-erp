@@ -96,11 +96,11 @@ export default function Invoice({ orderId, token, onClose }: InvoiceProps) {
         ura_compliance_enabled: uraEnabled,
         business_tin: settingsRes.data.business_tin || '',
         fiscal_device_number: settingsRes.data.fiscal_device_number || '',
-        business_name: settingsRes.data.business_name || 'LUSH DRY CLEANERS & LAUNDROMAT',
+        business_name: settingsRes.data.business_name || 'HOMMIEZ WASH LAUNDRY AND DRY CLEANERS',
         business_location: settingsRes.data.business_location || '',
         business_address: settingsRes.data.business_address || 'Kampala, Uganda',
         business_phone: settingsRes.data.business_phone || '',
-        business_email: settingsRes.data.business_email || 'info@lushlaundry.com',
+        business_email: settingsRes.data.business_email || 'info@hommiezwash.com',
         vat_rate: settingsRes.data.vat_rate || '18.00',
         invoice_footer_text: settingsRes.data.invoice_footer_text || 'Thank you for your business!',
       };

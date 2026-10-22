@@ -2,7 +2,7 @@ import { query } from './config/database';
 
 async function showLoginCredentials() {
   try {
-    console.log('\n📋 LUSH LAUNDRY - LOGIN CREDENTIALS\n');
+    console.log('\n📋 HOMMIEZ WASH LAUNDRY AND DRY CLEANERS - LOGIN CREDENTIALS\n');
     console.log('='.repeat(60));
     
     // Get all active users

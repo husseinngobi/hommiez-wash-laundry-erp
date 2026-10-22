@@ -27,7 +27,7 @@ import {
   X,
   Megaphone,
 } from 'lucide-react';
-import lushLogo from '@/assets/lush_logo.png';
+
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -130,8 +130,8 @@ export function Sidebar({ isOpen, hasInteracted = false, onClose }: SidebarProps
       {/* Logo */}
       <div className="flex h-16 sm:h-20 items-center justify-between border-b border-sidebar-border px-4 flex-shrink-0">
         <img
-          src={lushLogo}
-          alt="Lush Dry Cleaners"
+          src="/Hommiez_logo.png"
+          alt="Hommiez Wash Laundry and Dry Cleaners"
           className="h-12 sm:h-14 w-auto object-contain"
         />
         {isMobile && onClose && (

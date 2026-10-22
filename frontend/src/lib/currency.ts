@@ -1,5 +1,5 @@
 /**
- * Shared currency formatting utility for Lush Laundry
+ * Shared currency formatting utility for Hommiez Wash Laundry and Dry Cleaners
  * All money values should use this function for consistent display
  */
 

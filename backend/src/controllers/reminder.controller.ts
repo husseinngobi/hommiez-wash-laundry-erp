@@ -111,7 +111,7 @@ export const sendOrderReminder = async (req: AuthRequest, res: Response) => {
  * Generate context-aware reminder message based on order status
  */
 function generateReminderMessage(order: any): string {
-  const businessName = process.env.BUSINESS_NAME || 'Lush Laundry';
+  const businessName = process.env.BUSINESS_NAME || 'Hommiez Wash Laundry and Dry Cleaners';
   const businessPhone = process.env.BUSINESS_PHONE || '+256700000000';
   const normalizedOrderStatus = String(order.order_status || '').toLowerCase();
 
