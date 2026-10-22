@@ -105,7 +105,7 @@ export const getAllCustomers = async (req: AuthRequest, res: Response) => {
     let countParamCount = 1;
     
     if (conditions.length > 0) {
-      const countConditions: string[] = [];
+      const countConditions: string[] = ['c.tenant_id = app_current_tenant_id()'];
       
       if (search) {
         countConditions.push(`(c.name ILIKE $${countParamCount} OR c.phone ILIKE $${countParamCount} OR c.email ILIKE $${countParamCount} OR c.customer_id ILIKE $${countParamCount})`);
