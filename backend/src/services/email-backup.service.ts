@@ -3,7 +3,10 @@ import { query } from '../config/database';
 import { notifyDailyBackupSent, notifyDailyBackupFailed } from './notification.service';
 import PDFDocument from 'pdfkit';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const getResendClient = (): Resend | null => {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  return apiKey ? new Resend(apiKey) : null;
+};
 
 interface DailyBackupData {
   date: string;
@@ -311,6 +314,14 @@ export class EmailBackupService {
 
   async sendDailyBackup(dates?: string[]): Promise<{ success: boolean; message: string; sentTo?: string[] }> {
     try {
+      const resend = getResendClient();
+      if (!resend) {
+        return {
+          success: false,
+          message: 'Backup email is not configured. Set RESEND_API_KEY to enable email backups.',
+        };
+      }
+
       const targetDates = dates && dates.length > 0 ? dates : [new Date().toISOString().split('T')[0]];
       console.log(`📧 Starting backup email generation for: ${targetDates.join(', ')}`);
 
