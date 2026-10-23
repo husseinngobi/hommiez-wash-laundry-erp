@@ -199,18 +199,44 @@ export const approveUser = async (req: AuthRequest, res: Response) => {
       return res.status(managerBlock.status).json(managerBlock.payload);
     }
     
+    if (user.status === UserStatus.ACTIVE) {
+      return res.json({
+        success: true,
+        alreadyActive: true,
+        message: 'This user is already active.',
+        user,
+      });
+    }
+
     if (user.status !== UserStatus.PENDING) {
       return res.status(400).json({ error: 'User is not awaiting approval' });
     }
 
-    // Approve user only. Keep role selected during registration.
+    // Transition only a pending account. This makes concurrent retries safe.
     const result = await query(
-      `UPDATE users 
+      `UPDATE users
        SET status = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2
+       WHERE id = $2 AND status = $3
        RETURNING id, email, full_name, role, status`,
-      [UserStatus.ACTIVE, userId]
+      [UserStatus.ACTIVE, userId, UserStatus.PENDING]
     );
+
+    if (result.rows.length === 0) {
+      const currentResult = await query(
+        'SELECT id, email, full_name, role, status FROM users WHERE id = $1',
+        [userId]
+      );
+      const currentUser = currentResult.rows[0];
+      if (currentUser?.status === UserStatus.ACTIVE) {
+        return res.json({
+          success: true,
+          alreadyActive: true,
+          message: 'This user is already active.',
+          user: currentUser,
+        });
+      }
+      return res.status(409).json({ error: 'User is no longer awaiting approval' });
+    }
 
     const approvedUser = result.rows[0];
 
@@ -257,7 +283,7 @@ export const approveUser = async (req: AuthRequest, res: Response) => {
     res.json({
       success: true,
       message: 'User approved successfully',
-      user: result.rows[0],
+      user: approvedUser,
     });
   } catch (error) {
     console.error('Approve user error:', error);

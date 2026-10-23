@@ -58,7 +58,7 @@ import {
   Search, CheckCircle2, XCircle, AlertCircle, Ban, 
   RotateCcw, Trash2, Eye, Clock, Calendar, History, Pencil
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import axios, { AxiosError } from 'axios';
@@ -155,6 +155,8 @@ const UserManagement = () => {
   const [editForm, setEditForm] = useState({ full_name: '', phone: '', email: '' });
   const [savingDetails, setSavingDetails] = useState(false);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
+  const [isApprovingUser, setIsApprovingUser] = useState(false);
+  const approveInFlightRef = useRef(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showSuspendDialog, setShowSuspendDialog] = useState(false);
   const [showRoleDialog, setShowRoleDialog] = useState(false);
@@ -291,20 +293,22 @@ const UserManagement = () => {
 
   // Actions
   const handleApproveUser = async () => {
-    if (!selectedUser) return;
-    
+    if (!selectedUser || approveInFlightRef.current) return;
+
+    approveInFlightRef.current = true;
+    setIsApprovingUser(true);
     try {
-      await axios.put(
+      const response = await axios.put(
         `${API_BASE_URL}/admin/users/${selectedUser.id}/approve`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       toast({
         title: 'Success',
-        description: 'User approved successfully with their registration role',
+        description: response.data?.message || 'User approved successfully.',
       });
-      
+
       setShowApproveDialog(false);
       setSelectedUser(null);
       fetchUsers();
@@ -312,11 +316,17 @@ const UserManagement = () => {
       fetchActivityLogs();
     } catch (error) {
       console.error('Error approving user:', error);
+      const message = axios.isAxiosError(error)
+        ? error.response?.data?.error
+        : undefined;
       toast({
         title: 'Error',
-        description: 'Failed to approve user',
+        description: message || 'Failed to approve user',
         variant: 'destructive',
       });
+    } finally {
+      approveInFlightRef.current = false;
+      setIsApprovingUser(false);
     }
   };
 
@@ -1371,7 +1381,7 @@ const UserManagement = () => {
         </Dialog>
 
         {/* Approve Dialog */}
-        <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+        <Dialog open={showApproveDialog} onOpenChange={(open) => { if (!isApprovingUser) setShowApproveDialog(open); }}>
           <DialogContent className="max-w-[95vw] sm:max-w-md p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle>Approve User</DialogTitle>
@@ -1389,11 +1399,11 @@ const UserManagement = () => {
               </div>
             )}
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" onClick={() => setShowApproveDialog(false)} className="w-full sm:w-auto">
+              <Button variant="outline" onClick={() => setShowApproveDialog(false)} disabled={isApprovingUser} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button onClick={handleApproveUser} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
-                Approve User
+              <Button onClick={handleApproveUser} disabled={isApprovingUser} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
+                {isApprovingUser ? 'Approving...' : 'Approve User'}
               </Button>
             </DialogFooter>
           </DialogContent>
