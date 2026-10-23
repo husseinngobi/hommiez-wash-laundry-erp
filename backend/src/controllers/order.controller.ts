@@ -761,7 +761,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     if (bargainAmountValue > 0) {
       try {
         // Get all admin users
-        const admins = await client.query(
+        const admins = await query(
           `SELECT id FROM users WHERE role = 'ADMIN'`
         );
 
@@ -770,7 +770,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         
         // Create notification for each admin
         for (const admin of admins.rows) {
-          await client.query(
+          await query(
             `INSERT INTO notifications (user_id, type, title, message, link, created_at)
              VALUES ($1, $2, $3, $4, $5, NOW())`,
             [
@@ -791,7 +791,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     }
     
     // Get customer details for SMS receipt
-    const customerResult = await client.query(
+    const customerResult = await query(
       'SELECT name, phone FROM customers WHERE id = $1',
       [customer_id]
     );
@@ -800,7 +800,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       const customerName = customerResult.rows[0].name;
       const customerPhone = customerResult.rows[0].phone;
       
-      const receiptItemsResult = await client.query(
+      const receiptItemsResult = await query(
         `SELECT oi.quantity, oi.unit_price, oi.discount_amount, oi.total_price, pi.name as item_name
          FROM order_items oi
          JOIN price_items pi ON oi.price_item_id = pi.id
@@ -956,14 +956,14 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
                                    'Bank Transfer';
 
       // Notify all admins and the cashier
-      const usersToNotify = await client.query(
+      const usersToNotify = await query(
         `SELECT id FROM users WHERE role IN ('ADMIN', 'DESKTOP_AGENT')`
       );
 
       const notificationMessage = `Payment of UGX ${amount_paid.toLocaleString()} received via ${paymentMethodDisplay} for order ${order_number}${transaction_reference ? ` (Ref: ${transaction_reference})` : ''}`;
 
       for (const user of usersToNotify.rows) {
-        await client.query(
+        await query(
           `INSERT INTO notifications (user_id, type, title, message, link, created_at)
            VALUES ($1, 'payment', 'Payment Received', $2, '/orders', NOW())`,
           [user.id, notificationMessage]
