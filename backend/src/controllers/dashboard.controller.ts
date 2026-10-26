@@ -246,8 +246,8 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
       ? `WHERE delivered_at >= $1 AND delivered_at <= $2`
       : `WHERE TRUE`;
     const expensesWhere = dateRange
-      ? `WHERE e.expense_date >= $1 AND e.expense_date <= $2 AND COALESCE(e.status, e.approval_status) = 'APPROVED' AND COALESCE(ec.name, '') <> 'Salaries'`
-      : `WHERE COALESCE(e.status, e.approval_status) = 'APPROVED' AND COALESCE(ec.name, '') <> 'Salaries'`;
+      ? `WHERE e.expense_date >= $1 AND e.expense_date <= $2 AND COALESCE(e.status, e.approval_status) = 'APPROVED' AND COALESCE(e.category, '') <> 'Salaries'`
+      : `WHERE COALESCE(e.status, e.approval_status) = 'APPROVED' AND COALESCE(e.category, '') <> 'Salaries'`;
     const params = dateRange ? dateRange : [];
 
     const revenueResult = await query(
@@ -285,7 +285,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 
     const expensesResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as total_expenses
-       FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.category_id ${expensesWhere} ${branchExp}`,
+       FROM expenses e ${expensesWhere} ${branchExp}`,
       params
     );
 
