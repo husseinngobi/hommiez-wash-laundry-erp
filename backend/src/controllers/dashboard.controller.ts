@@ -232,7 +232,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
     if (period === 'custom' && !dateRange) {
       return res.status(400).json({ error: 'Custom ranges require valid from_date and to_date values' });
     }
-    const branchExp = branchId ? `AND branch_id = ${Number(branchId)}` : '';
+    const branchExp = branchId ? `AND e.branch_id = ${Number(branchId)}` : '';
     const branchOrd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
     const salaryBranch = branchId
       ? `AND employee_id IN (SELECT id FROM payroll_employees WHERE branch_id = ${Number(branchId)})`
@@ -246,8 +246,8 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
       ? `WHERE delivered_at >= $1 AND delivered_at <= $2`
       : `WHERE TRUE`;
     const expensesWhere = dateRange
-      ? `WHERE expense_date >= $1 AND expense_date <= $2 AND COALESCE(status, approval_status) = 'APPROVED' AND COALESCE(category, '') <> 'Salaries'`
-      : `WHERE COALESCE(status, approval_status) = 'APPROVED' AND COALESCE(category, '') <> 'Salaries'`;
+      ? `WHERE e.expense_date >= $1 AND e.expense_date <= $2 AND COALESCE(e.status, e.approval_status) = 'APPROVED' AND COALESCE(ec.name, '') <> 'Salaries'`
+      : `WHERE COALESCE(e.status, e.approval_status) = 'APPROVED' AND COALESCE(ec.name, '') <> 'Salaries'`;
     const params = dateRange ? dateRange : [];
 
     const revenueResult = await query(
@@ -285,13 +285,15 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 
     const expensesResult = await query(
       `SELECT COALESCE(SUM(amount), 0) as total_expenses
-       FROM expenses ${expensesWhere} ${branchExp}`,
+       FROM expenses e LEFT JOIN expense_categories ec ON ec.id = e.category_id ${expensesWhere} ${branchExp}`,
       params
     );
 
     // Include salary payments in total expenses so dashboard profit is accurate
     const salaryParams = params; // same date params apply
-    const salaryWhere = expensesWhere.replace('expense_date', 'payment_date').replace('COALESCE(status, approval_status)', 'payment_status').replace("'APPROVED'", "'PAID'");
+    const salaryWhere = dateRange
+      ? `WHERE payment_date >= $1 AND payment_date <= $2 AND payment_status = 'PAID'`
+      : `WHERE payment_status = 'PAID'`;
     let salaries = 0;
     try {
       const salaryResult = await query(

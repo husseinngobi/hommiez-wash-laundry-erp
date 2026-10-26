@@ -168,6 +168,7 @@ router.post('/payments', authenticate as any, requireAdmin as any, (async (req: 
     const {
       employee_id,
       payment_period,
+      payment_date,
       amount_paid,
       deductions,
       bonuses,
@@ -177,8 +178,25 @@ router.post('/payments', authenticate as any, requireAdmin as any, (async (req: 
     } = req.body;
 
     // Validate required fields
-    if (!employee_id || !payment_period || !amount_paid || net_amount === undefined) {
+    if (!employee_id || !payment_period || !payment_date || amount_paid === undefined || net_amount === undefined) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const paidDate = String(payment_date);
+    const grossAmount = Number(amount_paid);
+    const deductionAmount = Number(deductions || 0);
+    const bonusAmount = Number(bonuses || 0);
+    const netAmount = Number(net_amount);
+    const parsedPaidDate = new Date(`${paidDate}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)
+      || Number.isNaN(parsedPaidDate.getTime())
+      || parsedPaidDate.toISOString().slice(0, 10) !== paidDate
+      || !Number.isFinite(grossAmount) || grossAmount <= 0
+      || !Number.isFinite(deductionAmount) || deductionAmount < 0
+      || !Number.isFinite(bonusAmount) || bonusAmount < 0
+      || !Number.isFinite(netAmount) || netAmount < 0
+      || Math.abs(netAmount - (grossAmount - deductionAmount + bonusAmount)) > 0.01) {
+      return res.status(400).json({ error: 'Enter a valid paid date and salary amounts' });
     }
 
     // Check if payment for this period already exists
@@ -199,16 +217,17 @@ router.post('/payments', authenticate as any, requireAdmin as any, (async (req: 
         employee_id, payment_date, payment_period, amount_paid,
         payment_method, deductions, bonuses, net_amount,
         paid_by, payment_status, notes
-      ) VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8, 'PAID', $9)
+      ) VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9, 'PAID', $10)
       RETURNING *`,
       [
         employee_id,
+        paidDate,
         payment_period,
-        amount_paid,
+        grossAmount,
         payment_method || 'BANK_TRANSFER',
-        deductions || 0,
-        bonuses || 0,
-        net_amount,
+        deductionAmount,
+        bonusAmount,
+        netAmount,
         req.user!.id,
         notes || null
       ]
