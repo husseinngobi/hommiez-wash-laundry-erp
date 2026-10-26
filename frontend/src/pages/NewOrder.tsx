@@ -272,6 +272,7 @@ export default function NewOrder() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const creatingOrderRef = useRef(false);
+  const orderRequestKeyRef = useRef<string | null>(null);
   /** Draft text while typing quantity (index → string) so keyboard entry works smoothly */
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({});
 
@@ -950,6 +951,7 @@ export default function NewOrder() {
       }
 
       creatingOrderRef.current = true;
+      orderRequestKeyRef.current ??= crypto.randomUUID();
       setLoading(true);
 
       const orderData = {
@@ -980,10 +982,22 @@ export default function NewOrder() {
       };
 
       const response = await axios.post(`${API_BASE_URL}/orders`, orderData, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Idempotency-Key': orderRequestKeyRef.current,
+        },
       });
 
       const order = response.data.order;
+      if (response.data.duplicate_request) {
+        resetOrderForm();
+        orderRequestKeyRef.current = null;
+        toast({
+          title: 'Order Already Created',
+          description: 'Order ' + order.order_number + ' is already in Orders. No second order was created.',
+        });
+        return;
+      }
       const customerSnapshot = selectedCustomer;
       const itemsSnapshot = [...orderItems];
 
@@ -1031,6 +1045,7 @@ export default function NewOrder() {
       );
 
       resetOrderForm();
+      orderRequestKeyRef.current = null;
 
       if (customerSnapshot.phone) {
         setPendingWhatsApp({

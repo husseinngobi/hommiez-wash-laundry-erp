@@ -252,7 +252,36 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
     }
     
     await beginTenantTransaction(client);
-    
+
+    const idempotencyKey = req.get('Idempotency-Key')?.trim() || null;
+    if (idempotencyKey) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Invalid Idempotency-Key' });
+      }
+
+      // Serialize retries for this tenant and staff user. The unique index is
+      // the database-level backstop if another writer skips this lock.
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended(' +
+          "'create-order:' || app_current_tenant_id()::text || ':' || $1::text || ':' || $2, 0))",
+        [req.user!.id, idempotencyKey]
+      );
+
+      const existingOrder = await client.query(
+        'SELECT * FROM orders WHERE tenant_id = app_current_tenant_id() AND user_id = $1 AND idempotency_key = $2 LIMIT 1',
+        [req.user!.id, idempotencyKey]
+      );
+      if (existingOrder.rows.length > 0) {
+        await client.query('COMMIT');
+        return res.status(200).json({
+          message: 'Order was already created for this request',
+          order: existingOrder.rows[0],
+          duplicate_request: true,
+        });
+      }
+    }
+
     const { 
       customer_id, 
       items, 
@@ -675,8 +704,8 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         discount_percentage, discount_amount, bargain_amount, surcharge_amount,
         total_amount, payment_status, payment_method, amount_paid, balance,
         status, transaction_reference, invoice_number, notes, branch_id, catalogue_kg,
-        created_at, recorded_at, is_backdated
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW(),$23)
+        created_at, recorded_at, is_backdated, idempotency_key
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW(),$23,$24)
       RETURNING *`,
       [
         order_number, customer_id, req.user!.id, subtotal, tax_rate, tax_amount,
@@ -688,6 +717,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
           ? ymdToPgTimestamp(extractYmd(customOrderDate) || toKampalaYmd(new Date(customOrderDate)))
           : new Date().toISOString(),
         isBackdated,
+        idempotencyKey,
       ]
     );
     
