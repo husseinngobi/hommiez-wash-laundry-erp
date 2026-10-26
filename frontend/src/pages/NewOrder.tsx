@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import axios, { AxiosError } from 'axios';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search,
   Plus,
@@ -477,7 +477,7 @@ export default function NewOrder() {
   // Add item to order
   const addItemToOrder = (item: PriceItem, serviceType: 'WASH' | 'IRON' | 'EXPRESS') => {
     let unitPrice = 0;
-    
+
     if (serviceType === 'WASH') {
       unitPrice = Number(item.effective_price || item.price);
     } else if (serviceType === 'IRON') {
@@ -758,7 +758,7 @@ export default function NewOrder() {
   const taxAmount = vatApplies ? Math.round((subtotalAfterDiscount * VAT_RATE) / 100) : 0;
   const total = subtotalAfterDiscount + taxAmount;
   const balance = Math.max(0, total - amountPaid);
-  
+
   // For backward compatibility
   const subtotal = itemsSubtotal;
 
@@ -911,7 +911,7 @@ export default function NewOrder() {
   };
 
   const handleCreateOrder = async () => {
-    if (loading || creatingOrderRef.current) return;
+    if (creatingOrderRef.current) return;
     if (!selectedCustomer) {
       toast({
         variant: 'destructive',
@@ -994,16 +994,17 @@ export default function NewOrder() {
         orderRequestKeyRef.current = null;
         toast({
           title: 'Order Already Created',
-          description: 'Order ' + order.order_number + ' is already in Orders. No second order was created.',
+          description: `Order ${order.order_number} is already in Orders. No second order was created.`,
         });
         return;
       }
+
       const customerSnapshot = selectedCustomer;
       const itemsSnapshot = [...orderItems];
 
       toast({
         title: 'Order Created Successfully',
-        description: `Order ${order.order_number} created for ${customerSnapshot.name}`,
+        description: `Order ${order.order_number} created for ${customerSnapshot.name}. You can find it in Orders.`,
       });
 
       const message = buildOrderConfirmationWhatsAppMessage(
@@ -1080,7 +1081,7 @@ export default function NewOrder() {
     <MainLayout title="New Order" subtitle="POS - Create customer orders">
       {/* Full-height POS layout - scrollable on mobile, fixed on desktop */}
       <div className="lg:h-[calc(100vh-120px)] flex flex-col gap-3 lg:overflow-hidden">
-        
+
         {/* Top Bar: Customer Selection (compact) */}
         <div className="flex items-center gap-2 md:gap-3 bg-card border rounded-lg px-2 md:px-4 py-2 shrink-0 flex-wrap sm:flex-nowrap">
           <User className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -1203,12 +1204,12 @@ export default function NewOrder() {
 
         {/* Main POS split: Left = Cart/Payment, Right = Item Catalog */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-3 lg:min-h-0">
-          
+
           {/* ===== LEFT PANEL: Cart + Payment (2/5 width) =====
                On phones the catalog is shown first, so items can be picked
                before the cart and payment section come into view. */}
           <div className="order-2 lg:order-1 lg:col-span-2 flex flex-col gap-3 overflow-y-auto">
-            
+
             {/* Cart Items */}
             <div className="bg-card border rounded-lg">
               <div className="px-4 py-2 border-b flex items-center justify-between">
@@ -1224,7 +1225,7 @@ export default function NewOrder() {
                       : orderItems.reduce((sum, i) => sum + i.quantity, 0).toFixed(1).replace(/\.0$/, '') + ' units'}
                 </span>
               </div>
-              
+
               <div className="p-2 space-y-1">
                 <div className="mb-2 rounded-md border bg-muted/30 px-2 py-1.5">
                   <div className="flex items-center justify-between gap-2">
@@ -1873,12 +1874,12 @@ export default function NewOrder() {
 
               {/* Create Order Button */}
               <Button
-                className="w-full h-12 text-base font-bold bg-primary hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="w-full h-12 text-base font-bold bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 onClick={handleCreateOrder}
                 disabled={loading || !selectedCustomer || orderItems.length === 0}
               >
                 {loading ? (
-                  'Creating...'
+                  <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Creating order...</>
                 ) : (
                   <>
                     <Save className="mr-2 h-5 w-5" />
@@ -1891,7 +1892,7 @@ export default function NewOrder() {
 
           {/* ===== RIGHT PANEL: Item Catalog (3/5 width) ===== */}
           <div className="order-1 lg:order-2 lg:col-span-3 flex flex-col min-h-0 bg-card border rounded-lg">
-            
+
             {/* Category Tabs + Search */}
             <div className="px-3 pt-3 pb-2 border-b space-y-2 shrink-0">
               {/* Category tabs like Odoo POS */}
@@ -1903,20 +1904,20 @@ export default function NewOrder() {
                     size="sm"
                     onClick={() => setCategoryFilter(cat)}
                     className={`shrink-0 h-10 lg:h-8 text-xs font-medium ${
-                      categoryFilter === cat 
-                        ? 'bg-primary text-primary-foreground shadow-sm' 
+                      categoryFilter === cat
+                        ? 'bg-primary text-primary-foreground shadow-sm'
                         : 'hover:bg-muted'
                     }`}
                   >
-                    {cat === 'ALL' ? '🏠 All' 
-                      : cat === 'gents' ? '👔 Gents' 
-                      : cat === 'ladies' ? '👗 Ladies' 
+                    {cat === 'ALL' ? '🏠 All'
+                      : cat === 'gents' ? '👔 Gents'
+                      : cat === 'ladies' ? '👗 Ladies'
                       : cat === 'general' ? '🏠 General'
                       : '👶 Kids'}
                   </Button>
                 ))}
               </div>
-              
+
               {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1955,7 +1956,7 @@ export default function NewOrder() {
                         </Badge>
                       )}
                     </div>
-                    
+
                     {/* Prices */}
                     <div className="mt-2 space-y-0.5 text-xs">
                       {item.pricing_type === 'PER_KG' ? (
@@ -1993,7 +1994,7 @@ export default function NewOrder() {
                         </>
                       )}
                     </div>
-                    
+
                     {/* Quick-add service buttons (2 rows for visibility) */}
                     <div className="mt-2 space-y-1">
                       <div className="flex gap-1">

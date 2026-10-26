@@ -53,12 +53,12 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { 
-  Users, UserCheck, UserX, UserPlus, Shield, Activity, 
-  Search, CheckCircle2, XCircle, AlertCircle, Ban, 
-  RotateCcw, Trash2, Eye, Clock, Calendar, History, Pencil
+import {
+  Users, UserCheck, UserX, UserPlus, Shield, Activity,
+  Search, CheckCircle2, XCircle, AlertCircle, Ban,
+  RotateCcw, Trash2, Eye, Clock, Calendar, History, Pencil, Loader2
 } from 'lucide-react';
-import { useRef, useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import axios, { AxiosError } from 'axios';
@@ -130,24 +130,24 @@ const UserManagement = () => {
   const { token, isAdmin, isManager } = useAuth();
   const canManageUsers = isAdmin || isManager;
   const { toast } = useToast();
-  
+
   const [users, setUsers] = useState<User[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [statistics, setStatistics] = useState<Statistics | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all-users');
-  
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [roleFilter, setRoleFilter] = useState<string>('all');
-  
+
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
   const usersPerPage = 10;
-  
+
   // Dialogs
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
@@ -155,24 +155,25 @@ const UserManagement = () => {
   const [editForm, setEditForm] = useState({ full_name: '', phone: '', email: '' });
   const [savingDetails, setSavingDetails] = useState(false);
   const [showApproveDialog, setShowApproveDialog] = useState(false);
-  const [isApprovingUser, setIsApprovingUser] = useState(false);
-  const approveInFlightRef = useRef(false);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [showSuspendDialog, setShowSuspendDialog] = useState(false);
+  const [suspendingUser, setSuspendingUser] = useState(false);
+  const suspendingUserRef = useRef(false);
+  const [userActionPending, setUserActionPending] = useState<string | null>(null);
   const userActionPendingRef = useRef(false);
   const [updatingBranchUserId, setUpdatingBranchUserId] = useState<number | null>(null);
   const updatingBranchRef = useRef<number | null>(null);
-  const [showRejectDialog, setShowRejectDialog] = useState(false);
-  const [showSuspendDialog, setShowSuspendDialog] = useState(false);
   const [showRoleDialog, setShowRoleDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showTempPasswordDialog, setShowTempPasswordDialog] = useState(false);
   const [showLoginHistoryDialog, setShowLoginHistoryDialog] = useState(false);
   const [deleteConfirmStep, setDeleteConfirmStep] = useState<1 | 2>(1);
-  
+
   // Login History
   const [loginHistory, setLoginHistory] = useState<LoginHistory[]>([]);
   const [loginHistoryLoading, setLoginHistoryLoading] = useState(false);
   const [historyPeriod, setHistoryPeriod] = useState('week');
-  
+
   // Form states
   const [rejectionReason, setRejectionReason] = useState('');
   const [suspensionReason, setSuspensionReason] = useState('');
@@ -192,12 +193,12 @@ const UserManagement = () => {
       if (searchQuery) params.search = searchQuery;
       params.page = currentPage.toString();
       params.limit = usersPerPage.toString();
-      
+
       const response = await axios.get(`${API_BASE_URL}/admin/users`, {
         params,
         headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       setUsers(response.data.users);
       setTotalUsers(response.data.total || response.data.users.length);
       setTotalPages(Math.ceil((response.data.total || response.data.users.length) / usersPerPage));
@@ -251,11 +252,11 @@ const UserManagement = () => {
   const fetchLoginHistory = useCallback(async (userId: number) => {
     try {
       setLoginHistoryLoading(true);
-      
+
       // Calculate date range based on period
       const endDate = new Date();
       const startDate = new Date();
-      
+
       if (historyPeriod === 'week') {
         startDate.setDate(startDate.getDate() - 7);
       } else if (historyPeriod === 'month') {
@@ -263,7 +264,7 @@ const UserManagement = () => {
       } else if (historyPeriod === '3months') {
         startDate.setMonth(startDate.getMonth() - 3);
       }
-      
+
       const response = await axios.get(`${API_BASE_URL}/admin/users/${userId}/login-history`, {
         params: {
           start_date: startDate.toISOString(),
@@ -271,7 +272,7 @@ const UserManagement = () => {
         },
         headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       setLoginHistory(response.data.history || []);
     } catch (error) {
       console.error('Error fetching login history:', error);
@@ -296,12 +297,12 @@ const UserManagement = () => {
 
   // Actions
   const handleApproveUser = async () => {
-    if (!selectedUser || approveInFlightRef.current) return;
+    if (!selectedUser || userActionPendingRef.current) return;
+    userActionPendingRef.current = true;
+    setUserActionPending('approve');
 
-    approveInFlightRef.current = true;
-    setIsApprovingUser(true);
     try {
-      const response = await axios.put(
+      await axios.put(
         `${API_BASE_URL}/admin/users/${selectedUser.id}/approve`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
@@ -309,10 +310,10 @@ const UserManagement = () => {
 
       toast({
         title: 'Success',
-        description: response.data?.message || 'User approved successfully.',
+        description: 'User approved successfully with their registration role',
       });
-
       setUsers((current) => current.map((user) => user.id === selectedUser.id ? { ...user, status: 'ACTIVE' } : user));
+
       setShowApproveDialog(false);
       setSelectedUser(null);
       fetchUsers();
@@ -320,36 +321,35 @@ const UserManagement = () => {
       fetchActivityLogs();
     } catch (error) {
       console.error('Error approving user:', error);
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.error
-        : undefined;
       toast({
         title: 'Error',
-        description: message || 'Failed to approve user',
+        description: 'Failed to approve user',
         variant: 'destructive',
       });
     } finally {
-      approveInFlightRef.current = false;
-      setIsApprovingUser(false);
+      userActionPendingRef.current = false;
+      setUserActionPending(null);
     }
   };
 
   const handleRejectUser = async () => {
-    if (!selectedUser) return;
-    
+    if (!selectedUser || userActionPendingRef.current) return;
+    userActionPendingRef.current = true;
+    setUserActionPending('reject');
+
     try {
       await axios.put(
         `${API_BASE_URL}/admin/users/${selectedUser.id}/reject`,
         { reason: rejectionReason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       toast({
         title: 'Success',
         description: 'User rejected',
       });
       setUsers((current) => current.map((user) => user.id === selectedUser.id ? { ...user, status: 'REJECTED' } : user));
-      
+
       setShowRejectDialog(false);
       setSelectedUser(null);
       setRejectionReason('');
@@ -366,25 +366,30 @@ const UserManagement = () => {
         description: errorMessage || 'Failed to reject user',
         variant: 'destructive',
       });
+    } finally {
+      userActionPendingRef.current = false;
+      setUserActionPending(null);
     }
   };
 
   const handleSuspendUser = async () => {
-    if (!selectedUser) return;
-    
+    if (!selectedUser || suspendingUserRef.current) return;
+    suspendingUserRef.current = true;
+    setSuspendingUser(true);
+
     try {
       await axios.put(
         `${API_BASE_URL}/admin/users/${selectedUser.id}/suspend`,
         { reason: suspensionReason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       toast({
         title: 'Success',
         description: 'User suspended',
       });
       setUsers((current) => current.map((user) => user.id === selectedUser.id ? { ...user, status: 'SUSPENDED' } : user));
-      
+
       setShowSuspendDialog(false);
       setSelectedUser(null);
       setSuspensionReason('');
@@ -393,20 +398,24 @@ const UserManagement = () => {
       fetchActivityLogs();
     } catch (error) {
       console.error('Error suspending user:', error);
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : 'Failed to suspend user';
       toast({
         title: 'Error',
         description: errorMessage || 'Failed to suspend user',
         variant: 'destructive',
       });
+    } finally {
+      suspendingUserRef.current = false;
+      setSuspendingUser(false);
     }
   };
 
   const handleActivateUser = async (user: User) => {
     if (userActionPendingRef.current) return;
     userActionPendingRef.current = true;
+    setUserActionPending(`activate-${user.id}`);
     try {
       const response = await axios.put(
         `${API_BASE_URL}/admin/users/${user.id}/activate`,
@@ -415,6 +424,7 @@ const UserManagement = () => {
       );
       const activatedUser: User = { ...user, status: 'ACTIVE' };
 
+      // Show temporary password to admin
       if (response.data.temporaryPassword) {
         setSelectedUser(activatedUser);
         setTemporaryPassword(response.data.temporaryPassword);
@@ -425,22 +435,7 @@ const UserManagement = () => {
         title: 'Success',
         description: 'User reactivated with temporary password',
       });
-      setShowDetailsDialog(false);
-      const applyActivation = () => {
-        if (statusFilter === 'SUSPENDED') {
-          setUsers((current) => current.filter((entry) => entry.id !== user.id));
-          const nextTotal = Math.max(0, totalUsers - 1);
-          setTotalUsers(nextTotal);
-          setTotalPages(Math.max(1, Math.ceil(nextTotal / usersPerPage)));
-          setCurrentPage((page) => Math.min(page, Math.max(1, Math.ceil(nextTotal / usersPerPage))));
-        } else {
-          setUsers((current) => current.map((entry) => entry.id === user.id ? activatedUser : entry));
-        }
-        setSelectedUser((current) => current?.id === user.id ? activatedUser : current);
-      };
-      applyActivation();
       await Promise.all([fetchUsers(), fetchStatistics(), fetchActivityLogs()]);
-      applyActivation();
 
       if (statusFilter === 'SUSPENDED') {
         setUsers((current) => current.filter((entry) => entry.id !== user.id));
@@ -461,6 +456,7 @@ const UserManagement = () => {
       });
     } finally {
       userActionPendingRef.current = false;
+      setUserActionPending(null);
     }
   };
 
@@ -484,26 +480,21 @@ const UserManagement = () => {
         { branch_id: branchId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const branchName = branchId ? branchOptions.find((b) => b.id === branchId)?.name ?? null : null;
 
       toast({
         title: 'Branch updated',
         description: branchId
-          ? `${user.full_name} now books orders under ${branchName}.`
+          ? `${user.full_name} now books orders under ${branchOptions.find((b) => b.id === branchId)?.name}.`
           : `${user.full_name} is no longer assigned to a branch.`,
       });
-
-      const applyBranch = () => {
-        setUsers((current) => current.map((entry) => entry.id === user.id
-          ? { ...entry, branch_id: branchId, branch_name: branchName }
-          : entry));
-        setSelectedUser((current) => current?.id === user.id
-          ? { ...current, branch_id: branchId, branch_name: branchName }
-          : current);
-      };
-      applyBranch();
-      await fetchUsers();
-      applyBranch();
+      const branchName = branchId ? branchOptions.find((b) => b.id === branchId)?.name ?? null : null;
+      setUsers((current) => current.map((entry) => entry.id === user.id
+        ? { ...entry, branch_id: branchId, branch_name: branchName }
+        : entry));
+      setSelectedUser((current) => current?.id === user.id
+        ? { ...current, branch_id: branchId, branch_name: branchName }
+        : current);
+      fetchUsers();
     } catch (error) {
       const axiosError = error as AxiosError<{ error?: string }>;
       toast({
@@ -560,20 +551,23 @@ const UserManagement = () => {
   };
 
   const handleUpdateRole = async () => {
-    if (!selectedUser || !newRole) return;
-    
+    if (!selectedUser || !newRole || userActionPendingRef.current) return;
+    userActionPendingRef.current = true;
+    setUserActionPending('role');
+
     try {
       await axios.put(
         `${API_BASE_URL}/admin/users/${selectedUser.id}/role`,
         { role: newRole },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       toast({
         title: 'Success',
         description: 'User role updated successfully',
       });
-      
+      setUsers((current) => current.map((user) => user.id === selectedUser.id ? { ...user, role: newRole as User['role'] } : user));
+
       setShowRoleDialog(false);
       setSelectedUser(null);
       setNewRole('');
@@ -582,31 +576,37 @@ const UserManagement = () => {
       fetchActivityLogs();
     } catch (error) {
       console.error('Error updating role:', error);
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : 'Failed to update role';
       toast({
         title: 'Error',
         description: errorMessage || 'Failed to update role',
         variant: 'destructive',
       });
+    } finally {
+      userActionPendingRef.current = false;
+      setUserActionPending(null);
     }
   };
 
   const handleDeleteUser = async () => {
-    if (!selectedUser) return;
-    
+    if (!selectedUser || userActionPendingRef.current) return;
+    userActionPendingRef.current = true;
+    setUserActionPending('delete');
+
     try {
       await axios.delete(
         `${API_BASE_URL}/admin/users/${selectedUser.id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       toast({
         title: 'Success',
         description: 'User deleted successfully',
       });
-      
+      setUsers((current) => current.filter((user) => user.id !== selectedUser.id));
+
       setShowDeleteDialog(false);
       setDeleteConfirmStep(1);
       setSelectedUser(null);
@@ -615,14 +615,17 @@ const UserManagement = () => {
       fetchActivityLogs();
     } catch (error) {
       console.error('Error deleting user:', error);
-      const errorMessage = error instanceof Error && 'response' in error 
-        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error 
+      const errorMessage = error instanceof Error && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
         : 'Failed to delete user';
       toast({
         title: 'Error',
         description: errorMessage || 'Failed to delete user',
         variant: 'destructive',
       });
+    } finally {
+      userActionPendingRef.current = false;
+      setUserActionPending(null);
     }
   };
 
@@ -855,9 +858,9 @@ const UserManagement = () => {
                           <TableCell>
                             <div className="flex items-center gap-3">
                               <Avatar>
-                                <AvatarImage 
-                                  src={resolveProfilePictureUrl(user, API_ORIGIN)} 
-                                  alt={user.full_name} 
+                                <AvatarImage
+                                  src={resolveProfilePictureUrl(user, API_ORIGIN)}
+                                  alt={user.full_name}
                                 />
                                 <AvatarFallback>
                                   {user.full_name.split(' ').map(n => n[0]).join('').toUpperCase()}
@@ -883,7 +886,8 @@ const UserManagement = () => {
                                 disabled={updatingBranchUserId === user.id || (isManager && !isAdmin && user.role !== 'DESKTOP_AGENT')}
                               >
                                 <SelectTrigger className="h-8 w-[150px]">
-                                  <SelectValue placeholder={updatingBranchUserId === user.id ? 'Saving...' : 'Unassigned'} />
+                                  <SelectValue placeholder="Unassigned" />
+                                  {updatingBranchUserId === user.id && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="none">Unassigned</SelectItem>
@@ -939,7 +943,7 @@ const UserManagement = () => {
                               >
                                 <History className="h-4 w-4" />
                               </Button>
-                              
+
                               {user.status === 'PENDING' && (isAdmin || user.role === 'DESKTOP_AGENT') && (
                                 <>
                                   <Button
@@ -968,7 +972,7 @@ const UserManagement = () => {
                                   </Button>
                                 </>
                               )}
-                              
+
                               {user.status === 'ACTIVE' && user.role !== 'ADMIN' && (isAdmin || user.role === 'DESKTOP_AGENT') && (
                                 <Button
                                   variant="ghost"
@@ -983,19 +987,22 @@ const UserManagement = () => {
                                   <Ban className="h-4 w-4" />
                                 </Button>
                               )}
-                              
+
                               {user.status === 'SUSPENDED' && (isAdmin || user.role === 'DESKTOP_AGENT') && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   className="text-blue-600"
+                                  disabled={userActionPending === `activate-${user.id}`}
                                   onClick={() => handleActivateUser(user)}
                                   title="Activate"
                                 >
-                                  <RotateCcw className="h-4 w-4" />
+                                  {userActionPending === `activate-${user.id}`
+                                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                                    : <RotateCcw className="h-4 w-4" />}
                                 </Button>
                               )}
-                              
+
                               {isAdmin && user.role !== 'ADMIN' && (
                                 <Button
                                   variant="ghost"
@@ -1027,7 +1034,7 @@ const UserManagement = () => {
                     <Pagination>
                       <PaginationContent>
                         <PaginationItem>
-                          <PaginationPrevious 
+                          <PaginationPrevious
                             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                             className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                           />
@@ -1056,7 +1063,7 @@ const UserManagement = () => {
                           );
                         })}
                         <PaginationItem>
-                          <PaginationNext 
+                          <PaginationNext
                             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                             className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
                           />
@@ -1165,7 +1172,7 @@ const UserManagement = () => {
                               {log.user_name} <span className="text-sm text-gray-500">({log.user_role})</span>
                             </div>
                             <div className="text-sm text-gray-600 dark:text-gray-400 break-words">
-                              {log.action.replace(/_/g, ' ')} 
+                              {log.action.replace(/_/g, ' ')}
                               {log.resource_type && ` • ${log.resource_type}`}
                               {log.resource_id && ` #${log.resource_id}`}
                             </div>
@@ -1201,9 +1208,9 @@ const UserManagement = () => {
                 {/* Profile Picture and Basic Info */}
                 <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6 pb-4 border-b">
                   <Avatar className="h-24 w-24 flex-shrink-0">
-                    <AvatarImage 
-                      src={resolveProfilePictureUrl(selectedUser, API_ORIGIN)} 
-                      alt={selectedUser.full_name} 
+                    <AvatarImage
+                      src={resolveProfilePictureUrl(selectedUser, API_ORIGIN)}
+                      alt={selectedUser.full_name}
                     />
                     <AvatarFallback className="text-2xl">
                       {selectedUser.full_name.split(' ').map(n => n[0]).join('').toUpperCase()}
@@ -1361,7 +1368,10 @@ const UserManagement = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleActivateUser(selectedUser)}
+                      onClick={() => {
+                        setShowDetailsDialog(false);
+                        handleActivateUser(selectedUser);
+                      }}
                       className="gap-2 text-blue-600 w-full sm:w-auto"
                     >
                       <RotateCcw className="h-4 w-4 flex-shrink-0" />
@@ -1428,7 +1438,7 @@ const UserManagement = () => {
         </Dialog>
 
         {/* Approve Dialog */}
-        <Dialog open={showApproveDialog} onOpenChange={(open) => { if (!isApprovingUser) setShowApproveDialog(open); }}>
+        <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
           <DialogContent className="max-w-[95vw] sm:max-w-md p-4 sm:p-6">
             <DialogHeader>
               <DialogTitle>Approve User</DialogTitle>
@@ -1446,11 +1456,11 @@ const UserManagement = () => {
               </div>
             )}
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" onClick={() => setShowApproveDialog(false)} disabled={isApprovingUser} className="w-full sm:w-auto">
+              <Button variant="outline" onClick={() => setShowApproveDialog(false)} disabled={userActionPending === 'approve'} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button onClick={handleApproveUser} disabled={isApprovingUser} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
-                {isApprovingUser ? 'Approving...' : 'Approve User'}
+              <Button onClick={handleApproveUser} disabled={userActionPending === 'approve'} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
+                {userActionPending === 'approve' ? 'Approving...' : 'Approve User'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1484,14 +1494,14 @@ const UserManagement = () => {
               </div>
             )}
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" onClick={() => {
+              <Button variant="outline" disabled={userActionPending === 'reject'} onClick={() => {
                 setShowRejectDialog(false);
                 setRejectionReason('');
               }} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button onClick={handleRejectUser} variant="destructive" className="w-full sm:w-auto">
-                Reject User
+              <Button onClick={handleRejectUser} disabled={userActionPending === 'reject'} variant="destructive" className="w-full sm:w-auto">
+                {userActionPending === 'reject' ? 'Rejecting...' : 'Reject User'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1525,14 +1535,14 @@ const UserManagement = () => {
               </div>
             )}
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" onClick={() => {
+              <Button variant="outline" disabled={suspendingUser} onClick={() => {
                 setShowSuspendDialog(false);
                 setSuspensionReason('');
               }} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button onClick={handleSuspendUser} className="bg-orange-600 hover:bg-orange-700 w-full sm:w-auto">
-                Suspend User
+              <Button onClick={handleSuspendUser} disabled={suspendingUser} className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 w-full sm:w-auto">
+                {suspendingUser ? 'Suspending...' : 'Suspend User'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1557,11 +1567,11 @@ const UserManagement = () => {
               </div>
             )}
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button variant="outline" onClick={() => setShowDeleteDialog(false)} className="w-full sm:w-auto">
+              <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={userActionPending === 'delete'} className="w-full sm:w-auto">
                 Cancel
               </Button>
-              <Button onClick={handleDeleteUser} variant="destructive" className="w-full sm:w-auto">
-                Delete User
+              <Button onClick={handleDeleteUser} disabled={userActionPending === 'delete'} variant="destructive" className="w-full sm:w-auto">
+                {userActionPending === 'delete' ? 'Deleting...' : 'Delete User'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1579,7 +1589,7 @@ const UserManagement = () => {
                 A temporary password has been generated. Please provide this to the user.
               </DialogDescription>
             </DialogHeader>
-            
+
             {selectedUser && (
               <div className="space-y-4">
                 <div className="bg-muted p-4 rounded-lg space-y-2">
@@ -1590,9 +1600,9 @@ const UserManagement = () => {
                 <div className="space-y-2">
                   <Label>Temporary Password</Label>
                   <div className="flex items-center gap-2">
-                    <Input 
-                      value={temporaryPassword} 
-                      readOnly 
+                    <Input
+                      value={temporaryPassword}
+                      readOnly
                       className="font-mono text-lg font-bold"
                     />
                     <Button
@@ -1623,7 +1633,7 @@ const UserManagement = () => {
                 </div>
               </div>
             )}
-            
+
             <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button onClick={() => {
                 setShowTempPasswordDialog(false);
@@ -1706,11 +1716,11 @@ const UserManagement = () => {
                           <TableCell className="text-sm text-gray-600 max-w-xs">
                             {log.user_agent ? (
                               <span className="break-words block" title={log.user_agent}>
-                                <span className="hidden sm:inline\">{log.user_agent.length > 50 
-                                  ? log.user_agent.substring(0, 50) + '...' 
+                                <span className="hidden sm:inline\">{log.user_agent.length > 50
+                                  ? log.user_agent.substring(0, 50) + '...'
                                   : log.user_agent}</span>
-                                <span className="sm:hidden\">{log.user_agent.length > 30 
-                                  ? log.user_agent.substring(0, 30) + '...' 
+                                <span className="sm:hidden\">{log.user_agent.length > 30
+                                  ? log.user_agent.substring(0, 30) + '...'
                                   : log.user_agent}</span>
                               </span>
                             ) : 'Unknown'}
@@ -1733,7 +1743,7 @@ const UserManagement = () => {
                     <div>
                       <span className="text-muted-foreground">Last Login:</span>
                       <span className="ml-2 font-semibold">
-                        {selectedUser?.last_login 
+                        {selectedUser?.last_login
                           ? new Date(selectedUser.last_login).toLocaleString('en-UG', {
                               dateStyle: 'short',
                               timeStyle: 'short'

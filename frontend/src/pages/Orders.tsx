@@ -174,7 +174,7 @@ const defaultPaymentYmd = (order: { is_backdated?: boolean; created_at?: string 
 
 const getDaysOld = (createdAt: string): string => {
   const diffDays = getKampalaCalendarAge(createdAt);
-  
+
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return '1 day ago';
   if (diffDays < 7) return `${diffDays} days ago`;
@@ -207,7 +207,7 @@ const isUnpaidOlderThanFiveDays = (order: Order): boolean => {
 
 const isOverdue = (order: Order): boolean => {
   const diffDays = getKampalaCalendarAge(order.created_at);
-  
+
   // Overdue if: more than 30 days old AND (unpaid/partial OR not delivered)
   if (diffDays > 30) {
     const paymentOverdue = order.payment_status === 'UNPAID' || order.payment_status === 'PARTIAL';
@@ -324,7 +324,7 @@ const printReceipt = (
   );
   const receiptBusinessName = (info.name || 'HOMMIEZ WASH LAUNDRY AND DRY CLEANERS').toUpperCase();
   const receiptPlace = [info.address, info.location].filter(Boolean).join(', ');
-  
+
   const receiptHTML = `
     <!DOCTYPE html>
     <html>
@@ -439,7 +439,7 @@ const printReceipt = (
         ${info.phone ? `<p>Tel: ${info.phone}</p>` : ''}
         ${info.email ? `<p>Email: ${info.email}</p>` : ''}
       </div>
-      
+
       <div class="section">
         <div class="section-title">Order Details</div>
         <div class="info-row">
@@ -459,7 +459,7 @@ const printReceipt = (
           <span>${order.customer_phone}</span>
         </div>
       </div>
-      
+
       <div class="section">
         <div class="section-title">Items</div>
         <div class="items-table">
@@ -488,7 +488,7 @@ const printReceipt = (
           }).join('')}
         </div>
       </div>
-      
+
       <div class="totals">
         <div class="total-row">
           <span>Subtotal:</span>
@@ -550,7 +550,7 @@ const printReceipt = (
           </div>
         `}
       </div>
-      
+
       <div class="section">
         <div class="info-row">
           <span>Pickup Date:</span>
@@ -566,11 +566,11 @@ const printReceipt = (
           <strong>${branchLine}</strong>
         </div>` : ''}
       </div>
-      
+
       <div class="barcode">
         ${order.order_number}
       </div>
-      
+
       ${order.order_status === 'ready' || order.order_status === 'delivered' ? `
       <div class="section">
         <div class="section-title">Collection Policy</div>
@@ -588,7 +588,7 @@ const printReceipt = (
         <p>🌟 We value your business! 🌟</p>
         <p>Please keep this receipt for collection</p>
       </div>
-      
+
       <script>
         window.onload = () => {
           window.print();
@@ -599,7 +599,7 @@ const printReceipt = (
     </body>
     </html>
   `;
-  
+
   printWindow.document.write(receiptHTML);
   printWindow.document.close();
 };
@@ -674,7 +674,7 @@ export default function Orders() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
   const pageSize = 20;
-  
+
   // Column visibility state
   const [visibleColumns, setVisibleColumns] = useState({
     orderNumber: true,
@@ -687,7 +687,7 @@ export default function Orders() {
     status: true,
     actions: true,
   });
-  
+
   // Delivery initiation states
   const [showDeliveryDialog, setShowDeliveryDialog] = useState(false);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
@@ -780,12 +780,12 @@ export default function Orders() {
         page: currentPage,
         limit: pageSize,
       };
-      
+
       // Add search query if exists
       if (searchQuery.trim()) {
         params.search = searchQuery.trim();
       }
-      
+
       // Add filters
       if (statusFilter !== 'ALL') {
         params.status = statusFilter;
@@ -800,7 +800,7 @@ export default function Orders() {
       if (branchFilter !== 'ALL') {
         params.branch_id = branchFilter;
       }
-      
+
       const response = await axios.get(`${API_BASE_URL}/orders`, {
         headers: { Authorization: `Bearer ${token}` },
         params,
@@ -1039,10 +1039,10 @@ export default function Orders() {
       if (targetOrder) {
         // Mark that we've opened it
         hasAutoOpenedRef.current = true;
-        
+
         // Clear the state FIRST to prevent re-opening
         window.history.replaceState({}, document.title);
-        
+
         // Automatically open the order details
         setTimeout(() => {
           viewOrderDetails(targetOrder);
@@ -1080,18 +1080,18 @@ export default function Orders() {
       const response = await axios.get(`${API_BASE_URL}/orders/${order.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       if (!response.data || !response.data.order) {
         throw new Error('Invalid response from server');
       }
-      
+
       setSelectedOrder(response.data.order);
       setOrderItems(response.data.items || []);
       setPaymentTransactions([]);
       setPaymentTransactionsPage(1);
       setOrderDelivery(null);
       setShowDetailsDialog(true);
-      
+
       // Fetch payment transactions
       try {
         const paymentsResponse = await axios.get(`${API_BASE_URL}/payments/order/${order.id}`, {
@@ -1114,7 +1114,7 @@ export default function Orders() {
         console.error('Error fetching delivery information:', deliveryError);
         setOrderDelivery(null);
       }
-      
+
       setShowDetailsDialog(true);
     } catch (error) {
       console.error('Error fetching order details:', error);
@@ -1191,8 +1191,8 @@ export default function Orders() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const paymentMethodDisplay = paymentMethod === 'MOBILE_MONEY' 
-        ? `${mobileMoneyProvider} Mobile Money` 
+      const paymentMethodDisplay = paymentMethod === 'MOBILE_MONEY'
+        ? `${mobileMoneyProvider} Mobile Money`
         : paymentMethod.replace('_', ' ');
 
       const channelDisplay = paymentChannel === 'MERCHANT' ? ' via *165#/*185#' :
@@ -1230,6 +1230,7 @@ export default function Orders() {
 
   // Update order status
   const handleUpdateStatus = async (requestedStatus?: string) => {
+    // Ignore a click event if this handler is ever wired directly to a button.
     const statusToUpdate = typeof requestedStatus === 'string' ? requestedStatus : newStatus;
     if (!selectedOrder || !statusToUpdate || updatingOrderStatusRef.current) return;
     updatingOrderStatusRef.current = true;
@@ -1243,34 +1244,72 @@ export default function Orders() {
       );
       const updatedOrder = response.data.order;
       const savedStatus = String(updatedOrder?.status || statusToUpdate).toLowerCase();
-      const applySavedStatus = (order: Order): Order => order.id === selectedOrder.id
-        ? { ...order, order_status: savedStatus, ...(updatedOrder?.pickup_date ? { pickup_date: updatedOrder.pickup_date } : {}) }
-        : order;
-      setOrders((current) => current.map(applySavedStatus));
-      setSelectedOrder((current) => current ? applySavedStatus(current) : current);
+      setOrders((current) => current.map((order) => order.id === selectedOrder.id
+        ? {
+            ...order,
+            order_status: savedStatus,
+            ...(updatedOrder?.pickup_date ? { pickup_date: updatedOrder.pickup_date } : {}),
+          }
+        : order));
+      setSelectedOrder((current) => current?.id === selectedOrder.id
+        ? {
+            ...current,
+            order_status: savedStatus,
+            ...(updatedOrder?.pickup_date ? { pickup_date: updatedOrder.pickup_date } : {}),
+          }
+        : current);
 
       toast({
-        title: 'Status Updated',
+        title: '✅ Status Updated',
         description: `Order status changed to ${statusToUpdate}`,
       });
+
       setShowStatusDialog(false);
       setNewStatus('');
 
+      // Refresh the orders list
       await fetchOrders();
-      if (selectedOrder.id) await viewOrderDetails(selectedOrder);
-      // Keep the successful write visible if a follow-up read is briefly stale.
-      setOrders((current) => current.map(applySavedStatus));
-      setSelectedOrder((current) => current ? applySavedStatus(current) : current);
+
+      // Refresh the selected order details with fresh data from server
+      if (selectedOrder && selectedOrder.id) {
+        await viewOrderDetails(selectedOrder);
+      }
+
+      // Keep the status confirmed by the write as the visible source of truth
+      // if a follow-up read returns stale order data.
+      setOrders((current) => current.map((order) => order.id === selectedOrder.id
+        ? {
+            ...order,
+            order_status: savedStatus,
+            ...(updatedOrder?.pickup_date ? { pickup_date: updatedOrder.pickup_date } : {}),
+          }
+        : order));
+      setSelectedOrder((current) => current?.id === selectedOrder.id
+        ? {
+            ...current,
+            order_status: savedStatus,
+            ...(updatedOrder?.pickup_date ? { pickup_date: updatedOrder.pickup_date } : {}),
+          }
+        : current);
     } catch (error) {
       const err = error as {
         message?: string;
-        response?: { status?: number; data?: { error?: string; errors?: Array<{ msg?: string }> } };
+        response?: {
+          status?: number;
+          data?: { error?: string; errors?: Array<{ msg?: string }> };
+        };
       };
-      const validationErrors = err.response?.data?.errors?.map((entry) => entry.msg).filter(Boolean).join('; ');
+      const validationErrors = err.response?.data?.errors
+        ?.map((entry) => entry.msg)
+        .filter(Boolean)
+        .join('; ');
       toast({
         variant: 'destructive',
-        title: err.response?.status ? `Status update failed (${err.response.status})` : 'Status update failed',
-        description: err.response?.data?.error || validationErrors || err.message || 'Please try again.',
+        title: err.response?.status
+          ? `Status update failed (${err.response.status})`
+          : 'Status update failed',
+        description:
+          err.response?.data?.error || validationErrors || err.message || 'Please try again.',
       });
     } finally {
       updatingOrderStatusRef.current = false;
@@ -1306,12 +1345,10 @@ export default function Orders() {
         const lastPage = Math.max(1, Math.ceil(nextTotal / pageSize));
         if (currentPage > lastPage) setCurrentPage(lastPage);
       }
+
       setShowDeleteOrderDialog(false);
       setShowDetailsDialog(false);
       setSelectedOrder(null);
-      await fetchOrders();
-      // Keep the deleted order out if the list read briefly returns stale data.
-      setOrders((current) => current.filter((order) => order.id !== deletedOrderId));
     } catch (error) {
       const err = error as { response?: { data?: { error?: string } } };
       toast({
@@ -1327,7 +1364,7 @@ export default function Orders() {
   // Open reminder dialog with message preview
   const openReminderDialog = (order: Order) => {
     setReminderOrder(order);
-    
+
     // Generate context-aware reminder message
     const message = generateReminderPreview(order);
     setReminderMessage(message);
@@ -1345,10 +1382,10 @@ export default function Orders() {
 
     try {
       setSendingReminder(reminderOrder.id);
-      
+
       const response = await axios.post(
         `${API_BASE_URL}/reminders/orders/${reminderOrder.id}/remind`,
-        { 
+        {
           channel: reminderChannel,
           customMessage: reminderMessage // Send custom message if edited
         },
@@ -1399,14 +1436,14 @@ export default function Orders() {
       const response = await axios.get(`${API_BASE_URL}/deliveries/order/${order.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       if (response.data.delivery) {
         // Delivery already exists - redirect directly to its details
         toast({
           title: '📦 Delivery Already Exists',
           description: 'Opening delivery details...',
         });
-        
+
         // Navigate directly to the specific delivery
         setTimeout(() => {
           navigate(`/deliveries?orderId=${order.id}`);
@@ -1416,7 +1453,7 @@ export default function Orders() {
     } catch (error) {
       console.error('Error checking delivery:', error);
     }
-    
+
     // No delivery exists, proceed with dialog
     setSelectedOrder(order);
     setDeliveryType('PAID');
@@ -1435,7 +1472,7 @@ export default function Orders() {
   // Handle delivery initiation
   const handleInitiateDelivery = async () => {
     if (!selectedOrder) return;
-    
+
     // Validation: For PAID deliveries, revenue is required
     if (deliveryType === 'PAID' && (!deliveryRevenue || parseFloat(deliveryRevenue) <= 0)) {
       toast({
@@ -1445,7 +1482,7 @@ export default function Orders() {
       });
       return;
     }
-    
+
     try {
       setCreatingDelivery(true);
       const payload: {
@@ -1465,37 +1502,37 @@ export default function Orders() {
         scheduled_date: deliveryDate,
         scheduled_time_slot: deliveryTimeSlot,
       };
-      
+
       // Add delivery revenue for PAID deliveries
       if (deliveryType === 'PAID') {
         payload.delivery_revenue = parseFloat(deliveryRevenue);
         payload.delivery_zone_id = selectedZoneId ? parseInt(selectedZoneId) : undefined;
         payload.delivery_address = deliveryAddress;
       }
-      
+
       if (deliveryNotes) {
         payload.delivery_notes = deliveryNotes;
       }
-      
+
       if (deliveryPersonName) {
         payload.delivery_person_name = deliveryPersonName;
       }
-      
+
       if (vehicleInfo) {
         payload.vehicle_info = vehicleInfo;
       }
-      
+
       await axios.post(
         `${API_BASE_URL}/deliveries`,
         payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
+
       toast({
         title: '✅ Delivery Initiated',
         description: `${deliveryType === 'PAID' ? 'Paid delivery' : 'Free delivery (offer)'} scheduled for ${selectedOrder.order_number}`,
       });
-      
+
       setShowDeliveryDialog(false);
       setDeliveryRevenue('');
       setSelectedZoneId('');
@@ -1528,7 +1565,7 @@ export default function Orders() {
   // Get overdue styling based on urgency (payment status)
   const getOverdueStyle = (order: Order) => {
     if (!isOverdue(order)) return { rowClass: '', iconClass: '', textClass: '' };
-    
+
     // High urgency: UNPAID or PARTIAL payment (money issue)
     if (order.payment_status === 'UNPAID' || order.payment_status === 'PARTIAL') {
       return {
@@ -1537,7 +1574,7 @@ export default function Orders() {
         textClass: 'text-red-600'
       };
     }
-    
+
     // Low urgency: PAID but not picked up (just reminder needed)
     return {
       rowClass: 'bg-yellow-50 dark:bg-yellow-950/20',
@@ -1938,16 +1975,16 @@ export default function Orders() {
                 <ChevronLeft className="h-4 w-4 sm:mr-1" />
                 <span className="hidden sm:inline">Previous</span>
               </Button>
-              
+
               {/* Advanced Page Numbers with First/Last Always Visible */}
               <div className="flex items-center gap-1 flex-wrap justify-center">
                 {(() => {
                   const totalPages = Math.ceil(totalOrders / pageSize);
                   const pages: (number | string)[] = [];
-                  
+
                   // Always show page 1
                   pages.push(1);
-                  
+
                   if (totalPages <= 7) {
                     // Show all pages if 7 or fewer
                     for (let i = 2; i <= totalPages; i++) {
@@ -1955,45 +1992,45 @@ export default function Orders() {
                     }
                   } else {
                     // Show: 1 ... [current-1, current, current+1] ... last
-                    
+
                     // Add ellipsis after 1 if needed
                     if (currentPage > 3) {
                       pages.push('...');
                     }
-                    
+
                     // Add page 2 if current is near start
                     if (currentPage === 3) {
                       pages.push(2);
                     }
-                    
+
                     // Add pages around current (but not 1 or last)
                     const start = Math.max(2, currentPage - 1);
                     const end = Math.min(totalPages - 1, currentPage + 1);
-                    
+
                     for (let i = start; i <= end; i++) {
                       if (!pages.includes(i)) {
                         pages.push(i);
                       }
                     }
-                    
+
                     // Add second-to-last page if current is near end
                     if (currentPage === totalPages - 2) {
                       if (!pages.includes(totalPages - 1)) {
                         pages.push(totalPages - 1);
                       }
                     }
-                    
+
                     // Add ellipsis before last if needed
                     if (currentPage < totalPages - 2) {
                       pages.push('...');
                     }
-                    
+
                     // Always show last page
                     if (!pages.includes(totalPages)) {
                       pages.push(totalPages);
                     }
                   }
-                  
+
                   return pages.map((page, index) => {
                     if (page === '...') {
                       return (
@@ -2002,7 +2039,7 @@ export default function Orders() {
                         </span>
                       );
                     }
-                    
+
                     const pageNumber = page as number;
                     return (
                       <Button
@@ -2019,7 +2056,7 @@ export default function Orders() {
                   });
                 })()}
               </div>
-              
+
               <Button
                 variant="outline"
                 size="sm"
@@ -2288,7 +2325,7 @@ export default function Orders() {
                         </TableRow>
                       </TableBody>
                     </Table>
-                    
+
                     {/* Pagination for Payment Transactions */}
                     {paymentTransactions.length > paymentTransactionsPerPage && (
                       <div className="flex flex-col sm:flex-row items-center justify-between p-2 sm:p-3 border-t bg-muted/50 gap-2">
@@ -2800,25 +2837,21 @@ export default function Orders() {
                 )}
                 {selectedOrder.order_status === 'pending' && (
                   <Button
-                    onClick={() => {
-                      setNewStatus('PROCESSING');
-                      handleUpdateStatus();
-                    }}
+                    onClick={() => handleUpdateStatus('PROCESSING')}
+                    disabled={updatingOrderStatus}
                     variant="outline"
                   >
-                    Start Processing
+                    {updatingOrderStatus ? 'Updating...' : 'Start Processing'}
                   </Button>
                 )}
                 {selectedOrder.order_status === 'processing' && (
                   <Button
-                    onClick={() => {
-                      setNewStatus('READY');
-                      handleUpdateStatus();
-                    }}
+                    onClick={() => handleUpdateStatus('READY')}
+                    disabled={updatingOrderStatus}
                     variant="outline"
                   >
-                    <CheckCircle2 className="h-4 w-4 mr-1" />
-                    Mark as Ready
+                    {updatingOrderStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                    {updatingOrderStatus ? 'Updating...' : 'Mark as Ready'}
                   </Button>
                 )}
                 {selectedOrder.order_status === 'ready' && !orderDelivery && (
@@ -2843,14 +2876,12 @@ export default function Orders() {
                 )}
                 {selectedOrder.order_status === 'ready' && (
                   <Button
-                    onClick={() => {
-                      setNewStatus('DELIVERED');
-                      handleUpdateStatus();
-                    }}
+                    onClick={() => handleUpdateStatus('DELIVERED')}
+                    disabled={updatingOrderStatus}
                     variant="outline"
                   >
-                    <CheckCircle2 className="h-4 w-4 mr-1" />
-                    Mark as Delivered
+                    {updatingOrderStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                    {updatingOrderStatus ? 'Updating...' : 'Mark as Delivered'}
                   </Button>
                 )}
                 {/* Refund Button - ADMIN/MANAGER can process directly, DESKTOP_AGENT can request */}
@@ -3267,7 +3298,7 @@ export default function Orders() {
               )}
 
               <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t">
-                <Button variant="outline" onClick={() => setShowStatusDialog(false)} className="w-full sm:w-auto">
+                <Button variant="outline" onClick={() => setShowStatusDialog(false)} disabled={updatingOrderStatus} className="w-full sm:w-auto">
                   Cancel
                 </Button>
                 <Button
@@ -3275,7 +3306,8 @@ export default function Orders() {
                   className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-white"
                   disabled={updatingOrderStatus || !newStatus || newStatus.toLowerCase() === selectedOrder.order_status.toLowerCase()}
                 >
-                  {updatingOrderStatus ? 'Updating...' : <><Edit className="h-4 w-4 mr-1.5" />Confirm Status Update</>}
+                  {updatingOrderStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <Edit className="h-4 w-4 mr-1.5" />}
+                  {updatingOrderStatus ? 'Updating...' : 'Confirm Status Update'}
                 </Button>
               </div>
             </div>
@@ -3296,13 +3328,13 @@ export default function Orders() {
                 <>
                   Order: <strong>{reminderOrder.order_number}</strong> | Customer: <strong>{reminderOrder.customer_name}</strong>
                   <br />
-                  Status: <strong className="capitalize">{reminderOrder.order_status}</strong> | 
+                  Status: <strong className="capitalize">{reminderOrder.order_status}</strong> |
                   Payment: <strong>{reminderOrder.payment_status}</strong>
                 </>
               )}
             </DialogDescription>
           </DialogHeader>
-          
+
           {reminderOrder && (
             <div className="space-y-4">
               {/* Context Info */}
@@ -3544,7 +3576,7 @@ export default function Orders() {
               Schedule delivery or pickup for order {selectedOrder?.order_number}
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedOrder && (
             <div className="space-y-4 pb-4">
               {/* Order Info */}
@@ -3562,7 +3594,7 @@ export default function Orders() {
                   <span className="font-medium">{selectedOrder.customer_phone}</span>
                 </div>
               </div>
-              
+
               {/* Delivery Type */}
               <div className="space-y-2">
                 <Label>Delivery Type *</Label>
@@ -3579,7 +3611,7 @@ export default function Orders() {
                   {deliveryType === 'PAID' ? '💰 Will track delivery revenue' : '🎉 Free delivery as offer or promotional bonus'}
                 </p>
               </div>
-              
+
               {/* Delivery Revenue (only for PAID) */}
               {deliveryType === 'PAID' && (
                 <div className="space-y-2">
@@ -3598,7 +3630,7 @@ export default function Orders() {
                   </p>
                 </div>
               )}
-              
+
               {/* Zone Selection (optional for PAID, can help estimate distance) */}
               {deliveryType === 'PAID' && (
                 <>
@@ -3630,7 +3662,7 @@ export default function Orders() {
                       </p>
                     )}
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label>Delivery Address *</Label>
                     <Textarea
@@ -3642,7 +3674,7 @@ export default function Orders() {
                   </div>
                 </>
               )}
-              
+
               {/* Offer/Promo Note for FREE deliveries */}
               {deliveryType === 'FREE' && (
                 <div className="space-y-2">
@@ -3655,7 +3687,7 @@ export default function Orders() {
                   />
                 </div>
               )}
-              
+
               {/* Scheduled Date */}
               <div className="space-y-2">
                 <Label htmlFor="delivery-date">Scheduled Date *</Label>
@@ -3669,7 +3701,7 @@ export default function Orders() {
                   aria-label="Select delivery date"
                 />
               </div>
-              
+
               {/* Time Slot */}
               <div className="space-y-2">
                 <Label>Time Slot</Label>
@@ -3684,7 +3716,7 @@ export default function Orders() {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               {/* Delivery Person/Rider (Optional) */}
               <div className="space-y-2">
                 <Label>Delivery Person / Rider (Optional)</Label>
@@ -3697,7 +3729,7 @@ export default function Orders() {
                   Enter name of person responsible for delivery/pickup
                 </p>
               </div>
-              
+
               {/* Vehicle Info (Optional) */}
               <div className="space-y-2">
                 <Label>Vehicle Info (Optional)</Label>
@@ -3710,7 +3742,7 @@ export default function Orders() {
                   Enter vehicle type or registration number
                 </p>
               </div>
-              
+
               {/* Delivery Notes */}
               <div className="space-y-2">
                 <Label>Notes (Optional)</Label>
@@ -3721,7 +3753,7 @@ export default function Orders() {
                   rows={2}
                 />
               </div>
-              
+
               {/* Summary */}
               <div className="bg-purple-50 dark:bg-purple-950 p-4 rounded-lg space-y-2 border border-purple-200 dark:border-purple-800">
                 <p className="font-semibold text-purple-900 dark:text-purple-100">Delivery Summary:</p>
@@ -3742,19 +3774,19 @@ export default function Orders() {
                   {vehicleInfo && <p>• Vehicle: {vehicleInfo}</p>}
                 </div>
               </div>
-              
+
               {/* Actions */}
               <div className="flex flex-col sm:flex-row gap-2 pt-4">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowDeliveryDialog(false)} 
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeliveryDialog(false)}
                   className="w-full sm:w-auto"
                   disabled={creatingDelivery}
                 >
                   Cancel
                 </Button>
-                <Button 
-                  onClick={handleInitiateDelivery} 
+                <Button
+                  onClick={handleInitiateDelivery}
                   className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700"
                   disabled={creatingDelivery || (deliveryType === 'PAID' && !deliveryRevenue)}
                 >
@@ -3770,13 +3802,13 @@ export default function Orders() {
       <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
         <DialogContent className="max-w-[95vw] sm:max-w-4xl max-h-[96dvh] sm:max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           {invoiceOrderId && token && (
-            <Invoice 
-              orderId={invoiceOrderId} 
-              token={token} 
+            <Invoice
+              orderId={invoiceOrderId}
+              token={token}
               onClose={() => {
                 setShowInvoiceDialog(false);
                 setInvoiceOrderId(null);
-              }} 
+              }}
             />
           )}
         </DialogContent>
