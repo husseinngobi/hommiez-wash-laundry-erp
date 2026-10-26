@@ -51,6 +51,7 @@ interface ExpenseCategory {
 
 interface IncomeStatement {
   period: string;
+  revenue_basis?: string;
   revenue: {
     total: number;
     net_revenue?: number;
@@ -81,9 +82,11 @@ interface IncomeStatement {
 
 interface BalanceSheet {
   as_of_date: string;
+  note?: string;
+  equity_basis?: string;
   assets: {
     current_assets: {
-      cash: number;
+      cash: number | null;
       accounts_receivable: number;
       inventory: number;
       total: number;
@@ -93,7 +96,8 @@ interface BalanceSheet {
   liabilities: {
     current_liabilities: {
       accounts_payable: number;
-      accrued_salaries: number;
+      accrued_salaries: number | null;
+      customer_advances?: number;
     };
     total_liabilities: number;
   };
@@ -110,6 +114,8 @@ interface BalanceSheet {
 
 interface CashFlow {
   period: string;
+  note?: string;
+  cash_balance_available?: boolean;
   operating_activities: {
     cash_from_customers: number;
     cash_paid_for_expenses: number;
@@ -121,7 +127,7 @@ interface CashFlow {
     net_cash_from_investing: number;
   };
   net_increase_in_cash: number;
-  cash_at_end: number;
+  cash_at_end: number | null;
 }
 
 interface TrialBalanceAccount {
@@ -133,6 +139,8 @@ interface TrialBalanceAccount {
 
 interface TrialBalance {
   as_of_date: string;
+  note?: string;
+  accounting_basis?: string;
   accounts: TrialBalanceAccount[];
   totals: {
     total_debits: number;
@@ -496,22 +504,22 @@ export default function Accounting() {
 
         const balanceSheetRows = [
           [{ content: 'ASSETS', colSpan: 2, styles: { fillColor: [37, 99, 235] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
-          ['Cash & Bank', formatAmount(balanceData.assets.current_assets.cash || 0)],
+          ['Cash & Bank', balanceData.assets.current_assets.cash === null ? 'Not tracked' : formatAmount(balanceData.assets.current_assets.cash || 0)],
           ['Accounts Receivable', formatAmount(balanceData.assets.current_assets.accounts_receivable || 0)],
           ['Inventory', formatAmount(balanceData.assets.current_assets.inventory || 0)],
-          ['Total Current Assets', formatAmount(balanceData.assets.current_assets.total || 0)],
-          [{ content: 'TOTAL ASSETS', colSpan: 2, styles: { fillColor: [37, 99, 235] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
+          ['Known Current Assets', formatAmount(balanceData.assets.current_assets.total || 0)],
+          [{ content: 'RECORDED ASSETS (PARTIAL)', colSpan: 2, styles: { fillColor: [37, 99, 235] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
           ['', formatAmount(balanceData.assets.total_assets || 0)],
           [{ content: 'LIABILITIES', colSpan: 2, styles: { fillColor: [239, 68, 68] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
           ['Accounts Payable', formatAmount(balanceData.liabilities.current_liabilities.accounts_payable || 0)],
-          ['Accrued Salaries', formatAmount(balanceData.liabilities.current_liabilities.accrued_salaries || 0)],
+          ['Accrued Salaries', balanceData.liabilities.current_liabilities.accrued_salaries === null ? 'Not tracked' : formatAmount(balanceData.liabilities.current_liabilities.accrued_salaries || 0)],
           [{ content: 'TOTAL LIABILITIES', colSpan: 2, styles: { fillColor: [239, 68, 68] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
           ['', formatAmount(balanceData.liabilities.total_liabilities || 0)],
           [{ content: 'EQUITY', colSpan: 2, styles: { fillColor: [34, 197, 94] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
-          ['Retained Earnings', formatAmount(balanceData.equity.retained_earnings || 0)],
+          ['Unallocated Equity (Derived)', formatAmount(balanceData.equity.retained_earnings || 0)],
           [{ content: 'TOTAL EQUITY', colSpan: 2, styles: { fillColor: [34, 197, 94] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
           ['', formatAmount(balanceData.equity.total_equity || 0)],
-          [{ content: balanceData.is_balanced ? 'BALANCED' : 'UNBALANCED', colSpan: 2, styles: { fillColor: (balanceData.is_balanced ? [34, 197, 94] : [239, 68, 68]) as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
+          [{ content: balanceData.is_balanced ? 'EQUATION BALANCES USING DERIVED EQUITY' : 'UNBALANCED', colSpan: 2, styles: { fillColor: (balanceData.is_balanced ? [34, 197, 94] : [239, 68, 68]) as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
         ];
 
         autoTable(doc, {
@@ -553,7 +561,7 @@ export default function Accounting() {
           [{ content: 'NET INCREASE IN CASH', colSpan: 2, styles: { fillColor: [34, 197, 94] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
           ['', formatAmount(cashFlowData.net_increase_in_cash || 0)],
           [{ content: 'CASH AT END OF PERIOD', colSpan: 2, styles: { fillColor: [37, 99, 235] as [number, number, number], textColor: 255, fontStyle: 'bold' as const } }],
-          ['', formatAmount(cashFlowData.cash_at_end || 0)],
+          ['', cashFlowData.cash_at_end === null ? 'Not available' : formatAmount(cashFlowData.cash_at_end || 0)],
         ];
 
         autoTable(doc, {
@@ -611,7 +619,7 @@ export default function Accounting() {
 
       // Save PDF
       const periodText = period === 'all' ? 'all-time' : period;
-      doc.save(`hommiez-wash-accounting-${periodText}-${selectedYear}-${Date.now()}.pdf`);
+      doc.save(`lush-laundry-accounting-${periodText}-${selectedYear}-${Date.now()}.pdf`);
 
       toast.success(`Exported ${selectedReports.length} report(s) as PDF successfully`);
       setShowExportDialog(false);
@@ -767,7 +775,7 @@ export default function Accounting() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground">
-                        Total Revenue
+                        Net Revenue (excl. VAT)
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -879,6 +887,7 @@ export default function Accounting() {
                     <p className="text-sm text-muted-foreground">
                       Period: {incomeStatement.period}
                     </p>
+                    <p className="text-xs text-muted-foreground">Revenue is recognized when an order is delivered, excludes VAT, and reflects refunds recorded in the period.</p>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
@@ -892,7 +901,7 @@ export default function Accounting() {
                           </div>
                         ))}
                         <div className="flex justify-between font-bold mt-2 pt-2 border-t">
-                          <span>Total Revenue</span>
+                          <span>Net Revenue (excl. VAT)</span>
                           <span className="text-green-600">{formatUGX(incomeStatement.revenue.total ?? incomeStatement.revenue.net_revenue ?? 0)}</span>
                         </div>
 
@@ -999,7 +1008,7 @@ export default function Accounting() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground">
-                        Total Assets
+                        Recorded Assets (Partial)
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -1033,9 +1042,9 @@ export default function Accounting() {
                         {formatUGX(balanceSheet.equity.total_equity)}
                       </div>
                       {balanceSheet.balance_check.balanced ? (
-                        <p className="text-xs text-green-600 mt-1">✓ Balanced</p>
+                        <p className="text-xs text-green-600 mt-1">Equation balances using derived equity.</p>
                       ) : (
-                        <p className="text-xs text-red-600 mt-1">⚠ Not Balanced</p>
+                        <p className="text-xs text-red-600 mt-1">Assets and liabilities do not reconcile.</p>
                       )}
                     </CardContent>
                   </Card>
@@ -1048,6 +1057,7 @@ export default function Accounting() {
                     <p className="text-sm text-muted-foreground">
                       As of: {balanceSheet.as_of_date}
                     </p>
+                    <p className="text-xs text-muted-foreground">{balanceSheet.note}</p>
                   </CardHeader>
                   <CardContent>
                     <div className="grid md:grid-cols-2 gap-6">
@@ -1060,7 +1070,7 @@ export default function Accounting() {
                           <div className="space-y-1 pl-4">
                             <div className="flex justify-between text-sm">
                               <span>Cash</span>
-                              <span>{formatUGX(balanceSheet.assets.current_assets.cash)}</span>
+                              <span>{balanceSheet.assets.current_assets.cash === null ? 'Not tracked' : formatUGX(balanceSheet.assets.current_assets.cash)}</span>
                             </div>
                             <div className="flex justify-between text-sm">
                               <span>Accounts Receivable</span>
@@ -1071,7 +1081,7 @@ export default function Accounting() {
                               <span>{formatUGX(balanceSheet.assets.current_assets.inventory)}</span>
                             </div>
                             <div className="flex justify-between font-medium border-t pt-1">
-                              <span>Total Current Assets</span>
+                              <span>Known Current Assets</span>
                               <span>{formatUGX(balanceSheet.assets.current_assets.total)}</span>
                             </div>
                           </div>
@@ -1098,7 +1108,11 @@ export default function Accounting() {
                             </div>
                             <div className="flex justify-between text-sm">
                               <span>Accrued Salaries</span>
-                              <span>{formatUGX(balanceSheet.liabilities.current_liabilities.accrued_salaries)}</span>
+                              <span>{balanceSheet.liabilities.current_liabilities.accrued_salaries === null ? 'Not tracked' : formatUGX(balanceSheet.liabilities.current_liabilities.accrued_salaries)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span>Customer Advances</span>
+                              <span>{formatUGX(balanceSheet.liabilities.current_liabilities.customer_advances || 0)}</span>
                             </div>
                             <div className="flex justify-between font-medium border-t pt-1">
                               <span>Total Liabilities</span>
@@ -1111,7 +1125,7 @@ export default function Accounting() {
                           <h4 className="font-medium mb-2">Equity</h4>
                           <div className="space-y-1 pl-4">
                             <div className="flex justify-between text-sm">
-                              <span>Retained Earnings</span>
+                              <span>Unallocated Equity (Derived)</span>
                               <span>{formatUGX(balanceSheet.equity.retained_earnings)}</span>
                             </div>
                             <div className="flex justify-between font-medium border-t pt-1">
@@ -1210,8 +1224,9 @@ export default function Accounting() {
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Cash at End of Period</span>
-                      <span className="font-semibold">{formatUGX(cashFlow.cash_at_end)}</span>
+                      <span className="font-semibold">{cashFlow.cash_balance_available && cashFlow.cash_at_end !== null ? formatUGX(cashFlow.cash_at_end) : 'Not available'}</span>
                     </div>
+                    {!cashFlow.cash_balance_available && <p className="text-xs text-muted-foreground mt-2">{cashFlow.note}</p>}
                   </div>
                 </CardContent>
               </Card>
@@ -1235,14 +1250,15 @@ export default function Accounting() {
             ) : trialBalance ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Trial Balance</CardTitle>
+                  <CardTitle>Operational Trial Balance Summary</CardTitle>
                   <p className="text-sm text-muted-foreground">
                     As of: {trialBalance.as_of_date}
                   </p>
+                  <p className="text-xs text-muted-foreground">{trialBalance.note}</p>
                   {trialBalance.totals.balanced ? (
-                    <p className="text-sm text-green-600">✓ Books are balanced</p>
+                    <p className="text-sm text-green-600">Debit and credit totals match arithmetically.</p>
                   ) : (
-                    <p className="text-sm text-red-600">⚠ Books are not balanced {trialBalance.totals.difference !== undefined && `(Difference: ${formatUGX(trialBalance.totals.difference)})`}</p>
+                    <p className="text-sm text-red-600">Debit and credit totals differ {trialBalance.totals.difference !== undefined && `(Difference: ${formatUGX(trialBalance.totals.difference)})`}</p>
                   )}
                 </CardHeader>
                 <CardContent>

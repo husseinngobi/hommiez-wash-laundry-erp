@@ -196,12 +196,12 @@ export default function Dashboard() {
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>(() => cachedDashboard?.recentOrders ?? []);
   const [loading, setLoading] = useState(() => !cachedDashboard);
   const [businessHours, setBusinessHours] = useState<BusinessHours | null>(() => cachedDashboard?.businessHours ?? null);
-  
+
   // Main period selector - controls both stats AND financial performance
   const [statsPeriod, setStatsPeriod] = useState<'today' | 'week' | 'month' | 'year' | 'all' | 'custom'>(initialStatsPeriod);
   const [customFromDate, setCustomFromDate] = useState('');
   const [customToDate, setCustomToDate] = useState('');
-  
+
   // Enhanced financial states
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(() => cachedDashboard?.financialSummary ?? null);
   const [paymentBreakdown, setPaymentBreakdown] = useState<PaymentMethodBreakdown[]>(() => cachedDashboard?.paymentBreakdown ?? []);
@@ -300,7 +300,7 @@ export default function Dashboard() {
       const dateParams = dashboardPeriod === 'custom'
         ? { from_date: customFromDate, to_date: customToDate }
         : {};
-      
+
       // Core dashboard data should not wait for optional financial panels.
       const coreResponses = await Promise.all([
         axios.get(`${API_BASE_URL}/dashboard/stats`, {
@@ -316,7 +316,7 @@ export default function Dashboard() {
         })
       ]);
       if (requestId !== dashboardRequestId.current) return;
-      
+
       const [statsResponse, recentOrdersResponse, businessHoursResponse] = coreResponses;
       setStats(statsResponse.data);
       setRecentOrders(recentOrdersResponse.data.orders || []);
@@ -414,8 +414,8 @@ export default function Dashboard() {
   }, [fetchDashboardData]);
 
   return (
-    <MainLayout 
-      title={isCashier ? `Welcome, ${user?.full_name || 'Cashier'}` : "Dashboard"} 
+    <MainLayout
+      title={isCashier ? `Welcome, ${user?.full_name || 'Cashier'}` : "Dashboard"}
       subtitle={isCashier ? "Your branch overview — pick a period to see today, this week, this month, or all time." : "Welcome back! Here's what's happening today."}
     >
       {/* Period Selector for Stats */}
@@ -472,7 +472,7 @@ export default function Dashboard() {
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard
-          title={statsPeriod === 'today' ? "Today's Orders" : 
+          title={statsPeriod === 'today' ? "Today's Orders" :
                  statsPeriod === 'week' ? "Week's Orders" :
                  statsPeriod === 'month' ? "Month's Orders" :
                  statsPeriod === 'year' ? "Year's Orders" : "Total Orders"}
@@ -481,14 +481,14 @@ export default function Dashboard() {
           icon={ShoppingCart}
           variant="primary"
         />
-        
+
         {/* ADMIN ONLY: Revenue (sensitive financial data) */}
         {isAdmin ? (
           <StatCard
-            title={statsPeriod === 'today' ? "Today's Revenue" : 
-                   statsPeriod === 'week' ? "Week's Revenue" :
-                   statsPeriod === 'month' ? "Month's Revenue" :
-                   statsPeriod === 'year' ? "Year's Revenue" : "Total Revenue"}
+            title={statsPeriod === 'today' ? "Today's Cash Collected" :
+                   statsPeriod === 'week' ? "Week's Cash Collected" :
+                   statsPeriod === 'month' ? "Month's Cash Collected" :
+                   statsPeriod === 'year' ? "Year's Cash Collected" : "Total Cash Collected"}
             value={loading ? '...' : formatUGX(stats.totalRevenue)}
             subtitle="Cash collected"
             icon={DollarSign}
@@ -503,7 +503,7 @@ export default function Dashboard() {
             variant="secondary"
           />
         )}
-        
+
         <StatCard
           title="Active Customers"
           value={loading ? '...' : stats.activeCustomers}
@@ -511,7 +511,7 @@ export default function Dashboard() {
           icon={Users}
           variant="accent"
         />
-        
+
         {/* Desktop/Manager see Payments count, Admin sees Avg Order Value */}
         {!isAdmin ? (
           <StatCard
@@ -626,8 +626,9 @@ export default function Dashboard() {
                   {loading ? '...' : formatUGX(financialSummary?.revenue || 0)}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {loading ? '...' : `${financialSummary?.orderCount || 0} payments`}
+                  {loading ? '...' : `${financialSummary?.orderCount || 0} delivered orders`}
                 </p>
+                <p className="text-xs text-muted-foreground">Earned on delivery, excluding VAT</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Operating Expenses</p>
@@ -659,22 +660,27 @@ export default function Dashboard() {
                 </p>
               </div>
             </div>
-            
+
             {monthGrowth && (
               <div className="mt-4 pt-4 border-t border-green-200 dark:border-green-800">
                 <p className="text-sm font-medium mb-2">Month-over-Month Growth</p>
+                <p className="text-xs text-muted-foreground mb-2">Current month to date vs the same calendar days last month. Revenue is delivered service value excluding VAT; order counts include delivered orders only.</p>
                 <div className="flex gap-6">
                   <div>
-                    <p className="text-xs text-muted-foreground">Revenue</p>
+                    <p className="text-xs text-muted-foreground">Delivered Revenue</p>
                     <p className={`text-lg font-semibold ${monthGrowth.growth.revenue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {monthGrowth.growth.revenue >= 0 ? '+' : ''}{monthGrowth.growth.revenue.toFixed(1)}%
                     </p>
+                    <p className="text-[10px] text-muted-foreground">Now {formatUGX(monthGrowth.currentMonth.revenue)}</p>
+                    <p className="text-[10px] text-muted-foreground">Prior {formatUGX(monthGrowth.previousMonth.revenue)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Orders</p>
+                    <p className="text-xs text-muted-foreground">Delivered Orders</p>
                     <p className={`text-lg font-semibold ${monthGrowth.growth.orders >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {monthGrowth.growth.orders >= 0 ? '+' : ''}{monthGrowth.growth.orders.toFixed(1)}%
                     </p>
+                    <p className="text-[10px] text-muted-foreground">Now {monthGrowth.currentMonth.orders.toLocaleString()}</p>
+                    <p className="text-[10px] text-muted-foreground">Prior {monthGrowth.previousMonth.orders.toLocaleString()}</p>
                   </div>
                 </div>
               </div>
@@ -736,7 +742,7 @@ export default function Dashboard() {
             </div>
           );
         }
-        
+
         if (!paymentBreakdown || paymentBreakdown.length === 0) {
           return (
             <div className="mb-8 bg-card rounded-xl border border-border p-6">
@@ -748,17 +754,17 @@ export default function Dashboard() {
             </div>
           );
         }
-        
+
         // Ensure all values are numbers
         const total = paymentBreakdown.reduce((sum, m) => sum + Number(m.total_amount || 0), 0);
-        
+
         const COLORS = {
           'Mobile Money (MTN)': '#FCD34D',
           'Mobile Money (Airtel)': '#EF4444',
           'Cash': '#10B981',
           'Bank Transfer': '#3B82F6',
         };
-        
+
         const chartData = paymentBreakdown.map(method => {
           const amount = Number(method.total_amount || 0);
           const percentage = total > 0 ? ((amount / total) * 100).toFixed(1) : '0.0';
@@ -801,7 +807,7 @@ export default function Dashboard() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              
+
               {/* Summary Stats */}
               <div className="space-y-3">
                 {chartData.map((method, idx) => (
@@ -846,7 +852,7 @@ export default function Dashboard() {
               </Button>
             </Link>
           </div>
-          
+
           <div className="divide-y divide-border">
             {loading ? (
               <div className="p-8 text-center text-muted-foreground">Loading orders...</div>
@@ -854,9 +860,9 @@ export default function Dashboard() {
               <div className="p-8 text-center text-muted-foreground">No orders today</div>
             ) : (
               recentOrders.map((order) => (
-                <Link 
-                  key={order.id} 
-                  to="/orders" 
+                <Link
+                  key={order.id}
+                  to="/orders"
                   state={{ searchOrderNumber: order.order_number }}
                   className="block"
                 >

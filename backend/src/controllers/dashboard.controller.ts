@@ -61,6 +61,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
 
     ordersDateFilter = andBranchFilter(ordersDateFilter, 'branch_id', branchId);
     updatedAtDateFilter = andBranchFilter(updatedAtDateFilter, 'branch_id', branchId);
+    const deliveredAtDateFilter = andBranchFilter(deliveriesDateFilter, 'branch_id', branchId);
     const payFrom = paymentsFrom(branchId);
     const branchOrderAnd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
     const activePaymentDateFilter = paymentsDateFilter
@@ -129,11 +130,11 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       `SELECT COUNT(*) as count FROM orders WHERE status = 'ready' ${branchOrderAnd}`
     );
 
-    // DELIVERED - filtered by period (when they were marked delivered via updated_at)
+    // DELIVERED - filtered by the actual delivery recognition date.
     const deliveredOrdersResult = await query(
       `SELECT COUNT(*) as count FROM orders 
-       ${updatedAtDateFilter}
-       ${updatedAtDateFilter ? 'AND' : 'WHERE'} status = 'delivered'`
+       ${deliveredAtDateFilter}
+       ${deliveredAtDateFilter ? 'AND' : 'WHERE'} status = 'delivered'`
     );
 
     // CANCELLED - filtered by period (when they were marked cancelled via updated_at)
@@ -231,7 +232,6 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
     if (period === 'custom' && !dateRange) {
       return res.status(400).json({ error: 'Custom ranges require valid from_date and to_date values' });
     }
-    const payFrom = paymentsFrom(branchId);
     const branchExp = branchId ? `AND branch_id = ${Number(branchId)}` : '';
     const branchOrd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
     const salaryBranch = branchId
@@ -239,21 +239,30 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
       : '';
 
     // When dateRange is null we query all-time (no WHERE clause on date).
-    const paymentsWhere = dateRange
-      ? `WHERE payment_date >= $1 AND payment_date <= $2 AND COALESCE(p.is_cancelled, FALSE) = FALSE AND COALESCE(p.is_refund, FALSE) = FALSE`
-      : `WHERE COALESCE(p.is_cancelled, FALSE) = FALSE AND COALESCE(p.is_refund, FALSE) = FALSE`;
+    const ordersWhere = dateRange
+      ? `WHERE delivered_at >= $1 AND delivered_at <= $2 AND status = 'delivered'`
+      : `WHERE delivered_at IS NOT NULL AND status = 'delivered'`;
     const deliveriesWhere = dateRange
       ? `WHERE delivered_at >= $1 AND delivered_at <= $2`
       : `WHERE TRUE`;
     const expensesWhere = dateRange
-      ? `WHERE expense_date >= $1 AND expense_date <= $2 AND COALESCE(status, approval_status) = 'APPROVED'`
-      : `WHERE COALESCE(status, approval_status) = 'APPROVED'`;
+      ? `WHERE expense_date >= $1 AND expense_date <= $2 AND COALESCE(status, approval_status) = 'APPROVED' AND COALESCE(category, '') <> 'Salaries'`
+      : `WHERE COALESCE(status, approval_status) = 'APPROVED' AND COALESCE(category, '') <> 'Salaries'`;
     const params = dateRange ? dateRange : [];
 
     const revenueResult = await query(
-      `SELECT COALESCE(SUM(amount), 0) as total_revenue,
-              COUNT(*) as payment_count
-       ${payFrom} ${paymentsWhere}`,
+      `SELECT COALESCE(SUM(total_amount - COALESCE(tax_amount, 0)), 0) as total_revenue,
+              COUNT(*) as order_count
+       FROM orders ${ordersWhere} ${branchOrd}`,
+      params
+    );
+
+    const refundsResult = await query(
+      `SELECT COALESCE(SUM(ABS(p.amount) * ((o.total_amount - COALESCE(o.tax_amount, 0)) / NULLIF(o.total_amount, 0))), 0) AS total_refunds
+       FROM payments p JOIN orders o ON o.id = p.order_id
+       ${dateRange ? 'WHERE p.payment_date >= $1 AND p.payment_date <= $2 AND' : 'WHERE'}
+       COALESCE(p.is_cancelled, FALSE) = FALSE AND COALESCE(p.is_refund, FALSE) = TRUE
+       AND o.status = 'delivered' ${branchId ? `AND o.branch_id = ${Number(branchId)}` : ''}`,
       params
     );
 
@@ -263,9 +272,9 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
       const drResult = await query(
         `SELECT COALESCE(SUM(delivery_revenue), 0) as delivery_revenue,
                 COUNT(*) as delivery_count
-         FROM deliveries ${deliveriesWhere}
+         FROM deliveries d JOIN orders o ON o.id = d.order_id ${deliveriesWhere}
          AND delivery_type = 'PAID'
-         AND delivery_status = 'DELIVERED'`,
+         AND delivery_status = 'DELIVERED' ${branchId ? `AND o.branch_id = ${Number(branchId)}` : ''}`,
         params
       );
       deliveryRevenue = parseFloat(drResult.rows[0].delivery_revenue) || 0;
@@ -297,11 +306,12 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
          GREATEST(0, COALESCE(total_amount, total, 0) - COALESCE(amount_paid, 0))
        ), 0) as outstanding_balance
        FROM orders
-       WHERE payment_status IN ('UNPAID', 'PARTIAL') ${branchOrd}`
+       WHERE status <> 'cancelled' AND payment_status IN ('UNPAID', 'PARTIAL') ${branchOrd}`
     );
 
     const orderRevenue = parseFloat(revenueResult.rows[0].total_revenue) || 0;
-    const revenue      = orderRevenue + deliveryRevenue;
+    const refunds = Number(refundsResult.rows[0].total_refunds) || 0;
+    const revenue      = orderRevenue + deliveryRevenue - refunds;
     // Keep operational expenses and payroll separate so staff can see their own
     // expense entries without salary figures leaking to non-admin views.
     const expenses     = parseFloat(expensesResult.rows[0].total_expenses) || 0;
@@ -318,7 +328,7 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
       profit,         // revenue − expenses − salaries
       profitMargin,
       outstandingBalance: parseFloat(outstandingResult.rows[0].outstanding_balance) || 0,
-      orderCount: parseInt(revenueResult.rows[0].payment_count) || 0,
+      orderCount: parseInt(revenueResult.rows[0].order_count) || 0,
       deliveryCount,
     });
   } catch (error) {
@@ -488,44 +498,38 @@ export const getDailyCollections = async (req: AuthRequest, res: Response) => {
 export const getMonthOverMonth = async (req: AuthRequest, res: Response) => {
   try {
     const branchId = resolveListBranchId(req, req.query.branch_id);
-    const branchOrd = branchId ? `AND branch_id = ${Number(branchId)}` : '';
-    // Current month
-    const currentMonthStart = new Date();
-    currentMonthStart.setDate(1);
-    currentMonthStart.setHours(0, 0, 0, 0);
-    const currentMonthEnd = new Date();
-
-    // Previous month
-    const previousMonthStart = new Date(currentMonthStart);
-    previousMonthStart.setMonth(previousMonthStart.getMonth() - 1);
-    const previousMonthEnd = new Date(currentMonthStart);
-    previousMonthEnd.setDate(0); // Last day of previous month
-    previousMonthEnd.setHours(23, 59, 59, 999);
-
-    // Current month stats
-    const currentResult = await query(
-      `SELECT 
-        COUNT(*) as order_count,
-        COALESCE(SUM(amount_paid), 0) as revenue
-       FROM orders 
-       WHERE created_at >= $1 AND created_at <= $2 ${branchOrd}`,
-      [currentMonthStart, currentMonthEnd]
+    const branchFilter = branchId ? 'AND branch_id = $1' : '';
+    const values = branchId ? [Number(branchId)] : [];
+    // Compare the same elapsed number of calendar days in each month. Revenue
+    // is recognized when the service is delivered, independent of payment timing.
+    const result = await query(
+      `WITH period_bounds AS (
+         SELECT DATE_TRUNC('month', CURRENT_DATE)::date AS current_start,
+                (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month')::date AS previous_start,
+                (CURRENT_DATE + 1)::date AS current_end,
+                LEAST(
+                  (DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month')::date
+                    + (CURRENT_DATE - DATE_TRUNC('month', CURRENT_DATE)::date + 1),
+                  DATE_TRUNC('month', CURRENT_DATE)::date
+                ) AS previous_end
+       ), periods AS (
+         SELECT
+           COUNT(*) FILTER (WHERE o.delivered_at >= b.current_start AND o.delivered_at < b.current_end) AS current_orders,
+           COALESCE(SUM(o.total_amount - COALESCE(o.tax_amount, 0)) FILTER (WHERE o.delivered_at >= b.current_start AND o.delivered_at < b.current_end), 0) AS current_revenue,
+           COUNT(*) FILTER (WHERE o.delivered_at >= b.previous_start AND o.delivered_at < b.previous_end) AS previous_orders,
+           COALESCE(SUM(o.total_amount - COALESCE(o.tax_amount, 0)) FILTER (WHERE o.delivered_at >= b.previous_start AND o.delivered_at < b.previous_end), 0) AS previous_revenue
+         FROM orders o CROSS JOIN period_bounds b
+         WHERE o.delivered_at IS NOT NULL
+           AND o.status = 'delivered'
+           ${branchFilter}
+       ) SELECT * FROM periods`,
+      values
     );
 
-    // Previous month stats
-    const previousResult = await query(
-      `SELECT 
-        COUNT(*) as order_count,
-        COALESCE(SUM(amount_paid), 0) as revenue
-       FROM orders 
-       WHERE created_at >= $1 AND created_at <= $2 ${branchOrd}`,
-      [previousMonthStart, previousMonthEnd]
-    );
-
-    const currentRevenue = parseFloat(currentResult.rows[0].revenue);
-    const previousRevenue = parseFloat(previousResult.rows[0].revenue);
-    const currentOrders = parseInt(currentResult.rows[0].order_count);
-    const previousOrders = parseInt(previousResult.rows[0].order_count);
+    const currentRevenue = Number(result.rows[0].current_revenue) || 0;
+    const previousRevenue = Number(result.rows[0].previous_revenue) || 0;
+    const currentOrders = Number(result.rows[0].current_orders) || 0;
+    const previousOrders = Number(result.rows[0].previous_orders) || 0;
 
     const revenueGrowth = previousRevenue > 0 
       ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 
@@ -536,6 +540,8 @@ export const getMonthOverMonth = async (req: AuthRequest, res: Response) => {
       : 0;
 
     res.json({
+      comparison: 'month_to_date',
+      revenue_basis: 'delivered_service_value_excluding_vat',
       currentMonth: {
         revenue: currentRevenue,
         orders: currentOrders,

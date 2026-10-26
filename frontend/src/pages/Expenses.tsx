@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '@/lib/api';
 import { formatUGX } from '@/lib/currency';
 import { Button } from '@/components/ui/button';
@@ -23,10 +23,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, DollarSign, Check, X, Eye, Calendar, Filter, Clock, Trash2, Loader2 } from 'lucide-react';
+import { Plus, DollarSign, Check, X, Eye, Calendar, Filter, Clock, Trash2, Loader2, FileDown, Printer } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Expense {
   id: number;
@@ -69,7 +71,33 @@ const formatExpenseDate = (value?: string | null) => {
     ? new Date(`${dateOnly}T00:00:00`)
     : new Date(value);
   if (Number.isNaN(parsed.getTime())) return '—';
-  return parsed.toLocaleDateString();
+  return parsed.toLocaleDateString('en-UG', { timeZone: 'Africa/Kampala' });
+};
+
+const formatRecordedAt = (value?: string | null) => {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleString('en-UG', { timeZone: 'Africa/Kampala' });
+};
+
+const fetchAllExpenseRows = async (token: string, filters: Record<string, string>) => {
+  const pageSize = 500;
+  const headers = { Authorization: `Bearer ${token}` };
+  const first = await axios.get(`${API_BASE_URL}/expenses`, {
+    headers,
+    params: { ...filters, page: 1, limit: pageSize },
+  });
+  const rows: Expense[] = first.data.expenses || [];
+  const totalPages = Number(first.data.pagination?.totalPages) || 1;
+  for (let page = 2; page <= totalPages; page += 1) {
+    const response = await axios.get(`${API_BASE_URL}/expenses`, {
+      headers,
+      params: { ...filters, page, limit: pageSize },
+    });
+    rows.push(...(response.data.expenses || []));
+  }
+  return rows;
 };
 
 const getMonthBoundaries = (monthString: string) => {
@@ -97,6 +125,10 @@ const Expenses = () => {
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
+  const exportReportRef = useRef(false);
+  const submittingRef = useRef(false);
+  const expenseActionRef = useRef(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [monthlyStats, setMonthlyStats] = useState({ total: 0, count: 0, pending: 0 });
@@ -179,17 +211,11 @@ const Expenses = () => {
     try {
       const { firstDay, lastDay } = getMonthBoundaries(selectedMonth);
 
-      const response = await axios.get(`${API_BASE_URL}/expenses`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          from_date: firstDay,
-          to_date: lastDay,
-          limit: 1000,
-          ...(filters.branch_id ? { branch_id: filters.branch_id } : {}),
-        },
+      const allExpenses = await fetchAllExpenseRows(token, {
+        from_date: firstDay,
+        to_date: lastDay,
+        ...(filters.branch_id ? { branch_id: filters.branch_id } : {}),
       });
-
-      const allExpenses: Expense[] = response.data.expenses || [];
       const approved = allExpenses.filter((e) => e.status === 'APPROVED');
       const pending = allExpenses.filter((e) => e.status === 'PENDING');
 
@@ -219,7 +245,8 @@ const Expenses = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token) return;
+    if (!token || submittingRef.current) return;
+    submittingRef.current = true;
     try {
       setSubmitting(true);
       await axios.post(`${API_BASE_URL}/expenses`, formData, {
@@ -245,6 +272,7 @@ const Expenses = () => {
         : undefined;
       toast.error(errorMessage || 'Failed to record expense');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -268,18 +296,25 @@ const Expenses = () => {
   };
 
   const handleApprove = async (id: number, status: 'APPROVED' | 'REJECTED') => {
-    if (!token || actionLoading) return;
+    if (!token || expenseActionRef.current) return;
+    expenseActionRef.current = true;
     try {
       setActionLoading({ id, action: status });
-      await axios.patch(
+      const response = await axios.patch(
         `${API_BASE_URL}/expenses/${id}/approve`,
         { approval_status: status },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      const updatedExpense = response.data.expense as Partial<Expense>;
+      setExpenses((prev) => prev.map((expense) =>
+        expense.id === id ? { ...expense, ...updatedExpense, status } : expense
+      ));
       toast.success(`Expense ${status.toLowerCase()}`);
-      setSelectedExpense((prev) => (prev && prev.id === id ? { ...prev, status } : prev));
-      fetchExpenses();
-      fetchMonthlyStats();
+      setSelectedExpense((prev) => (prev && prev.id === id
+        ? { ...prev, ...updatedExpense, status }
+        : prev));
+      await Promise.all([fetchExpenses(), fetchMonthlyStats()]);
+      if (status === 'REJECTED') setShowRejectDialog(false);
     } catch (error: unknown) {
       console.error('Failed to approve expense:', error);
       const errorMessage = axios.isAxiosError(error) 
@@ -287,16 +322,18 @@ const Expenses = () => {
         : undefined;
       toast.error(errorMessage || 'Failed to approve expense');
     } finally {
+      expenseActionRef.current = false;
       setActionLoading(null);
     }
   };
 
   const handleDelete = async (expense: Expense) => {
-    if (!token || !isAdmin || actionLoading) return;
+    if (!token || !isAdmin || expenseActionRef.current) return;
     const confirmed = window.confirm(
       `Permanently delete this ${expense.status.toLowerCase()} expense of ${formatUGX(expense.amount)}? This cannot be undone.`
     );
     if (!confirmed) return;
+    expenseActionRef.current = true;
     try {
       setActionLoading({ id: expense.id, action: 'DELETE' });
       await axios.delete(`${API_BASE_URL}/expenses/${expense.id}`, {
@@ -314,6 +351,7 @@ const Expenses = () => {
         : undefined;
       toast.error(errorMessage || 'Failed to delete expense');
     } finally {
+      expenseActionRef.current = false;
       setActionLoading(null);
     }
   };
@@ -339,8 +377,80 @@ const Expenses = () => {
     }
   };
 
+  const createExpensesPdf = async (printAfter: boolean) => {
+    if (!token || exportReportRef.current) return;
+    exportReportRef.current = true;
+    setExportingReport(true);
+    try {
+      const activeFilters = Object.fromEntries(
+        Object.entries(filters).filter(([, value]) => value !== '')
+      );
+      const reportRows = await fetchAllExpenseRows(token, activeFilters);
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const from = filters.from_date || 'All dates';
+      const to = filters.to_date || 'Present';
+      const generated = new Date().toLocaleString('en-UG', { timeZone: 'Africa/Kampala' });
+      const approved = reportRows.filter((row) => row.status === 'APPROVED');
+      const pending = reportRows.filter((row) => row.status === 'PENDING');
+      const approvedTotal = approved.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+
+      doc.setFontSize(18);
+      doc.text('Expense Report', 14, 16);
+      doc.setFontSize(10);
+      doc.text(`Expense dates: ${from} to ${to}`, 14, 23);
+      doc.text(`Generated: ${generated} (Africa/Kampala)`, 14, 29);
+      doc.text(`Visible records: ${reportRows.length}   Approved total: ${formatUGX(approvedTotal)}   Pending: ${pending.length}`, 14, 35);
+      doc.setFontSize(8);
+      doc.text('Approved total excludes pending and rejected expenses. Each row shows expense date and entry recorded time.', 14, 40);
+
+      autoTable(doc, {
+        startY: 45,
+        head: [['Expense Date', 'Recorded At (EAT)', 'Category', 'Description', 'Amount (UGX)', 'Method', 'Status', 'Branch', 'Recorded By', 'Receipt']],
+        body: reportRows.map((row) => [
+          formatExpenseDate(row.expense_date),
+          formatRecordedAt(row.created_at),
+          row.category_name || '',
+          row.description || '',
+          formatUGX(Number(row.amount) || 0),
+          formatPaymentMethod(row.payment_method),
+          row.status,
+          row.branch_name || '—',
+          row.recorded_by_name || '',
+          row.receipt_number || '—',
+        ]),
+        styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+        headStyles: { fillColor: [31, 78, 121] },
+        columnStyles: { 3: { cellWidth: 48 }, 8: { cellWidth: 28 } },
+        margin: { left: 10, right: 10 },
+      });
+
+      const fileName = `expenses-${from}-to-${to}.pdf`;
+      if (printAfter) {
+        doc.autoPrint();
+        const pdfUrl = URL.createObjectURL(doc.output('blob'));
+        const printWindow = window.open(pdfUrl, '_blank');
+        if (!printWindow) {
+          URL.revokeObjectURL(pdfUrl);
+          toast.error('Allow pop-ups to open the printable expense report');
+          return;
+        }
+        window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+      } else {
+        doc.save(fileName);
+        toast.success('Expense report PDF downloaded');
+      }
+    } catch (error: unknown) {
+      console.error('Failed to export expense report:', error);
+      const message = axios.isAxiosError(error) ? error.response?.data?.error : undefined;
+      toast.error(message || 'Failed to create expense report');
+    } finally {
+      exportReportRef.current = false;
+      setExportingReport(false);
+    }
+  };
+
   return (
-    <MainLayout title="Daily Expenses" subtitle="Record and track business expenses">
+    <MainLayout title="Expenses" subtitle="Record, review, and report business expenses">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-6">
         <div className="flex items-center gap-4 w-full sm:w-auto">
@@ -361,8 +471,17 @@ const Expenses = () => {
             />
           </div>
         </div>
-        <Button
-          onClick={() => {
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button variant="outline" disabled={exportingReport} onClick={() => void createExpensesPdf(false)} className="gap-2">
+            {exportingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+            Export PDF
+          </Button>
+          <Button variant="outline" disabled={exportingReport} onClick={() => void createExpensesPdf(true)} className="gap-2">
+            {exportingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+            Print Report
+          </Button>
+          <Button
+            onClick={() => {
             setFormData((prev) => ({
               ...prev,
               branch_id: user?.branch_id ? String(user.branch_id) : prev.branch_id,
@@ -370,10 +489,11 @@ const Expenses = () => {
             setShowAddDialog(true);
           }}
           className="gap-2 w-full sm:w-auto"
-        >
-          <Plus className="w-4 h-4" />
-          Record Expense
-        </Button>
+          >
+            <Plus className="w-4 h-4" />
+            Record Expense
+          </Button>
+        </div>
       </div>
 
       {/* Monthly Summary Cards */}
@@ -552,10 +672,11 @@ const Expenses = () => {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
+            <table className="w-full min-w-[1250px]">
               <thead className="bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-700">
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Date</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Expense Date</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Recorded At</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Category</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-gray-100">Description</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900 dark:text-gray-100">Amount</th>
@@ -569,13 +690,13 @@ const Expenses = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={10} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                       Loading...
                     </td>
                   </tr>
                 ) : expenses.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={10} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                       No expenses found
                     </td>
                   </tr>
@@ -591,6 +712,9 @@ const Expenses = () => {
                     >
                       <td className="px-4 py-3 text-sm dark:text-gray-300">
                         {formatExpenseDate(expense.expense_date)}
+                      </td>
+                      <td className="px-4 py-3 text-sm dark:text-gray-300 whitespace-nowrap">
+                        {formatRecordedAt(expense.created_at)}
                       </td>
                       <td className="px-4 py-3">
                         <Badge style={{ backgroundColor: expense.category_color }} className="text-white">
@@ -987,12 +1111,12 @@ const Expenses = () => {
               disabled={!!actionLoading || pendingRejection === null}
               onClick={() => {
                 if (pendingRejection === null) return;
-                setShowRejectDialog(false);
-                handleApprove(pendingRejection, 'REJECTED');
-                setPendingRejection(null);
+                void handleApprove(pendingRejection, 'REJECTED');
               }}
             >
-              Reject expense
+              {actionLoading?.action === 'REJECTED' ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Rejecting…</>
+              ) : 'Reject expense'}
             </Button>
           </DialogFooter>
         </DialogContent>
