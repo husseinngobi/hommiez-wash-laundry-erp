@@ -157,6 +157,9 @@ const UserManagement = () => {
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [isApprovingUser, setIsApprovingUser] = useState(false);
   const approveInFlightRef = useRef(false);
+  const userActionPendingRef = useRef(false);
+  const [updatingBranchUserId, setUpdatingBranchUserId] = useState<number | null>(null);
+  const updatingBranchRef = useRef<number | null>(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showSuspendDialog, setShowSuspendDialog] = useState(false);
   const [showRoleDialog, setShowRoleDialog] = useState(false);
@@ -309,6 +312,7 @@ const UserManagement = () => {
         description: response.data?.message || 'User approved successfully.',
       });
 
+      setUsers((current) => current.map((user) => user.id === selectedUser.id ? { ...user, status: 'ACTIVE' } : user));
       setShowApproveDialog(false);
       setSelectedUser(null);
       fetchUsers();
@@ -344,6 +348,7 @@ const UserManagement = () => {
         title: 'Success',
         description: 'User rejected',
       });
+      setUsers((current) => current.map((user) => user.id === selectedUser.id ? { ...user, status: 'REJECTED' } : user));
       
       setShowRejectDialog(false);
       setSelectedUser(null);
@@ -378,6 +383,7 @@ const UserManagement = () => {
         title: 'Success',
         description: 'User suspended',
       });
+      setUsers((current) => current.map((user) => user.id === selectedUser.id ? { ...user, status: 'SUSPENDED' } : user));
       
       setShowSuspendDialog(false);
       setSelectedUser(null);
@@ -399,28 +405,53 @@ const UserManagement = () => {
   };
 
   const handleActivateUser = async (user: User) => {
+    if (userActionPendingRef.current) return;
+    userActionPendingRef.current = true;
     try {
       const response = await axios.put(
         `${API_BASE_URL}/admin/users/${user.id}/activate`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      // Show temporary password to admin
+      const activatedUser: User = { ...user, status: 'ACTIVE' };
+
       if (response.data.temporaryPassword) {
-        setSelectedUser(user);
+        setSelectedUser(activatedUser);
         setTemporaryPassword(response.data.temporaryPassword);
         setShowTempPasswordDialog(true);
       }
-      
+
       toast({
         title: 'Success',
         description: 'User reactivated with temporary password',
       });
-      
-      fetchUsers();
-      fetchStatistics();
-      fetchActivityLogs();
+      setShowDetailsDialog(false);
+      const applyActivation = () => {
+        if (statusFilter === 'SUSPENDED') {
+          setUsers((current) => current.filter((entry) => entry.id !== user.id));
+          const nextTotal = Math.max(0, totalUsers - 1);
+          setTotalUsers(nextTotal);
+          setTotalPages(Math.max(1, Math.ceil(nextTotal / usersPerPage)));
+          setCurrentPage((page) => Math.min(page, Math.max(1, Math.ceil(nextTotal / usersPerPage))));
+        } else {
+          setUsers((current) => current.map((entry) => entry.id === user.id ? activatedUser : entry));
+        }
+        setSelectedUser((current) => current?.id === user.id ? activatedUser : current);
+      };
+      applyActivation();
+      await Promise.all([fetchUsers(), fetchStatistics(), fetchActivityLogs()]);
+      applyActivation();
+
+      if (statusFilter === 'SUSPENDED') {
+        setUsers((current) => current.filter((entry) => entry.id !== user.id));
+        const nextTotal = Math.max(0, totalUsers - 1);
+        setTotalUsers(nextTotal);
+        setTotalPages(Math.max(1, Math.ceil(nextTotal / usersPerPage)));
+        setCurrentPage((page) => Math.min(page, Math.max(1, Math.ceil(nextTotal / usersPerPage))));
+      } else {
+        setUsers((current) => current.map((entry) => entry.id === user.id ? activatedUser : entry));
+      }
+      setSelectedUser((current) => current?.id === user.id ? activatedUser : current);
     } catch (error) {
       console.error('Error activating user:', error);
       toast({
@@ -428,6 +459,8 @@ const UserManagement = () => {
         description: 'Failed to activate user',
         variant: 'destructive',
       });
+    } finally {
+      userActionPendingRef.current = false;
     }
   };
 
@@ -441,7 +474,9 @@ const UserManagement = () => {
 
   const handleUpdateBranch = async (user: User, value: string) => {
     const branchId = value === 'none' ? null : Number(value);
-    if ((user.branch_id ?? null) === branchId) return;
+    if ((user.branch_id ?? null) === branchId || updatingBranchRef.current !== null) return;
+    updatingBranchRef.current = user.id;
+    setUpdatingBranchUserId(user.id);
 
     try {
       await axios.put(
@@ -449,14 +484,26 @@ const UserManagement = () => {
         { branch_id: branchId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      const branchName = branchId ? branchOptions.find((b) => b.id === branchId)?.name ?? null : null;
 
       toast({
         title: 'Branch updated',
         description: branchId
-          ? `${user.full_name} now books orders under ${branchOptions.find((b) => b.id === branchId)?.name}.`
+          ? `${user.full_name} now books orders under ${branchName}.`
           : `${user.full_name} is no longer assigned to a branch.`,
       });
-      fetchUsers();
+
+      const applyBranch = () => {
+        setUsers((current) => current.map((entry) => entry.id === user.id
+          ? { ...entry, branch_id: branchId, branch_name: branchName }
+          : entry));
+        setSelectedUser((current) => current?.id === user.id
+          ? { ...current, branch_id: branchId, branch_name: branchName }
+          : current);
+      };
+      applyBranch();
+      await fetchUsers();
+      applyBranch();
     } catch (error) {
       const axiosError = error as AxiosError<{ error?: string }>;
       toast({
@@ -464,6 +511,9 @@ const UserManagement = () => {
         description: axiosError.response?.data?.error || 'Failed to update branch assignment',
         variant: 'destructive',
       });
+    } finally {
+      updatingBranchRef.current = null;
+      setUpdatingBranchUserId(null);
     }
   };
 
@@ -830,10 +880,10 @@ const UserManagement = () => {
                               <Select
                                 value={user.branch_id ? String(user.branch_id) : 'none'}
                                 onValueChange={(value) => handleUpdateBranch(user, value)}
-                                disabled={isManager && !isAdmin && user.role !== 'DESKTOP_AGENT'}
+                                disabled={updatingBranchUserId === user.id || (isManager && !isAdmin && user.role !== 'DESKTOP_AGENT')}
                               >
                                 <SelectTrigger className="h-8 w-[150px]">
-                                  <SelectValue placeholder="Unassigned" />
+                                  <SelectValue placeholder={updatingBranchUserId === user.id ? 'Saving...' : 'Unassigned'} />
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="none">Unassigned</SelectItem>
@@ -1311,10 +1361,7 @@ const UserManagement = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setShowDetailsDialog(false);
-                        handleActivateUser(selectedUser);
-                      }}
+                      onClick={() => handleActivateUser(selectedUser)}
                       className="gap-2 text-blue-600 w-full sm:w-auto"
                     >
                       <RotateCcw className="h-4 w-4 flex-shrink-0" />

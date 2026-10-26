@@ -669,6 +669,8 @@ export default function Orders() {
   const [senderPhone, setSenderPhone] = useState('');
   const [transactionReference, setTransactionReference] = useState('');
   const [newStatus, setNewStatus] = useState('');
+  const [updatingOrderStatus, setUpdatingOrderStatus] = useState(false);
+  const updatingOrderStatusRef = useRef(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
   const pageSize = 20;
@@ -1227,38 +1229,52 @@ export default function Orders() {
   };
 
   // Update order status
-  const handleUpdateStatus = async () => {
-    if (!selectedOrder || !newStatus) return;
+  const handleUpdateStatus = async (requestedStatus?: string) => {
+    const statusToUpdate = typeof requestedStatus === 'string' ? requestedStatus : newStatus;
+    if (!selectedOrder || !statusToUpdate || updatingOrderStatusRef.current) return;
+    updatingOrderStatusRef.current = true;
+    setUpdatingOrderStatus(true);
 
     try {
       const response = await axios.put(
         `${API_BASE_URL}/orders/${selectedOrder.id}/status`,
-        { status: newStatus },
+        { status: statusToUpdate },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      const updatedOrder = response.data.order;
+      const savedStatus = String(updatedOrder?.status || statusToUpdate).toLowerCase();
+      const applySavedStatus = (order: Order): Order => order.id === selectedOrder.id
+        ? { ...order, order_status: savedStatus, ...(updatedOrder?.pickup_date ? { pickup_date: updatedOrder.pickup_date } : {}) }
+        : order;
+      setOrders((current) => current.map(applySavedStatus));
+      setSelectedOrder((current) => current ? applySavedStatus(current) : current);
 
       toast({
-        title: '✅ Status Updated',
-        description: `Order status changed to ${newStatus}`,
+        title: 'Status Updated',
+        description: `Order status changed to ${statusToUpdate}`,
       });
-
       setShowStatusDialog(false);
       setNewStatus('');
-      
-      // Refresh the orders list
+
       await fetchOrders();
-      
-      // Refresh the selected order details with fresh data from server
-      if (selectedOrder && selectedOrder.id) {
-        await viewOrderDetails(selectedOrder);
-      }
+      if (selectedOrder.id) await viewOrderDetails(selectedOrder);
+      // Keep the successful write visible if a follow-up read is briefly stale.
+      setOrders((current) => current.map(applySavedStatus));
+      setSelectedOrder((current) => current ? applySavedStatus(current) : current);
     } catch (error) {
-      const err = error as { response?: { data?: { error?: string } } };
+      const err = error as {
+        message?: string;
+        response?: { status?: number; data?: { error?: string; errors?: Array<{ msg?: string }> } };
+      };
+      const validationErrors = err.response?.data?.errors?.map((entry) => entry.msg).filter(Boolean).join('; ');
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: err.response?.data?.error || 'Failed to update status',
+        title: err.response?.status ? `Status update failed (${err.response.status})` : 'Status update failed',
+        description: err.response?.data?.error || validationErrors || err.message || 'Please try again.',
       });
+    } finally {
+      updatingOrderStatusRef.current = false;
+      setUpdatingOrderStatus(false);
     }
   };
 
@@ -1281,10 +1297,21 @@ export default function Orders() {
         description: response.data.message || 'Order has been permanently deleted and archived',
       });
 
+      const deletedOrderId = selectedOrder.id;
+      const wasInCurrentList = orders.some((order) => order.id === deletedOrderId);
+      setOrders((current) => current.filter((order) => order.id !== deletedOrderId));
+      if (wasInCurrentList) {
+        const nextTotal = Math.max(0, totalOrders - 1);
+        setTotalOrders(nextTotal);
+        const lastPage = Math.max(1, Math.ceil(nextTotal / pageSize));
+        if (currentPage > lastPage) setCurrentPage(lastPage);
+      }
       setShowDeleteOrderDialog(false);
       setShowDetailsDialog(false);
       setSelectedOrder(null);
       await fetchOrders();
+      // Keep the deleted order out if the list read briefly returns stale data.
+      setOrders((current) => current.filter((order) => order.id !== deletedOrderId));
     } catch (error) {
       const err = error as { response?: { data?: { error?: string } } };
       toast({
@@ -3244,12 +3271,11 @@ export default function Orders() {
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleUpdateStatus}
+                  onClick={() => handleUpdateStatus()}
                   className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-white"
-                  disabled={!newStatus || newStatus.toLowerCase() === selectedOrder.order_status.toLowerCase()}
+                  disabled={updatingOrderStatus || !newStatus || newStatus.toLowerCase() === selectedOrder.order_status.toLowerCase()}
                 >
-                  <Edit className="h-4 w-4 mr-1.5" />
-                  Confirm Status Update
+                  {updatingOrderStatus ? 'Updating...' : <><Edit className="h-4 w-4 mr-1.5" />Confirm Status Update</>}
                 </Button>
               </div>
             </div>

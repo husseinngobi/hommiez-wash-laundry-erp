@@ -271,6 +271,7 @@ export default function NewOrder() {
   const [amountPaid, setAmountPaid] = useState(0);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const creatingOrderRef = useRef(false);
   /** Draft text while typing quantity (index → string) so keyboard entry works smoothly */
   const [quantityDrafts, setQuantityDrafts] = useState<Record<number, string>>({});
 
@@ -909,7 +910,7 @@ export default function NewOrder() {
   };
 
   const handleCreateOrder = async () => {
-    if (loading) return;
+    if (loading || creatingOrderRef.current) return;
     if (!selectedCustomer) {
       toast({
         variant: 'destructive',
@@ -948,6 +949,7 @@ export default function NewOrder() {
         return;
       }
 
+      creatingOrderRef.current = true;
       setLoading(true);
 
       const orderData = {
@@ -1054,6 +1056,7 @@ export default function NewOrder() {
         description: getApiErrorMessage(error, 'Failed to create order'),
       });
     } finally {
+      creatingOrderRef.current = false;
       setLoading(false);
     }
   };

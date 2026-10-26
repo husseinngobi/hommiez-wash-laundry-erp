@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors transition-opacity duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -37,9 +37,42 @@ export interface ButtonProps
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, onClick, disabled, ...props }, ref) => {
+    const [asyncActionPending, setAsyncActionPending] = React.useState(false);
+    const asyncActionPendingRef = React.useRef(false);
     const Comp = asChild ? Slot : "button";
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />;
+    const handleClick: React.MouseEventHandler<HTMLButtonElement> = (event) => {
+      if (disabled || asyncActionPendingRef.current) {
+        event.preventDefault();
+        return;
+      }
+
+      const result = (onClick as ((event: React.MouseEvent<HTMLButtonElement>) => unknown) | undefined)?.(event);
+      if (result && typeof (result as Promise<unknown>).then === 'function') {
+        asyncActionPendingRef.current = true;
+        setAsyncActionPending(true);
+        Promise.resolve(result).then(
+          () => {
+            asyncActionPendingRef.current = false;
+            setAsyncActionPending(false);
+          },
+          () => {
+            asyncActionPendingRef.current = false;
+            setAsyncActionPending(false);
+          },
+        );
+      }
+    };
+
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        {...props}
+        onClick={handleClick}
+        disabled={disabled || asyncActionPending}
+      />
+    );
   },
 );
 Button.displayName = "Button";
