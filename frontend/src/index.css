@@ -120,6 +120,14 @@
 }
 
 @layer base {
+  input[type="date"],
+  input[type="month"] {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@layer base {
   * {
     @apply border-border;
   }

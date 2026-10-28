@@ -732,7 +732,7 @@ const Payments = () => {
             <CardTitle>Filter Payments</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div>
                 <Label>Period</Label>
                 <Select
@@ -754,7 +754,7 @@ const Payments = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label>From Date</Label>
                 <Input
                   type="date"
@@ -763,11 +763,11 @@ const Payments = () => {
                     setFilters({ ...filters, from_date: e.target.value });
                     setSelectedPeriod('CUSTOM');
                   }}
-                  className="mt-2"
+                  className="mt-2 min-w-0 w-full"
                   disabled={selectedPeriod !== 'CUSTOM'}
                 />
               </div>
-              <div>
+              <div className="min-w-0">
                 <Label>To Date</Label>
                 <Input
                   type="date"
@@ -776,7 +776,7 @@ const Payments = () => {
                     setFilters({ ...filters, to_date: e.target.value });
                     setSelectedPeriod('CUSTOM');
                   }}
-                  className="mt-2"
+                  className="mt-2 min-w-0 w-full"
                   disabled={selectedPeriod !== 'CUSTOM'}
                 />
               </div>

@@ -406,7 +406,7 @@ const FinancialDashboard = () => {
     >
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+        <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:flex-wrap">
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-full sm:w-40">
               <SelectValue />
@@ -429,24 +429,24 @@ const FinancialDashboard = () => {
           </Select>
           {period === 'custom' && (
             <>
-              <div className="w-full sm:w-auto">
-                <Label htmlFor="financial-from-date" className="sr-only">From date</Label>
+              <div className="w-full min-w-0 sm:w-auto">
+                <Label htmlFor="financial-from-date" className="mb-1 block text-xs text-muted-foreground sm:sr-only">From date</Label>
                 <Input
                   id="financial-from-date"
                   type="date"
                   value={dateRange.from_date}
                   onChange={(event) => setDateRange((current) => ({ ...current, from_date: event.target.value }))}
-                  className="w-full"
+                  className="w-full min-w-0"
                 />
               </div>
-              <div className="w-full sm:w-auto">
-                <Label htmlFor="financial-to-date" className="sr-only">To date</Label>
+              <div className="w-full min-w-0 sm:w-auto">
+                <Label htmlFor="financial-to-date" className="mb-1 block text-xs text-muted-foreground sm:sr-only">To date</Label>
                 <Input
                   id="financial-to-date"
                   type="date"
                   value={dateRange.to_date}
                   onChange={(event) => setDateRange((current) => ({ ...current, to_date: event.target.value }))}
-                  className="w-full"
+                  className="w-full min-w-0"
                 />
               </div>
             </>

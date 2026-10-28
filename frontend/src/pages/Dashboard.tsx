@@ -419,10 +419,10 @@ export default function Dashboard() {
       subtitle={isCashier ? "Your branch overview — pick a period to see today, this week, this month, or all time." : "Welcome back! Here's what's happening today."}
     >
       {/* Period Selector for Stats */}
-      <div className="mb-6 flex items-center gap-4">
+      <div className="mb-6 flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
         <span className="text-sm font-medium text-muted-foreground">Show stats for:</span>
         <Select value={statsPeriod} onValueChange={(value) => setStatsPeriod(value as 'today' | 'week' | 'month' | 'year' | 'all' | 'custom')}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -435,28 +435,35 @@ export default function Dashboard() {
           </SelectContent>
         </Select>
         {statsPeriod === 'custom' && (
-          <>
-            <input
-              type="date"
-              aria-label="Custom range start date"
-              value={customFromDate}
-              onChange={(event) => setCustomFromDate(event.target.value)}
-              className="h-10 rounded-md border bg-background px-3 text-sm"
-            />
-            <span className="text-sm text-muted-foreground">to</span>
-            <input
-              type="date"
-              aria-label="Custom range end date"
-              min={customFromDate || undefined}
-              value={customToDate}
-              onChange={(event) => setCustomToDate(event.target.value)}
-              className="h-10 rounded-md border bg-background px-3 text-sm"
-            />
-          </>
+          <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:items-center">
+            <div className="w-full min-w-0 sm:w-auto">
+              <label className="mb-1 block text-xs text-muted-foreground sm:sr-only" htmlFor="dashboard-custom-from">From</label>
+              <input
+                id="dashboard-custom-from"
+                type="date"
+                aria-label="Custom range start date"
+                value={customFromDate}
+                onChange={(event) => setCustomFromDate(event.target.value)}
+                className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm sm:w-[155px]"
+              />
+            </div>
+            <div className="w-full min-w-0 sm:w-auto">
+              <label className="mb-1 block text-xs text-muted-foreground sm:sr-only" htmlFor="dashboard-custom-to">To</label>
+              <input
+                id="dashboard-custom-to"
+                type="date"
+                aria-label="Custom range end date"
+                min={customFromDate || undefined}
+                value={customToDate}
+                onChange={(event) => setCustomToDate(event.target.value)}
+                className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-sm sm:w-[155px]"
+              />
+            </div>
+          </div>
         )}
         {canPickBranch && branchList.length > 1 && (
           <Select value={branchFilter} onValueChange={setBranchFilter}>
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger className="w-full sm:w-[200px]">
               <SelectValue placeholder="Branch" />
             </SelectTrigger>
             <SelectContent>

@@ -667,7 +667,7 @@ export default function Accounting() {
               Professional financial statements and accounting reports
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger className="w-full sm:w-[120px]">
                 <SelectValue />
@@ -695,8 +695,8 @@ export default function Accounting() {
             </Select>
             {period === 'custom' && (
               <>
-                <div className="w-full sm:w-auto">
-                  <Label htmlFor="accounting-from-date" className="sr-only">From date</Label>
+                <div className="w-full min-w-0 sm:w-auto">
+                  <Label htmlFor="accounting-from-date" className="mb-1 block text-xs text-muted-foreground sm:sr-only">From date</Label>
                   <Input
                     id="accounting-from-date"
                     type="date"
@@ -704,8 +704,8 @@ export default function Accounting() {
                     onChange={(event) => setCustomFromDate(event.target.value)}
                   />
                 </div>
-                <div className="w-full sm:w-auto">
-                  <Label htmlFor="accounting-to-date" className="sr-only">To date</Label>
+                <div className="w-full min-w-0 sm:w-auto">
+                  <Label htmlFor="accounting-to-date" className="mb-1 block text-xs text-muted-foreground sm:sr-only">To date</Label>
                   <Input
                     id="accounting-to-date"
                     type="date"

@@ -756,22 +756,22 @@ export default function Reports() {
             </Select>
           )}
           {period === 'custom' && (
-            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 w-full sm:w-auto">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex min-w-0 w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex min-w-0 items-center gap-2 w-full sm:w-auto">
                 <span className="text-muted-foreground text-xs whitespace-nowrap">From</span>
                 <input
                   type="date"
-                  className="border rounded px-3 py-1.5 text-sm bg-background text-foreground flex-1 sm:flex-none sm:w-[155px]"
+                  className="min-w-0 w-full border rounded px-3 py-1.5 text-sm bg-background text-foreground sm:w-[155px]"
                   value={customFromDate}
                   onChange={(e) => setCustomFromDate(e.target.value)}
                   max={customToDate || undefined}
                 />
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex min-w-0 items-center gap-2 w-full sm:w-auto">
                 <span className="text-muted-foreground text-xs whitespace-nowrap">To</span>
                 <input
                   type="date"
-                  className="border rounded px-3 py-1.5 text-sm bg-background text-foreground flex-1 sm:flex-none sm:w-[155px]"
+                  className="min-w-0 w-full border rounded px-3 py-1.5 text-sm bg-background text-foreground sm:w-[155px]"
                   value={customToDate}
                   onChange={(e) => setCustomToDate(e.target.value)}
                   min={customFromDate || undefined}
