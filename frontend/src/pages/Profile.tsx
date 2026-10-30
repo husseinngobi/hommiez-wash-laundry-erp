@@ -51,6 +51,16 @@ const Profile = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (!user?.must_change_password) return;
+    const focusPasswordSection = () => {
+      document.getElementById('change-password')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('new-password')?.focus({ preventScroll: true });
+    };
+    const timer = window.setTimeout(focusPasswordSection, 100);
+    return () => window.clearTimeout(timer);
+  }, [user?.must_change_password]);
+
   const handleProfileUpdate = async () => {
     try {
       setLoading(true);
@@ -199,7 +209,7 @@ const Profile = () => {
       return;
     }
 
-    if (!passwordData.currentPassword) {
+    if (!user.must_change_password && !passwordData.currentPassword) {
       toast({
         title: 'Validation Error',
         description: 'Current password is required',
@@ -229,16 +239,17 @@ const Profile = () => {
     try {
       setChangingPassword(true);
 
-      const payload = {
-        currentPassword: passwordData.currentPassword,
-        newPassword: passwordData.newPassword,
-      };
+      const payload = user.must_change_password
+        ? { newPassword: passwordData.newPassword }
+        : { currentPassword: passwordData.currentPassword, newPassword: passwordData.newPassword };
 
       const response = await axios.post(
         `${API_BASE_URL}/auth/change-password`,
         payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+
+      if (updateUser && user) updateUser({ ...user, must_change_password: false });
 
       toast({
         title: 'Success',
@@ -489,7 +500,7 @@ const Profile = () => {
         </Card>
 
         {/* Change Password */}
-        <Card>
+        <Card id="change-password" className="scroll-mt-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Lock className="h-5 w-5" />
@@ -501,7 +512,7 @@ const Profile = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-4">
-              <div className="space-y-2">
+              {!user.must_change_password && <div className="space-y-2">
                 <Label htmlFor="current-password">Current Password</Label>
                 <Input
                   id="current-password"
@@ -510,7 +521,7 @@ const Profile = () => {
                   onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
                   placeholder="Enter current password"
                 />
-              </div>
+              </div>}
               <div className="space-y-2">
                 <Label htmlFor="new-password">New Password</Label>
                 <Input
@@ -519,6 +530,7 @@ const Profile = () => {
                   value={passwordData.newPassword}
                   onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
                   placeholder="Enter new password (min 6 characters)"
+                  autoFocus={user.must_change_password}
                 />
               </div>
               <div className="space-y-2">

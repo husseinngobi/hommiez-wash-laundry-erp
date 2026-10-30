@@ -364,7 +364,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Check if password change is required
       if (data.user.must_change_password) {
-        navigate('/change-password');
+        navigate('/profile#change-password');
         return;
       }
 

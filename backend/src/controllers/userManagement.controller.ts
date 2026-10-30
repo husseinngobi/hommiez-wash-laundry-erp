@@ -502,6 +502,10 @@ export const activateUser = async (req: AuthRequest, res: Response) => {
        SET status = $1, 
            password = $2,
            must_change_password = TRUE,
+           temporary_password_login_attempts = 0,
+           failed_login_attempts = 0,
+           account_locked_until = NULL,
+           last_failed_login = NULL,
            rejection_reason = NULL, 
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3
@@ -1131,7 +1135,13 @@ export const resetUserPassword = async (req: AuthRequest, res: Response) => {
     // Update user password and set must_change_password flag
     await query(
       `UPDATE users 
-       SET password = $1, must_change_password = TRUE, updated_at = CURRENT_TIMESTAMP 
+       SET password = $1,
+           must_change_password = TRUE,
+           temporary_password_login_attempts = 0,
+           failed_login_attempts = 0,
+           account_locked_until = NULL,
+           last_failed_login = NULL,
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`,
       [hashedPassword, userId]
     );

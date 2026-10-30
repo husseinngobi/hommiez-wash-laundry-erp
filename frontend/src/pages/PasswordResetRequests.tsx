@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Key, Clock, CheckCircle2, XCircle, AlertCircle, Copy, RotateCcw } from 'lucide-react';
+import { Key, Clock, CheckCircle2, XCircle, AlertCircle, Copy, RotateCcw, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { API_BASE_URL } from '@/lib/api';
@@ -29,7 +29,7 @@ interface PasswordResetRequest {
 }
 
 const PasswordResetRequests = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { toast } = useToast();
   const [requests, setRequests] = useState<PasswordResetRequest[]>([]);
   const [deniedRequests, setDeniedRequests] = useState<PasswordResetRequest[]>([]);
@@ -40,6 +40,7 @@ const PasswordResetRequests = () => {
   const [temporaryPassword, setTemporaryPassword] = useState('');
   const [generatedPassword, setGeneratedPassword] = useState('');
   const [approving, setApproving] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -70,12 +71,11 @@ const PasswordResetRequests = () => {
   }, [fetchRequests]);
 
   const generateRandomPassword = () => {
-    const length = 10;
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
-    let password = '';
-    for (let i = 0; i < length; i++) {
-      password += charset.charAt(Math.floor(Math.random() * charset.length));
-    }
+    const length = 12;
+    const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    const randomValues = new Uint32Array(length);
+    window.crypto.getRandomValues(randomValues);
+    const password = Array.from(randomValues, value => charset[value % charset.length]).join('');
     setTemporaryPassword(password);
   };
 
@@ -98,14 +98,19 @@ const PasswordResetRequests = () => {
       );
 
       setGeneratedPassword(response.data.temporary_password);
+      const resolvedAt = new Date().toISOString();
+      const completedForUser = requests
+        .filter(request => request.user_id === selectedRequest.user_id)
+        .map(request => ({ ...request, status: 'COMPLETED' as const, resolved_at: resolvedAt, resolved_by_name: user?.full_name }));
+      setRequests(current => current.filter(request => request.user_id !== selectedRequest.user_id));
+      setCompletedRequests(current => [...completedForUser, ...current.filter(request => request.user_id !== selectedRequest.user_id)]);
       
       toast({
         title: 'Success',
         description: `Temporary password set for ${selectedRequest.full_name}`,
       });
 
-      await fetchRequests();
-      // Keep dialog open to show generated password
+      // Keep the dialog open to show the generated password.
     } catch (error) {
       console.error('Error approving request:', error);
       const errorMessage = axios.isAxiosError(error) && error.response?.data?.error 
@@ -123,6 +128,7 @@ const PasswordResetRequests = () => {
 
   const handleDeny = async (requestId: number) => {
     try {
+      setBusyAction(`deny-${requestId}`);
       await axios.delete(
         `${API_BASE_URL}/user-management/password-reset-requests/${requestId}`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -133,7 +139,9 @@ const PasswordResetRequests = () => {
         description: 'Password reset request has been denied. User can submit a new request if needed.',
       });
 
-      await fetchRequests();
+      const deniedRequest = requests.find(request => request.id === requestId);
+      setRequests(current => current.filter(request => request.id !== requestId));
+      if (deniedRequest) setDeniedRequests(current => [{ ...deniedRequest, status: 'DENIED', resolved_at: new Date().toISOString(), resolved_by_name: user?.full_name }, ...current.filter(request => request.id !== requestId)]);
     } catch (error) {
       console.error('Error denying request:', error);
       toast({
@@ -141,11 +149,14 @@ const PasswordResetRequests = () => {
         description: 'Failed to deny request',
         variant: 'destructive',
       });
+    } finally {
+      setBusyAction(null);
     }
   };
 
   const handleReapprove = async (request: PasswordResetRequest) => {
     try {
+      setBusyAction(`reactivate-${request.id}`);
       // Set status back to PENDING
       await axios.patch(
         `${API_BASE_URL}/user-management/password-reset-requests/${request.id}/reactivate`,
@@ -158,7 +169,8 @@ const PasswordResetRequests = () => {
         description: `Request from ${request.full_name} moved back to pending`,
       });
 
-      await fetchRequests();
+      setDeniedRequests(current => current.filter(item => item.id !== request.id));
+      setRequests(current => [{ ...request, status: 'PENDING' }, ...current.filter(item => item.id !== request.id)]);
     } catch (error) {
       console.error('Error reactivating request:', error);
       toast({
@@ -166,6 +178,8 @@ const PasswordResetRequests = () => {
         description: 'Failed to reactivate request',
         variant: 'destructive',
       });
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -288,10 +302,11 @@ const PasswordResetRequests = () => {
                                 size="sm"
                                 variant="destructive"
                                 onClick={() => handleDeny(request.id)}
+                                disabled={busyAction === `deny-${request.id}`}
                                 className="w-full sm:w-auto"
                               >
-                                <XCircle className="h-4 w-4 mr-1 flex-shrink-0" />
-                                Deny
+                                {busyAction === `deny-${request.id}` ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <XCircle className="h-4 w-4 mr-1 flex-shrink-0" />}
+                                {busyAction === `deny-${request.id}` ? 'Denying…' : 'Deny'}
                               </Button>
                             </div>
                           </TableCell>
@@ -355,10 +370,11 @@ const PasswordResetRequests = () => {
                               size="sm"
                               variant="outline"
                               onClick={() => handleReapprove(request)}
+                              disabled={busyAction === `reactivate-${request.id}`}
                               className="border-orange-600 text-orange-600 hover:bg-orange-50 w-full sm:w-auto"
                             >
-                              <RotateCcw className="h-4 w-4 mr-1 flex-shrink-0" />
-                              Reactivate
+                              {busyAction === `reactivate-${request.id}` ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-1 flex-shrink-0" />}
+                              {busyAction === `reactivate-${request.id}` ? 'Reactivating…' : 'Reactivate'}
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -509,11 +525,12 @@ const PasswordResetRequests = () => {
                 </div>
 
                 <DialogFooter>
-                  <Button variant="outline" onClick={closeDialog}>
+                  <Button variant="outline" onClick={closeDialog} disabled={approving}>
                     Cancel
                   </Button>
                   <Button onClick={handleApprove} disabled={approving || !temporaryPassword}>
-                    {approving ? 'Setting Password...' : 'Set Password & Approve'}
+                    {approving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {approving ? 'Setting Password…' : 'Set Password & Approve'}
                   </Button>
                 </DialogFooter>
               </div>

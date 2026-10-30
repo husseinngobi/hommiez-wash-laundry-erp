@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
@@ -15,7 +15,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   requireManager = false,
   requireSystemAdmin = false
 }) => {
-  const { isAuthenticated, isAdmin, isManager, isSystemAdmin, loading } = useAuth();
+  const { isAuthenticated, isAdmin, isManager, isSystemAdmin, loading, user } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -30,6 +31,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (user?.must_change_password && location.pathname !== '/profile') {
+    return <Navigate to="/profile#change-password" replace />;
   }
 
   // Strict admin-only check

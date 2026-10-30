@@ -194,7 +194,8 @@ export const register = async (req: AuthRequest, res: Response) => {
 
 export const login = async (req: AuthRequest, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
+    const { password } = req.body;
     
     // Get client IP and user agent for security logging
     const clientIP = req.ip || 'unknown';
@@ -206,8 +207,9 @@ export const login = async (req: AuthRequest, res: Response) => {
     const result = await query(
       `SELECT id, email, password, full_name, phone, role, status, profile_picture, profile_picture_url,
               tenant_id,
-              branch_id, failed_login_attempts, account_locked_until, last_failed_login
-       FROM users WHERE email = $1 AND tenant_id = $2`,
+              branch_id, failed_login_attempts, account_locked_until, last_failed_login,
+              must_change_password, COALESCE(temporary_password_login_attempts, 0) AS temporary_password_login_attempts
+       FROM users WHERE LOWER(email) = LOWER($1) AND tenant_id = $2`,
       [email, config.tenancy.deploymentTenantId]
     );
     
@@ -220,6 +222,13 @@ export const login = async (req: AuthRequest, res: Response) => {
     }
     
     const user = result.rows[0];
+
+    if (user.must_change_password && Number(user.temporary_password_login_attempts) >= 3) {
+      await logFailedLogin(email, clientIP, userAgent, 'Temporary password login limit reached');
+      return res.status(403).json({
+        error: 'This temporary password has expired. Please contact an administrator for a new one-time password.'
+      });
+    }
 
     // Check if account is currently locked out (per-account brute-force protection)
     if (user.account_locked_until && new Date(user.account_locked_until) > new Date()) {
@@ -262,6 +271,26 @@ export const login = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ 
         error: 'This account has no password set. Please contact the systems administrator.'
       });
+    }
+
+    // Reserve one of three attempts atomically, including incorrect passwords.
+    if (user.must_change_password) {
+      const attemptResult = await query(
+        `UPDATE users
+         SET temporary_password_login_attempts = COALESCE(temporary_password_login_attempts, 0) + 1
+         WHERE id = $1 AND tenant_id = $2
+           AND must_change_password = TRUE
+           AND COALESCE(temporary_password_login_attempts, 0) < 3
+         RETURNING temporary_password_login_attempts`,
+        [user.id, user.tenant_id]
+      );
+
+      if (attemptResult.rows.length === 0) {
+        await logFailedLogin(email, clientIP, userAgent, 'Temporary password login limit reached');
+        return res.status(403).json({
+          error: 'This temporary password has expired. Please contact an administrator for a new one-time password.'
+        });
+      }
     }
     
     // Verify password
@@ -330,7 +359,8 @@ export const login = async (req: AuthRequest, res: Response) => {
            last_failed_login = NULL
        WHERE id = $1 AND tenant_id = $2
        RETURNING id, email, full_name, phone, role, status, profile_picture, profile_picture_url,
-                 tenant_id, branch_id, created_at, updated_at, last_login, max_bargain_amount, max_item_bargain_amount`,
+                 tenant_id, branch_id, created_at, updated_at, last_login, max_bargain_amount, max_item_bargain_amount,
+                 must_change_password, temporary_password_login_attempts`,
       [user.id, user.tenant_id]
     );
     
@@ -376,7 +406,8 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     const result = await query(
       `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.status, u.profile_picture,
               u.profile_picture_url, u.created_at, u.updated_at, u.last_login, u.auth_provider,
-              u.max_bargain_amount, u.max_item_bargain_amount, u.tenant_id, u.branch_id, b.name AS branch_name
+              u.max_bargain_amount, u.max_item_bargain_amount, u.tenant_id, u.branch_id,
+              u.must_change_password, b.name AS branch_name
        FROM users u
        LEFT JOIN branches b ON b.id = u.branch_id
        WHERE u.id = $1 AND u.tenant_id = $2`,
@@ -489,8 +520,10 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
     
     // Get user's current password
     const result = await query(
-      'SELECT password FROM users WHERE id = $1',
-      [userId]
+      `SELECT password, must_change_password
+       FROM users
+       WHERE id = $1 AND tenant_id = $2`,
+      [userId, req.user!.tenant_id || config.tenancy.deploymentTenantId]
     );
     
     if (result.rows.length === 0) {
@@ -499,33 +532,48 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
     
     const user = result.rows[0];
     
-    if (!currentPassword) {
-      return res.status(400).json({ error: 'Current password is required' });
-    }
-    
-    // Verify current password
-    const isValidPassword = await bcrypt.compare(currentPassword, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ error: 'Current password is incorrect' });
+    if (!user.must_change_password) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required' });
+      }
+      const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: 'Current password is incorrect' });
+      }
     }
     
     // Hash new password
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
     
     // Update password and clear must_change_password flag
-    await query(
-      'UPDATE users SET password = $1, must_change_password = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      [hashedNewPassword, userId]
+    const passwordUpdateResult = await query(
+      `UPDATE users
+       SET password = $1,
+           must_change_password = FALSE,
+           temporary_password_login_attempts = 0,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND tenant_id = $3
+       RETURNING id`,
+      [hashedNewPassword, userId, req.user!.tenant_id || config.tenancy.deploymentTenantId]
     );
+
+    if (passwordUpdateResult.rows.length !== 1) {
+      console.error(`Password change did not update a user row for user ${userId}`);
+      return res.status(409).json({ error: 'Password was not saved. Please sign in again and retry.' });
+    }
     
     console.log(`✅ Password changed successfully for user ${userId}`);
     
     // Log password change event
-    await query(
-      `INSERT INTO activity_logs (user_id, action, details)
-       VALUES ($1, $2, $3)`,
-      [userId, 'password_changed', JSON.stringify({ changed_at: new Date() })]
-    );
+    try {
+      await query(
+        `INSERT INTO activity_logs (user_id, action, details)
+         VALUES ($1, $2, $3)`,
+        [userId, 'password_changed', JSON.stringify({ changed_at: new Date() })]
+      );
+    } catch (logError) {
+      console.warn('Password changed, but activity logging failed:', logError);
+    }
     
     res.json({
       message: 'Password changed successfully'
